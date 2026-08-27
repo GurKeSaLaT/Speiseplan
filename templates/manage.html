@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row">
+    <!-- LINKE SPALTE: Essen eintragen & Kategorien -->
+    <div class="col-md-5 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white">✨ Neues Essen eintragen</div>
+            <div class="card-body">
+                <form action="/add-recipe" method="POST">
+                    <div class="mb-2">
+                        <label class="form-label">Name des Gerichts</label>
+                        <input type="text" name="name" class="form-control" required placeholder="z.B. Spaghetti Bolognese">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Kategorie</label>
+                        <select name="category_id" class="form-select" required>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <h5>Nährwerte (optional, pro Portion)</h5>
+                    <div class="row mb-3">
+                        <div class="col-3"><label class="small">Kcal</label><input type="number" name="calories" class="form-control form-control-sm"></div>
+                        <div class="col-3"><label class="small">Eiweiß (g)</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm"></div>
+                        <div class="col-3"><label class="small">Kohlh. (g)</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm"></div>
+                        <div class="col-3"><label class="small">Fett (g)</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm"></div>
+                    </div>
+
+                    <h5>Zutaten (optional)</h5>
+                    <div id="ingredients-container">
+                        <div class="row g-2 mb-1">
+                            <div class="col-6"><input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Zutat"></div>
+                            <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
+                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit (g, Stk)"></div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary mt-1 mb-3" onclick="addIngredientField()">+ Zutat hinzufügen</button>
+                    
+                    <button type="submit" class="btn btn-success w-100">Rezept Speichern</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- KATEGORIE-VERWALTUNG -->
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-dark text-white">⚙️ Kategorien verwalten</div>
+            <div class="card-body">
+                <form action="/add-category" method="POST" class="mb-3">
+                    <div class="input-group">
+                        <input type="text" name="category_name" class="form-control" placeholder="Neue Kategorie..." required>
+                        <button type="submit" class="btn btn-dark">Hinzufügen</button>
+                    </div>
+                </form>
+
+                <h6>Aktuelle Kategorien:</h6>
+                <div class="list-group list-group-flush" style="max-height: 200px; overflow-y: auto;">
+                    {% for cat in categories %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-1 px-2">
+                        <span>{{ cat.name }}</span>
+                        <form action="/delete-category/{{ cat.id }}" method="POST" class="m-0">
+                            <button type="submit" class="btn btn-sm btn-outline-danger border-0 py-0" {% if cat.recipes %}disabled title="Enthält noch Rezepte"{% endif %}>
+                                🗑️
+                            </button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+                               <
+<!-- MODALS FÜR DAS BEARBEITEN (Liegen jetzt absolut sauber außerhalb aller anderen Formulare) -->
+{% for recipe in recipes %}
+<div class="modal fade" id="editModal{{ recipe.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-md">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">📝 Rezept bearbeiten: {{ recipe.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/edit-recipe/{{ recipe.id }}" method="POST">
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label">Name des Gerichts</label>
+                        <input type="text" name="name" class="form-control" value="{{ recipe.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Kategorie</label>
+                        <select name="category_id" class="form-select" required>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}" {% if cat.id == recipe.category_id %}selected{% endif %}>{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <h6>Nährwerte (pro Portion)</h6>
+                    <div class="row mb-3">
+                        <div class="col-3"><label class="small">Kcal</label><input type="number" name="calories" class="form-control form-control-sm" value="{{ recipe.calories }}"></div>
+                        <div class="col-3"><label class="small">Eiweiß (g)</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm" value="{{ recipe.protein }}"></div>
+                        <div class="col-3"><label class="small">Kohlh. (g)</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm" value="{{ recipe.carbs }}"></div>
+                        <div class="col-3"><label class="small">Fett (g)</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm" value="{{ recipe.fat }}"></div>
+                    </div>
+
+                    <h6>Zutaten</h6>
+                    <div id="edit-ingredients-container{{ recipe.id }}">
+                        {% for ing in recipe.ingredients %}
+                        <div class="row g-2 mb-1">
+                            <div class="col-6"><input type="text" name="ing_name[]" class="form-control form-control-sm" value="{{ ing.name }}"></div>
+                            <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" value="{{ ing.amount }}"></div>
+                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" value="{{ ing.unit }}"></div>
+                        </div>
+                        {% endfor %}
+                        <!-- Leeres Extrafeld für neue Zutaten beim Bearbeiten -->
+                        <div class="row g-2 mb-1">
+                            <div class="col-6"><input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..."></div>
+                            <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
+                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary mt-1" onclick="addEditIngredientField({{ recipe.id }})">+ Zutat hinzufügen</button>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-warning">Änderungen speichern</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+
+<!-- AB HIER ALLES ERSETZEN (GANZ UNTEN IN DER DATEI) -->
+<script>
+// Funktion für das Hauptformular (Neues Essen eintragen)
+function addIngredientField() {
+    const container = document.getElementById('ingredients-container');
+    const div = document.createElement('div');
+    div.className = 'row g-2 mb-1';
+    div.innerHTML = `
+        <div class="col-6"><input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Zutat"></div>
+        <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
+        <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit (g, Stk)"></div>
+    `;
+    container.appendChild(div);
+}
+
+// Funktion für die Bearbeiten-Modals (Bestehendes Essen ändern)
+function addEditIngredientField(recipeId) {
+    const container = document.getElementById('edit-ingredients-container' + recipeId);
+    const div = document.createElement('div');
+    div.className = 'row g-2 mb-1';
+    div.innerHTML = `
+        <div class="col-6"><input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..."></div>
+        <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
+        <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
+    `;
+    container.appendChild(div);
+}
+
+// Funktion zum Löschen von Rezepten ohne Extra-Abfrage
+function deleteRecipeSafely(recipeId, recipeName) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/delete-recipe/' + recipeId;
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+
+{% endblock %}
+
