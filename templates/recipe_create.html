@@ -30,9 +30,16 @@
                     </div>
 
                     <h5 class="border-bottom pb-2 mb-3 text-success fw-bold">Zutaten (optional)</h5>
+                    
+                    <datalist id="ingredients-datalist">
+                        {% for ing_name in ingredient_list %}
+                        <option value="{{ ing_name }}"></option>
+                        {% endfor %}
+                    </datalist>
+
                     <div id="ingredients-container" class="mb-2">
                         <div class="row g-2 mb-2">
-                            <div class="col-6"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat"></div>
+                            <div class="col-6"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
                             <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
                             <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, Stk)"></div>
                         </div>
@@ -55,7 +62,7 @@ function addIngredientField() {
     const div = document.createElement('div');
     div.className = 'row g-2 mb-2';
     div.innerHTML = `
-        <div class="col-6"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat"></div>
+        <div class="col-6"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
         <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
         <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, Stk)"></div>
     `;

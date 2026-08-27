@@ -1,52 +1,194 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="row">
-    <!-- 7 Tage Plan -->
-    <div class="col-md-7 mb-4">
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-primary text-white">🗓️ Dein 7-Tage Speiseplan</div>
-            <div class="list-group list-group-flush">
+    <!-- 1. SPALTE: Der interaktive 7-Tage-Speiseplan -->
+    <div class="col-lg-7 mb-4">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header-custom p-3">
+                <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">🗓️ Dein Wochenplan</h4>
+            </div>
+            <div class="list-group list-group-flush" id="wochenplanContainer">
                 {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %}
                 {% for i in range(7) %}
-                <div class="list-group-item">
-                    <h5 class="text-primary mb-1">{{ days[i] }}</h5>
-                    {% if i < plan|length %}
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="fw-bold">{{ plan[i].name }}</span>
-                            <span class="badge bg-info text-dark">{{ plan[i].category.name }}</span>
+                {% if i < plan|length %}
+                <div class="list-group-item p-3 recipe-day-card" 
+                     id="day-card-{{ i }}" 
+                     data-recipe-id="{{ plan[i].id }}" 
+                     data-category-id="{{ plan[i].category_id }}">
+                    
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">{{ days[i] }}</h5>
+                            <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">{{ plan[i].name }}</span>
                         </div>
-                        <small class="text-muted">
-                            Nährwerte: {{ plan[i].calories }} kcal | E: {{ plan[i].protein }}g | K: {{ plan[i].carbs }}g | F: {{ plan[i].fat }}g
-                        </small>
-                    {% else %}
-                        <span class="text-muted">Kein Gericht verfügbar (Bitte mehr Rezepte eintragen)</span>
-                    {% endif %}
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">{{ plan[i].category.name }}</span>
+                            <!-- Button übergibt den Index i als reine Zahl -->
+                            <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay({{ i }})">🎲</button>
+                        </div>
+                    </div>
+                    
+                    <div class="text-muted small font-monospace bg-light p-2 rounded">
+                        📊 <span class="recipe-kcal">{{ plan[i].calories }}</span> kcal | 
+                        E: <span class="recipe-protein">{{ plan[i].protein }}</span>g | 
+                        K: <span class="recipe-carbs">{{ plan[i].carbs }}</span>g | 
+                        F: <span class="recipe-fat">{{ plan[i].fat }}</span>g
+                    </div>
                 </div>
+                {% endif %}
                 {% endfor %}
             </div>
         </div>
-        <a href="/" class="btn btn-outline-secondary">Zurück zur Übersicht</a>
+        <a href="/" class="btn btn-outline-secondary px-4 py-2" style="border-radius: 0.75rem;"><- Neuer Plan erstellen</a>
     </div>
 
-    <!-- Einkaufsliste -->
-    <div class="col-md-5">
-        <div class="card shadow-sm border-success">
-            <div class="card-header bg-success text-white">🛒 Konsolidierte Einkaufsliste</div>
-            <ul class="list-group list-group-flush">
-                {% for (name, unit), amount in shopping_list.items() %}
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <span>
-                        <input type="checkbox" class="form-check-input me-2">
-                        {{ name }}
-                    </span>
-                    <span class="badge bg-success rounded-pill">{{ amount }} {{ unit }}</span>
-                </li>
-                {% else %}
-                <li class="list-group-item text-center text-muted">Keine Zutaten auf der Liste.</li>
-                {% endfor %}
+    <!-- 2. SPALTE: Die Einkaufsliste -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0 sticky-lg-top" style="top: 24px; z-index: 100;">
+            <div class="card-header bg-success text-white p-3 fw-bold d-flex justify-content-between align-items-center" style="background-color: var(--primary-food) !important; border-top-left-radius: var(--radius-main); border-top-right-radius: var(--radius-main);">
+                <h4 class="mb-0 fw-bold">🛒 Einkaufsliste</h4>
+                <span class="badge bg-white text-success px-2 py-1 rounded-pill" style="color: var(--primary-food) !important;" id="totalIngredientsCount">0</span>
+            </div>
+            <ul class="list-group list-group-flush p-2" id="shoppingListContainer" style="max-height: 75vh; overflow-y: auto;">
+                <!-- Wird per JavaScript befüllt -->
             </ul>
         </div>
     </div>
 </div>
+
+<script>
+// Initialisiere die Rezepte im JavaScript-Speicher
+let weeklyPlanRecipes = [];
+
+{% for recipe in plan %}
+weeklyPlanRecipes.push({
+    id: parseInt("{{ recipe.id }}"),
+    name: "{{ recipe.name }}",
+    category_id: parseInt("{{ recipe.category_id }}"),
+    category_name: "{{ recipe.category.name }}",
+    calories: parseInt("{{ recipe.calories or 0 }}"),
+    protein: parseFloat("{{ recipe.protein or 0 }}"),
+    carbs: parseFloat("{{ recipe.carbs or 0 }}"),
+    fat: parseFloat("{{ recipe.fat or 0 }}"),
+    ingredients: [
+        {% for ing in recipe.ingredients %}
+        { name: "{{ ing.name.strip().title() }}", amount: parseFloat("{{ ing.amount }}"), unit: "{{ ing.unit }}" },
+        {% endfor %}
+    ]
+});
+{% endfor %}
+
+// Initiales Rendern beim Laden der Seite
+document.addEventListener('DOMContentLoaded', () => {
+    rebuildShoppingList();
+});
+
+// Funktion zum Neu-Würfeln eines einzelnen Wochentags
+function rerollSingleDay(dayIndex) {
+    const dayCard = document.getElementById(`day-card-${dayIndex}`);
+    if (!dayCard) return;
+    
+    // Sammle alle aktuellen Rezept-IDs auf dem Bildschirm
+    const currentRecipeIds = Array.from(document.querySelectorAll('.recipe-day-card'))
+                                  .map(card => parseInt(card.getAttribute('data-recipe-id')));
+    
+    // Sende die Anfrage an Flask
+    fetch('/reroll-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            current_recipe_ids: currentRecipeIds,
+            day_index: parseInt(dayIndex) // Übergabe als echte Ganzzahl
+        })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Kein alternatives Rezept verfügbar.');
+        return response.json();
+    })
+    .then(newRecipe => {
+        // 1. HTML-Anzeige des Wochentags aktualisieren
+        dayCard.setAttribute('data-recipe-id', newRecipe.id);
+        dayCard.setAttribute('data-category-id', newRecipe.category_id);
+        
+        dayCard.querySelector('.recipe-name').textContent = newRecipe.name;
+        dayCard.querySelector('.recipe-category').textContent = newRecipe.category_name;
+        dayCard.querySelector('.recipe-kcal').textContent = newRecipe.calories;
+        dayCard.querySelector('.recipe-protein').textContent = newRecipe.protein;
+        dayCard.querySelector('.recipe-carbs').textContent = newRecipe.carbs;
+        dayCard.querySelector('.recipe-fat').textContent = newRecipe.fat;
+        
+        // 2. JavaScript-Speicher aktualisieren
+        weeklyPlanRecipes[dayIndex] = newRecipe;
+        
+        // 3. Einkaufsliste live neu berechnen
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+// Einkaufsliste zusammenrechnen und darstellen
+function rebuildShoppingList() {
+    const container = document.getElementById('shoppingListContainer');
+    const counterBadge = document.getElementById('totalIngredientsCount');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    let consolidated = {};
+
+    weeklyPlanRecipes.forEach(recipe => {
+        if (recipe && recipe.ingredients) {
+            recipe.ingredients.forEach(ing => {
+                const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
+                if (consolidated[key]) {
+                    consolidated[key].amount += ing.amount;
+                } else {
+                    consolidated[key] = { name: ing.name, amount: ing.amount, unit: ing.unit };
+                }
+            });
+        }
+    });
+
+    const items = Object.values(consolidated);
+    if (counterBadge) counterBadge.textContent = items.length;
+
+    if (items.length === 0) {
+        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">Keine Zutaten für diese Woche benötigt.</li>';
+        return;
+    }
+
+    // Alphabetisch sortieren
+    items.sort((a, b) => a.name.localeCompare(b.name));
+
+    items.forEach(item => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
+        li.innerHTML = `
+            <label class="d-flex align-items-center m-0 flex-grow-1" style="cursor: pointer;">
+                <input type="checkbox" class="form-check-input me-3" style="transform: scale(1.15);">
+                <span class="text-dark fs-5">${item.name}</span>
+            </label>
+            <span class="badge bg-success px-3 py-2 rounded-pill font-monospace" style="background-color: var(--primary-food) !important; font-size: 0.9rem;">
+                ${item.amount} ${item.unit}
+            </span>
+        `;
+        
+        const checkbox = li.querySelector('input[type="checkbox"]');
+        checkbox.addEventListener('change', function() {
+            const span = li.querySelector('span.text-dark');
+            if (this.checked) {
+                span.style.textDecoration = 'line-through';
+                span.style.opacity = '0.5';
+            } else {
+                span.style.textDecoration = 'none';
+                span.style.opacity = '1';
+            }
+        });
+
+        container.appendChild(li);
+    });
+}
+</script>
 {% endblock %}
 
