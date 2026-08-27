@@ -28,12 +28,30 @@ def index():
     categories = Category.query.all()
     return render_template('index.html', recipes=recipes, categories=categories)
 
-# 2. VERWALTUNGSSEITE: Rezepte und Kategorien pflegen
+# --- NEU STRUKTURIERTE VERWALTUNGS-ROUTEN ---
+
 @app.route('/manage')
 def manage():
+    return render_template('manage.html')
+
+@app.route('/manage/recipe/create')
+def recipe_create_view():
+    categories = Category.query.all()
+    return render_template('recipe_create.html', categories=categories)
+
+@app.route('/manage/recipe/edit-list')
+def recipe_edit_list_view():
     recipes = Recipe.query.all()
     categories = Category.query.all()
-    return render_template('manage.html', recipes=recipes, categories=categories)
+    return render_template('recipe_edit_list.html', recipes=recipes, categories=categories)
+
+@app.route('/manage/categories')
+def category_manage_view():
+    categories = Category.query.all()
+    return render_template('category_manage.html', categories=categories)
+
+
+# --- SPEICHER- UND LÖSCH-AKTIONEN (Leiten nun auf die jeweiligen Unterseiten zurück) ---
 
 @app.route('/add-recipe', methods=['POST'])
 def add_recipe():
@@ -43,59 +61,61 @@ def add_recipe():
     protein = float(request.form.get('protein') or 0)
     carbs = float(request.form.get('carbs') or 0)
     fat = float(request.form.get('fat') or 0)
-    
+
     new_recipe = Recipe(
-        name=name, category_id=category_id, 
+        name=name, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat
     )
     db.session.add(new_recipe)
     db.session.flush()
-    
+
     ing_names = request.form.getlist('ing_name[]')
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
-    
+
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
             ingredient = Ingredient(recipe_id=new_recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i])
             db.session.add(ingredient)
-            
+
     db.session.commit()
-    return redirect(url_for('manage'))
+    # Zurück zur "Erstellen"-Unterseite für den nächsten Eintrag
+    return redirect(url_for('recipe_create_view'))
 
 @app.route('/edit-recipe/<int:id>', methods=['POST'])
 def edit_recipe(id):
     recipe = Recipe.query.get_or_404(id)
-    
+
     recipe.name = request.form.get('name')
     recipe.category_id = request.form.get('category_id')
     recipe.calories = int(request.form.get('calories') or 0)
     recipe.protein = float(request.form.get('protein') or 0)
     recipe.carbs = float(request.form.get('carbs') or 0)
     recipe.fat = float(request.form.get('fat') or 0)
-    
+
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
-    
+
     ing_names = request.form.getlist('ing_name[]')
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
-    
+
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
             ingredient = Ingredient(recipe_id=recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i])
             db.session.add(ingredient)
-            
+
     db.session.commit()
-    return redirect(url_for('manage'))
+    # Zurück zur Bearbeitungsliste
+    return redirect(url_for('recipe_edit_list_view'))
 
 @app.route('/delete-recipe/<int:id>', methods=['POST'])
 def delete_recipe(id):
     recipe = Recipe.query.get_or_404(id)
     db.session.delete(recipe)
     db.session.commit()
-    return redirect(url_for('manage'))
+    return redirect(url_for('recipe_edit_list_view'))
 
 @app.route('/add-category', methods=['POST'])
 def add_category():
@@ -106,7 +126,7 @@ def add_category():
             new_cat = Category(name=name)
             db.session.add(new_cat)
             db.session.commit()
-    return redirect(url_for('manage'))
+    return redirect(url_for('category_manage_view'))
 
 @app.route('/delete-category/<int:id>', methods=['POST'])
 def delete_category(id):
@@ -115,7 +135,7 @@ def delete_category(id):
         return "Fehler: Diese Kategorie enthält noch Rezepte!", 400
     db.session.delete(category)
     db.session.commit()
-    return redirect(url_for('manage'))
+    return redirect(url_for('category_manage_view'))
 
 @app.route('/generate-plan', methods=['POST'])
 def generate_plan():
