@@ -3,8 +3,9 @@
 <div class="row justify-content-center">
     <div class="col-md-9 col-lg-8">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-primary text-white py-3">
-                <h4 class="card-title mb-0 d-flex align-items-center gap-2">
+            <!-- Nutzen der neuen CSS-Klasse für die Card-Header -->
+            <div class="card-header-custom p-3">
+                <h4 class="mb-0 d-flex align-items-center gap-2">
                     📅 Speiseplan für die Woche erstellen
                 </h4>
             </div>
@@ -13,49 +14,55 @@
                     Suche nach Gerichten oder Kategorien. Klicke sie an, um sie fest für deine Woche einzuloggen. Der Rest wird automatisch aufgefüllt.
                 </p>
                 
-		                <!-- 1. LIVE-SUCHFELD (KORRIGIERT) -->
+                <!-- LIVE-SUCHFELD -->
                 <div class="mb-4 position-relative">
                     <div class="input-group input-group-lg shadow-sm rounded">
                         <span class="input-group-text bg-white border-end-0">🔍</span>
                         <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Gericht oder Kategorie eingeben..." autocomplete="off">
                     </div>
-
-                    <!-- DROPDOWN-LISTE: Jetzt standardmäßig per Style absolut unsichtbar und vollflächig -->
+                    
                     <div id="searchResults" class="list-group shadow position-absolute w-100 mt-1" style="z-index: 1050; max-height: 250px; overflow-y: auto; display: none;">
                         {% for recipe in recipes %}
-                        <button type="button"
+                        <button type="button" 
                                 class="list-group-item list-group-item-action d-flex justify-content-between align-items-center search-item"
                                 style="display: none;"
                                 data-id="{{ recipe.id }}"
                                 data-name="{{ recipe.name }}"
                                 data-category="{{ recipe.category.name }}">
                             <span class="fw-bold text-dark">{{ recipe.name }}</span>
-                            <span class="badge bg-secondary font-monospace">{{ recipe.category.name }}</span>
+                            <!-- Die neue Badge-Klasse -->
+                            <span class="badge badge-category">{{ recipe.category.name }}</span>
                         </button>
                         {% endfor %}
                     </div>
                 </div>
 
-                <!-- HAUPTFORMULAR (Schickt die IDs an Flask) -->
+                <!-- HAUPTFORMULAR -->
                 <form action="/generate-plan" method="POST" id="planForm">
                     
-                    <!-- 2. BEREICH: EINGELOGGTE GERICHTE -->
                     <div class="mb-4">
-                        <h5 class="fw-bold text-dark mb-3 d-flex justify-content-between align-items-center">
-                            📌 Fest gewählte Gerichte (<span id="selectedCount">0</span> von maximal 7)
-                            <button type="button" class="btn btn-sm btn-outline-danger" id="clearAllBtn" onclick="clearAllSelected()">Alle entfernen</button>
-                        </h5>
-                        
-                        <!-- Hier werden die Gerichte per JavaScript dynamisch eingefügt -->
-                        <div id="selectedRecipesContainer" class="list-group shadow-sm rounded border bg-light p-2 min-vh-10" style="min-height: 80px;">
+			    <h5 class="fw-bold text-dark mb-3 d-flex justify-content-between align-items-center">
+    <!-- Text und Zähler werden in ein eigenes span gepackt, damit sie zusammenbleiben -->
+    <span>
+        📌 Fest gewählte Gerichte <span class="text-muted font-monospace" style="font-size: 0.95rem;">(<span id="selectedCount">0</span>/7)</span>
+    </span>
+
+    <!-- Der Button steht separat und wandert ganz nach rechts -->
+    <button type="button" class="btn btn-sm btn-outline-danger px-3" style="border-radius: 0.5rem; font-weight: 600;" id="clearAllBtn" onclick="clearAllSelected()">
+        Alle entfernen
+    </button>
+</h5>
+
+                       
+                        <div id="selectedRecipesContainer" class="list-group shadow-sm rounded border bg-light p-2" style="min-height: 80px;">
                             <div id="noSelectionPlaceholder" class="text-center text-muted my-3">
                                 Noch keine Gerichte fest ausgewählt. Nutze die Suche oben!
                             </div>
                         </div>
                     </div>
                     
-                    <!-- 3. ABSENDEN & WÜRFELN -->
-                    <button type="submit" class="btn btn-primary btn-lg w-100 py-3 fw-bold shadow">
+                    <!-- Hier kommt der neue primäre Custom-Button zum Einsatz -->
+                    <button type="submit" class="btn btn-primary-custom btn-lg w-100 py-3 shadow">
                         🎲 Fehlende Tage auffüllen & Plan erstellen
                     </button>
                 </form>
@@ -75,11 +82,8 @@ const selectedCountSpan = document.getElementById('selectedCount');
 
 let selectedRecipeIds = new Set();
 
-// 1. Live-Suche beim Tippen filtern
 searchInput.addEventListener('input', function() {
     const query = this.value.toLowerCase().trim();
-
-    // Wenn das Feld leer ist: ALLES komplett unsichtbar machen
     if (query.length === 0) {
         searchResults.style.display = 'none';
         searchItems.forEach(item => item.style.display = 'none');
@@ -87,28 +91,24 @@ searchInput.addEventListener('input', function() {
     }
 
     let hasResults = false;
-
     searchItems.forEach(item => {
         const recipeId = item.getAttribute('data-id');
         const recipeName = item.getAttribute('data-name').toLowerCase();
         const categoryName = item.getAttribute('data-category').toLowerCase();
 
-        // Bereits gewählte Gerichte nicht anzeigen
         if (selectedRecipeIds.has(recipeId)) {
             item.style.display = 'none';
             return;
         }
 
-        // Fussy-Match prüfen
         if (recipeName.includes(query) || categoryName.includes(query)) {
-            item.style.setProperty('display', 'flex', 'important'); // Aktiviert sauberes Bootstrap-Layout
+            item.style.setProperty('display', 'flex', 'important');
             hasResults = true;
         } else {
             item.style.display = 'none';
         }
     });
 
-    // Dropdown nur zeigen, wenn es Treffer gibt
     if (hasResults) {
         searchResults.style.display = 'block';
     } else {
@@ -116,14 +116,12 @@ searchInput.addEventListener('input', function() {
     }
 });
 
-// Schließen der Suchergebnisse bei Klick außerhalb
 document.addEventListener('click', function(e) {
     if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
         searchResults.style.display = 'none';
     }
 });
 
-// Klick auf ein Suchergebnis
 searchItems.forEach(item => {
     item.addEventListener('click', function() {
         const recipeId = this.getAttribute('data-id');
@@ -138,8 +136,6 @@ searchItems.forEach(item => {
         }
 
         addRecipeToSelection(recipeId, recipeName, categoryName);
-
-        // Suchfeld leeren und Liste komplett schließen
         searchInput.value = '';
         searchResults.style.display = 'none';
         this.style.display = 'none';
@@ -158,7 +154,7 @@ function addRecipeToSelection(id, name, category) {
         <div>
             <input type="hidden" name="selected_recipes" value="${id}">
             <strong class="text-dark fs-5">${name}</strong>
-            <span class="badge bg-secondary ms-2">${category}</span>
+            <span class="badge badge-category ms-2">${category}</span>
         </div>
         <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeRecipeFromSelection('${id}')">
             ❌
@@ -192,7 +188,5 @@ function updateCounter() {
     selectedCountSpan.textContent = selectedRecipeIds.size;
 }
 </script>
-
 {% endblock %}
-
 

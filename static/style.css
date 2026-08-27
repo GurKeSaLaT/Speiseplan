@@ -1,0 +1,119 @@
+/* static/style.css */
+:root {
+    --primary-food: #2E6F40;       /* Salbeigrün */
+    --primary-dark: #1E4A2A;       /* Dunkelgrün für Hover */
+    --accent-warm: #F4C430;        /* Sonnengelb */
+    --bg-warm: #F9F9F6;            /* Creme-Weiß */
+    --text-dark: #2B302A;          /* Anthrazit-Grün */
+    --radius-main: 1rem;           /* 16px abgerundete Ecken */
+}
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: var(--bg-warm);
+    color: var(--text-dark);
+}
+
+/* Navigationsleiste */
+.navbar-custom {
+    background-color: var(--primary-food);
+    border-bottom-left-radius: 1.5rem;
+    border-bottom-right-radius: 1.5rem;
+    box-shadow: 0 4px 12px rgba(46, 111, 64, 0.15);
+}
+
+.navbar-custom .nav-link {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-weight: 600;
+    border-radius: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.navbar-custom .nav-link.active-custom {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Karten und Container */
+.card {
+    border: none !important;
+    border-radius: var(--radius-main);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+    background-color: #ffffff;
+}
+
+.card-header-custom {
+    background-color: var(--primary-food);
+    color: white;
+    font-weight: 700;
+    border-top-left-radius: var(--radius-main) !important;
+    border-top-right-radius: var(--radius-main) !important;
+    border-bottom: none;
+}
+
+/* Buttons */
+.btn-primary-custom {
+    background-color: var(--primary-food);
+    color: white;
+    border: none;
+    font-weight: 700;
+    border-radius: 0.75rem;
+    transition: all 0.2s ease;
+}
+.btn-primary-custom:hover {
+    background-color: var(--primary-dark);
+    color: white;
+    transform: translateY(-1px);
+}
+
+.btn-accent-custom {
+    background-color: var(--accent-warm);
+    color: var(--text-dark);
+    border: none;
+    font-weight: 700;
+    border-radius: 0.75rem;
+}
+.btn-accent-custom:hover {
+    filter: brightness(0.95);
+}
+
+/* Listengruppen */
+.list-group-item {
+    border-color: #F1F1EE !important;
+    transition: background-color 0.2s ease;
+}
+.list-group-item:first-child {
+    border-top-left-radius: var(--radius-main) !important;
+    border-top-right-radius: var(--radius-main) !important;
+}
+.list-group-item:last-child {
+    border-bottom-left-radius: var(--radius-main) !important;
+}
+
+/* Badges */
+.badge-category {
+    background-color: #E8EFEA !important;
+    color: var(--primary-food) !important;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #D1D1CB;
+    border-radius: 10px;
+}
+
+/* Mobile Optimierungen */
+@media (max-width: 768px) {
+    .container { padding-left: 12px; padding-right: 12px; }
+    .card-body { padding: 1.25rem !important; }
+    .navbar-custom { border-radius: 0; }
+}
+

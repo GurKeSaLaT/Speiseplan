@@ -172,6 +172,12 @@ def generate_plan():
             
     return render_template('plan.html', plan=final_plan, shopping_list=shopping_list)
 
+# Verhindert, dass der Browser das CSS im Cache speichert
+@app.context_processor
+def inject_css_version():
+    import time
+    return dict(css_version=int(time.time()))
+
 if __name__ == '__main__':
     app.run(debug=True)
 
