@@ -153,12 +153,12 @@ class PlanDay(db.Model):
     nur einmalig serverseitig gerendert und anschließend nur im Browser
     gehalten (ein Neuladen der Seite hätte alles verworfen) - jede Änderung
     (Würfeln, Tauschen, Beilage hinzufügen, Personenzahl ändern) schreibt
-    sofort in diese Tabelle (siehe routes/plan.py).
+    sofort in diese Tabelle (siehe routes/plan/).
 
     Ein Tag ohne PlanDay-Zeile bedeutet "für diese Woche wurde noch nie ein
     Plan erstellt" - die Wochenansicht zeigt in dem Fall den
     "Neuen Wochenplan erstellen"-Button statt Tageskarten (has_any_data in
-    routes/plan.py: week_view). Sobald eine Woche einmal erstellt wurde,
+    routes/plan/pages.py: week_view). Sobald eine Woche einmal erstellt wurde,
     bekommen alle 7 Tage eine Zeile, auch wenn main_recipe_id leer bleibt
     und keine einzige PlanDaySide existiert (z.B. bei einem ausgenommenen
     Tag ohne Beilagen).

@@ -75,7 +75,7 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   Automatik-Regeln (Kategorie-Balance, Nachbarschaft, Wochen-Dubletten,
   Wiederholungs-Gewichtung) - eine manuelle Auswahl ist ein expliziter
   Nutzerwunsch. Setzt bei einem ausgenommenen Tag `excluded` automatisch
-  zurück (`routes/plan.py: set_main_day`).
+  zurück (`routes/plan/day_actions.py: set_main_day`).
 - **Beliebig viele Beilagen pro Tag.** Neue Tabelle `PlanDaySide` ersetzt
   die frühere `PlanDay.side_recipe_id`-Einzelspalte (Migration in `app.py`
   inkl. Tabellen-Neuaufbau, da SQLite eine per Fremdschlüssel referenzierte

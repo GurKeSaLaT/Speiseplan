@@ -1,6 +1,6 @@
 {# Persistente Wochenplan-Seite (/ und /plan/<start_date>) - seit der
    Kalender-Umstellung die neue Startseite der App, gerendert von
-   routes/plan.py: week_view(). Zeigt entweder den "Neuen Wochenplan
+   routes/plan/pages.py: week_view(). Zeigt entweder den "Neuen Wochenplan
    erstellen"-Hinweis (falls has_any_data False ist, also für diese Woche
    noch kein einziger PlanDay in der Datenbank existiert) oder den
    vollständigen 7-Tage-Plan samt Einkaufsliste.
@@ -11,8 +11,9 @@
    Laden der Seite aus window.PLAN_DATA (siehe ganz unten). Das ist bewusst
    so gewählt, seit Tage mehrere Beilagen und eine manuelle Auswahlbox
    haben können: die (inzwischen recht umfangreiche) Karten-Markup-Logik
-   existiert dadurch nur noch an EINER Stelle (refreshDayCard in plan.js)
-   statt einmal in Jinja und einmal in JavaScript, die sonst leicht
+   existiert dadurch nur noch an EINER Stelle (refreshDayCard in plan.js,
+   das für den Beilagen-Teil wiederum static/plan-sides.js aufruft) statt
+   einmal in Jinja und einmal in JavaScript, die sonst leicht
    auseinanderlaufen könnten. JEDE Interaktion (würfeln, manuell auswählen,
    tauschen, Beilagen hinzufügen/entfernen/verschieben, Personenzahl,
    manuelle Einkaufslisten-Artikel) läuft über dieselbe Rendering-Funktion. #}
@@ -130,7 +131,7 @@
                keinem Rezept gehört (z.B. Hygieneartikel). name ist das
                einzige Pflichtfeld; die Kategorie-Auswahl bestimmt, in
                welcher Gruppe der Artikel unten in der Liste landet (siehe
-               static/plan.js: addExtraShoppingItem/rebuildShoppingList). #}
+               static/plan-shopping.js: addExtraShoppingItem/rebuildShoppingList). #}
             <div class="p-2 border-bottom">
                 <div class="row g-1">
                     <div class="col-12 col-sm-4">
@@ -178,7 +179,7 @@
     border-left: 4px solid var(--primary-food) !important;
 }
 /* Einzelne Beilagen-Zeilen sind zusätzlich für sich ziehbar (siehe
-   static/plan.js: sideDragStart/moveSideDish) - eigener Grab-Cursor, damit
+   static/plan-sides.js: sideDragStart/moveSideDish) - eigener Grab-Cursor, damit
    erkennbar ist, dass sie unabhängig von der ganzen Tageskarte verschoben
    werden können. Buttons/Eingabefelder innerhalb bekommen ihren normalen
    Cursor zurück, sonst würde der geerbte "grab"-Cursor überall im
@@ -196,14 +197,24 @@
 
 {% endif %}
 {# window.PLAN_DATA wird per Jinja tojson-Filter aus dem Python-Dict
-   plan_data (siehe routes/plan.py: week_view) erzeugt - tojson escaped
-   dabei automatisch Anführungszeichen/Sonderzeichen in Rezeptnamen o.ä.
-   korrekt für eingebettetes JavaScript, anders als eine frühere,
-   inzwischen ersetzte Version dieser Seite, die Werte per Hand als
-   JS-String-Literale zusammengesetzt hatte (dort hätte z.B. ein
-   Anführungszeichen im Rezeptnamen das Script gebrochen). #}
+   plan_data (siehe routes/plan/pages.py: week_view) erzeugt - tojson
+   escaped dabei automatisch Anführungszeichen/Sonderzeichen in
+   Rezeptnamen o.ä. korrekt für eingebettetes JavaScript, anders als eine
+   frühere, inzwischen ersetzte Version dieser Seite, die Werte per Hand
+   als JS-String-Literale zusammengesetzt hatte (dort hätte z.B. ein
+   Anführungszeichen im Rezeptnamen das Script gebrochen).
+
+   Vier <script>-Dateien statt einer: plan.js (Kern/Zustand) plus drei
+   thematische Begleitdateien (manuelle Rezeptauswahl, Beilagen,
+   Einkaufsliste) - siehe der Kommentar am Anfang von static/plan.js für
+   die genaue Aufteilung. Alle vier teilen sich denselben globalen Scope
+   (keine ES-Module), die Ladereihenfolge hier spielt für die Korrektheit
+   keine Rolle (siehe ebenda). #}
 <script>
 window.PLAN_DATA = {{ plan_data | tojson }};
 </script>
 <script src="{{ url_for('static', filename='plan.js') }}"></script>
+<script src="{{ url_for('static', filename='plan-manual-select.js') }}"></script>
+<script src="{{ url_for('static', filename='plan-sides.js') }}"></script>
+<script src="{{ url_for('static', filename='plan-shopping.js') }}"></script>
 {% endblock %}

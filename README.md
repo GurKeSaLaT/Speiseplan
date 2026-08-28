@@ -92,22 +92,35 @@ docker run -p 5000:5000 speiseplan
 ## Projektstruktur
 
 ```
-app.py                     App-Setup, Blueprint-Registrierung, DB-Migration
-models.py                  SQLAlchemy-Modelle (Category, Recipe, RecipeSeason, Ingredient, PlanDay)
+app.py                        App-Setup, Blueprint-Registrierung, DB-Migration
+models.py                     SQLAlchemy-Modelle (Category, Recipe, RecipeSeason, Ingredient,
+                               PlanDay, PlanDaySide, ExtraShoppingItem)
 routes/
-  plan.py                  Kalender-Wochenansicht, Plan erstellen, Würfeln/Tauschen (Blueprint "plan")
-  recipes.py                Rezept-CRUD (Blueprint "recipes")
-  categories.py             Kategorie-CRUD (Blueprint "categories")
-  manage.py                 Verwaltungs-Startseite (Blueprint "manage")
+  plan/                       Kalender-Wochenansicht, Plan erstellen, Würfeln/Tauschen/manuelle
+                               Auswahl, Beilagen, Einkaufsliste (Blueprint "plan", auf drei
+                               Dateien verteilt, die sich denselben Blueprint teilen):
+    pages.py                    Seiten-Routen (/, /plan/<start>, .../create, .../generate)
+    day_actions.py              AJAX: Hauptgericht/Beilagen würfeln/auswählen/verschieben, Tage tauschen
+    shopping.py                 AJAX: manuelle Einkaufslisten-Artikel
+  recipes.py                  Rezept-CRUD + chefkoch.de-Import (Blueprint "recipes")
+  categories.py                Kategorie-CRUD (Blueprint "categories")
+  manage.py                    Verwaltungs-Startseite (Blueprint "manage")
 services/
-  planning.py               Wochen-/Datums-Helfer, Kategorie-Balance, Rezeptauswahl, Favoriten-Gewichtung
-  seasons.py                 Saison-Zuordnung (Standard-Saisons + eigene Zeiträume)
-templates/                  Jinja2-Templates (Plan-Kalender, Wochenplan erstellen, Verwaltung)
+  planning.py                  Wochen-/Datums-Helfer, Kategorie-Balance, Rezeptauswahl,
+                                Favoriten-/Wiederholungs-Gewichtung
+  seasons.py                   Saison-Zuordnung (Standard-Saisons + eigene Zeiträume)
+  shopping.py                  Feste Einkaufslisten-Kategorie-Reihenfolge
+  recipe_import.py             chefkoch.de-Import (schema.org/Recipe-JSON-LD auslesen)
+templates/                    Jinja2-Templates (Plan-Kalender, Wochenplan erstellen, Verwaltung)
 static/
-  plan.js                    Live-Interaktionen der Plan-Seite (würfeln, tauschen, Einkaufsliste, ...)
-  create_week.js             Live-Suche & Drag-and-Drop beim Wochenplan-Erstellen
-  bootstrap.*, style.css     Lokales Bootstrap 5 + eigenes Stylesheet
-instance/speiseplan.db      SQLite-Datenbank
+  plan.js                       Plan-Seite: Zustand, Tageskarten, Hauptgericht, Tages-Tausch
+  plan-manual-select.js          Wiederverwendbare Rezeptsuche-Box (Hauptgericht + Beilagen)
+  plan-sides.js                  Beilagen: hinzufügen/würfeln/auswählen/entfernen/verschieben
+  plan-shopping.js               Wochen-Nährwertübersicht + Einkaufsliste
+  create_week.js                Live-Suche & Drag-and-Drop beim Wochenplan-Erstellen
+  ingredient_category_select.js Von den Rezept-Formularen gemeinsam genutztes Options-Markup
+  bootstrap.*, style.css        Lokales Bootstrap 5 + eigenes Stylesheet
+instance/speiseplan.db        SQLite-Datenbank
 ```
 
 ## Lizenz

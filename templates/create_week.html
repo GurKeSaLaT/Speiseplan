@@ -1,9 +1,9 @@
 {# Seite "Neuen Wochenplan erstellen" (/plan/<start_date>/create), gerendert
-   von routes/plan.py: week_create_view(). Zeigt ein Live-Suchfeld über alle
+   von routes/plan/pages.py: week_create_view(). Zeigt ein Live-Suchfeld über alle
    Rezepte sowie 7 Drop-Zonen (eine pro Wochentag), auf die Rezepte per Klick
    oder Drag-and-Drop gelegt werden können, um sie fest zuzuweisen. Tage ohne
    feste Zuweisung werden beim Absenden serverseitig automatisch balanciert
-   aufgefüllt (siehe week_generate() in routes/plan.py). Hauptgerichte sind
+   aufgefüllt (siehe week_generate() in routes/plan/pages.py). Hauptgerichte sind
    höchstens EINEM Tag zugewiesen (per Klick oder Drag-and-Drop), Beilagen
    dagegen BELIEBIG VIELEN Tagen UND beliebig vielen pro Tag gleichzeitig
    (nur per Klick, siehe assignSideToZone in create_week.js). Die komplette
@@ -35,13 +35,16 @@
               <span class="badge badge-category">{{ recipe.category.name }}</span>
             </button> {% endfor %} </div>
         </div>
-        <!-- Formular, das beim Absenden an week_generate() (routes/plan.py)
-             geht: die drei versteckten Felder pro Tag (day_recipe_i /
-             day_side_recipe_i / day_excluded_i, siehe unten) werden dabei
-             NICHT vom Nutzer direkt bedient, sondern von create_week.js bei
-             jeder Zuweisung/Entfernung/Ausnahme aktuell gehalten - sie sind
-             die tatsächliche "Quelle der Wahrheit" beim Absenden, die
-             sichtbaren Kärtchen sind nur ihre Darstellung. -->
+        <!-- Formular, das beim Absenden an week_generate() (routes/plan/pages.py)
+             geht: das versteckte Hauptgericht-Feld pro Tag (day_recipe_i)
+             sowie day_excluded_i (siehe unten) werden dabei NICHT vom Nutzer
+             direkt bedient, sondern von create_week.js bei jeder Zuweisung/
+             Entfernung/Ausnahme aktuell gehalten - sie sind die tatsächliche
+             "Quelle der Wahrheit" beim Absenden, die sichtbaren Kärtchen sind
+             nur ihre Darstellung. Beilagen haben KEIN festes Feld (ein Tag
+             kann beliebig viele haben) - dafür legt create_week.js pro
+             zugewiesener Beilage ein eigenes verstecktes Feld
+             (day_side_recipes_i[]) dynamisch an, siehe assignSideToZone. -->
         <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat()) }}" method="POST" id="planForm">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <!-- Die 7 Wochentage als Drop-Zonen -->

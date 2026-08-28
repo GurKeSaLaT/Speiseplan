@@ -144,19 +144,12 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
 <script>
-// Baut die <option>-Liste für eine Einkaufslisten-Kategorie-Auswahl aus
-// window.SHOPPING_CATEGORIES (siehe base.html) - wird von addIngredientField
-// unten für jede neu hinzugefügte Zutatenzeile aufgerufen, damit die
-// Kategorie-Liste nicht doppelt (einmal server-seitig für die erste Zeile,
-// einmal hart codiert in JS) gepflegt werden muss.
-function categoryOptionsHtml() {
-    let html = '<option value="" selected>Sonstiges</option>';
-    (window.SHOPPING_CATEGORIES || []).forEach(cat => {
-        html += `<option value="${cat}">${cat}</option>`;
-    });
-    return html;
-}
+// categoryOptionsHtml() (Baut die <option>-Liste für eine Einkaufslisten-
+// Kategorie-Auswahl aus window.SHOPPING_CATEGORIES) kommt aus dem separat
+// eingebundenen static/ingredient_category_select.js - dieselbe Funktion
+// nutzt auch recipe_edit_list.html, daher dort nicht dupliziert gepflegt.
 
 // Fügt eine weitere leere Zutaten-Zeile (Name/Menge/Einheit/Kategorie) hinzu.
 // Die name-Attribute enden bewusst auf "[]" und sind für alle Zeilen

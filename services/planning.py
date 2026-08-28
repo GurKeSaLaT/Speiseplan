@@ -18,14 +18,17 @@ Drei zusammenhängende Aufgabenbereiche in dieser Datei:
    aufeinanderfolgenden Tagen.
 
 3. Rezept-Auswahl (choose_recipe, weighted_recipe_choice, recent_usage_counts,
-   jsonify_recipe): wählt dann tatsächlich EIN konkretes Rezept aus einer
-   Kategorie/einem Pool aus, unter Berücksichtigung von Favoriten-Gewichtung,
-   Saison-Verfügbarkeit und einer weichen Wiederholungs-Gewichtung (je
-   häufiger ein Rezept kürzlich im Plan vorkam, desto seltener wird es
-   erneut gezogen - keine harte Sperre, siehe recent_usage_counts).
+   jsonify_recipe, jsonify_side): wählt dann tatsächlich EIN konkretes
+   Rezept aus einer Kategorie/einem Pool aus, unter Berücksichtigung von
+   Favoriten-Gewichtung, Saison-Verfügbarkeit und einer weichen
+   Wiederholungs-Gewichtung (je häufiger ein Rezept kürzlich im Plan
+   vorkam, desto seltener wird es erneut gezogen - keine harte Sperre,
+   siehe recent_usage_counts). jsonify_recipe/jsonify_side serialisieren
+   das Ergebnis für die JSON-Antworten der AJAX-Endpunkte in routes/plan/.
 
-Wird von routes/plan.py sowohl beim Neu-Erstellen einer ganzen Woche als
-auch beim Einzel-Tag-Reroll über HTTP-Endpunkte verwendet.
+Wird vom routes/plan/-Paket sowohl beim Neu-Erstellen einer ganzen Woche
+(pages.py) als auch beim Einzel-Tag-Reroll über HTTP-Endpunkte
+(day_actions.py) verwendet.
 """
 
 import random
@@ -149,7 +152,7 @@ def week_dates_for(start):
     """Baut aus einem (als Montag angenommenen) Startdatum die Liste der 7
     Kalendertage dieser Woche, Montag zuerst. Es wird NICHT geprüft, ob
     start tatsächlich ein Montag ist - das übernimmt monday_of() vorher an
-    den Aufrufstellen (siehe routes/plan.py)."""
+    den Aufrufstellen (siehe routes/plan/)."""
     return [start + timedelta(days=i) for i in range(7)]
 
 
@@ -175,7 +178,7 @@ def week_neighbor_exclude_ids(day_date):
     day_date selbst wird bewusst AUSGESCHLOSSEN (siehe "if pd.date ==
     day_date: continue") - der Tag, der gerade neu gewürfelt wird, soll
     sein eigenes aktuelles Rezept nicht als "belegt" an sich selbst zählen
-    lassen. Die Aufrufer in routes/plan.py fügen das aktuelle Rezept des
+    lassen. Die Aufrufer in routes/plan/day_actions.py fügen das aktuelle Rezept des
     Zieltags bei Bedarf explizit wieder hinzu, um zu verhindern, dass ein
     Reroll dasselbe Rezept erneut auswürfelt.
     """
@@ -382,7 +385,7 @@ def jsonify_recipe(recipe):
     Zutatennamen werden dabei mit .strip().title() normalisiert (führende/
     nachgestellte Leerzeichen entfernt, erster Buchstabe jedes Worts groß),
     damit z.B. "  nudeln" und "Nudeln" in der clientseitig konsolidierten
-    Einkaufsliste (siehe static/plan.js: rebuildShoppingList) als derselbe
+    Einkaufsliste (siehe static/plan-shopping.js: rebuildShoppingList) als derselbe
     Eintrag erkannt werden, auch wenn sie bei verschiedenen Rezepten leicht
     unterschiedlich eingetragen wurden. Die Einkaufslisten-Kategorie jeder
     Zutat (siehe services/shopping.py) wird unverändert mitgegeben - sie
@@ -403,3 +406,16 @@ def jsonify_recipe(recipe):
             for ing in recipe.ingredients
         ]
     }
+
+
+def jsonify_side(plan_day_side):
+    """Wie jsonify_recipe(), aber für eine PlanDaySide-Zeile: hängt an das
+    serialisierte Rezept-Dict zusätzlich side_id an - die ID der
+    PlanDaySide-Zeile selbst, NICHT des Rezepts. static/plan-sides.js
+    braucht diese ID, um genau DIESEN Beilagen-Slot gezielt neu zu
+    würfeln, manuell zu ersetzen, zu entfernen oder auf einen anderen Tag
+    zu verschieben, unabhängig davon, ob dasselbe Rezept vielleicht noch
+    als Beilage an einem anderen Tag steht."""
+    data = jsonify_recipe(plan_day_side.recipe)
+    data['side_id'] = plan_day_side.id
+    return data

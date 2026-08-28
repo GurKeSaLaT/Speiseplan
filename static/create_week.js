@@ -13,7 +13,7 @@
  *
  * Alles hier ist rein CLIENTSEITIGER Zwischenzustand: nichts wird
  * gespeichert, bevor nicht das Formular #planForm abgeschickt wird (POST an
- * /plan/<start_date>/generate, siehe routes/plan.py: week_generate). Die
+ * /plan/<start_date>/generate, siehe routes/plan/pages.py: week_generate). Die
  * Zuweisung eines Hauptgerichts zu einem Tag landet dafür in einem
  * versteckten <input type="hidden">-Feld pro Tag (day-recipe-input-<i>),
  * das Formular selbst wird von den sichtbaren "Kärtchen" nur SPIEGELND
@@ -211,7 +211,7 @@ function removeRecipeFromZone(id, dayIndex) {
 // wie beim Hauptgericht) - id "side-input-<Rezept-ID>", Name
 // "day_side_recipes_<Tag-Index>[]", damit Flask beim Absenden über
 // request.form.getlist() alle Beilagen-IDs dieses Tages als Liste erhält
-// (siehe week_generate() in routes/plan.py). Kein Status-Text (der gehört
+// (siehe week_generate() in routes/plan/pages.py). Kein Status-Text (der gehört
 // nur zum Hauptgericht-Slot) und kein Drag-and-Drop (Beilagen-Kärtchen sind
 // auf DIESER Seite bewusst nicht ziehbar - das Verschieben einzelner
 // Beilagen zwischen Tagen geht erst auf der fertigen Plan-Seite, siehe

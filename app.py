@@ -1,13 +1,15 @@
 """Einstiegspunkt der Speiseplan-App: erzeugt die Flask-App, verbindet sie
 mit der Datenbank, registriert die vier Blueprints (die eigentlichen Routen
-liegen in routes/*.py) und kümmert sich beim Start um Datenbank-Migrationen
-für Felder, die in früheren Versionen der App noch nicht existierten.
+liegen in routes/*.py bzw. im routes/plan/-Paket) und kümmert sich beim
+Start um Datenbank-Migrationen für Felder, die in früheren Versionen der
+App noch nicht existierten.
 
 Diese Datei bewusst schlank gehalten: sie enthält selbst keine einzige
-Route mehr (die liegen alle in routes/plan.py, routes/recipes.py,
-routes/categories.py, routes/manage.py) und keine Planungs-/Auswahllogik
-(die liegt in services/planning.py und services/seasons.py) - nur noch
-Anwendungs-Setup.
+Route mehr (die liegen alle in routes/plan/ (drei Dateien: pages.py,
+day_actions.py, shopping.py - alle drei teilen sich den EINEN plan_bp-
+Blueprint), routes/recipes.py, routes/categories.py, routes/manage.py) und
+keine Planungs-/Auswahllogik (die liegt in services/planning.py und
+services/seasons.py) - nur noch Anwendungs-Setup.
 """
 
 import os

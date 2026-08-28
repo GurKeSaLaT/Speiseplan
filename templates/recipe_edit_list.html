@@ -181,18 +181,12 @@
 </div>
 {% endfor %}
 
+<script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
 <script>
-// Baut die <option>-Liste für eine Einkaufslisten-Kategorie-Auswahl aus
-// window.SHOPPING_CATEGORIES (siehe base.html) - siehe auch die identische
-// Funktion in recipe_create.html (dort für neue Rezepte statt Bearbeiten-
-// Modals, sonst inhaltsgleich).
-function categoryOptionsHtml() {
-    let html = '<option value="" selected>Sonstiges</option>';
-    (window.SHOPPING_CATEGORIES || []).forEach(cat => {
-        html += `<option value="${cat}">${cat}</option>`;
-    });
-    return html;
-}
+// categoryOptionsHtml() (Baut die <option>-Liste für eine Einkaufslisten-
+// Kategorie-Auswahl aus window.SHOPPING_CATEGORIES) kommt aus dem separat
+// eingebundenen static/ingredient_category_select.js - dieselbe Funktion
+// nutzt auch recipe_create.html, daher hier nicht dupliziert gepflegt.
 
 // Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
 // Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
