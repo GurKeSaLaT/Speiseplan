@@ -14,10 +14,12 @@ Drei zusammenhängende Aufgabenbereiche in dieser Datei:
    Kategorien verteilt und nach Möglichkeit ohne Wiederholung an
    aufeinanderfolgenden Tagen.
 
-3. Rezept-Auswahl (choose_recipe, weighted_recipe_choice, jsonify_recipe):
-   wählt dann tatsächlich EIN konkretes Rezept aus einer Kategorie/einem
-   Pool aus, unter Berücksichtigung von Favoriten-Gewichtung und
-   Saison-Verfügbarkeit.
+3. Rezept-Auswahl (choose_recipe, weighted_recipe_choice, recent_usage_counts,
+   jsonify_recipe): wählt dann tatsächlich EIN konkretes Rezept aus einer
+   Kategorie/einem Pool aus, unter Berücksichtigung von Favoriten-Gewichtung,
+   Saison-Verfügbarkeit und einer weichen Wiederholungs-Gewichtung (je
+   häufiger ein Rezept kürzlich im Plan vorkam, desto seltener wird es
+   erneut gezogen - keine harte Sperre, siehe recent_usage_counts).
 
 Wird von routes/plan.py sowohl beim Neu-Erstellen einer ganzen Woche als
 auch beim Einzel-Tag-Reroll über HTTP-Endpunkte verwendet.
@@ -43,15 +45,76 @@ DAY_NAMES_DE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Sams
 # immer im Auswahl-Pool.
 FAVORITE_WEIGHT = 3
 
+# Wie viele Wochen zurück recent_usage_counts() für die weiche
+# Wiederholungs-Gewichtung schaut - Verwendungen, die länger her sind,
+# fließen nicht mehr in die Zählung ein (das Rezept ist dann wieder "wie
+# neu", volle Gewichtung). Bewusst als eigene Konstante, falls sich in der
+# Praxis ein anderer Zeitraum als sinnvoller herausstellt.
+REPETITION_LOOKBACK_WEEKS = 8
 
-def weighted_recipe_choice(recipes):
+
+def recent_usage_counts(recipe_ids, reference_date, field_name):
+    """Zählt für jede der übergebenen Rezept-IDs, wie oft sie in den
+    letzten REPETITION_LOOKBACK_WEEKS Wochen VOR reference_date im
+    Plan-Kalender (PlanDay) verwendet wurde. Gibt ein Dict
+    {Rezept-ID: Anzahl} zurück - Rezepte ohne jede Verwendung in diesem
+    Zeitraum fehlen darin einfach (kein Eintrag mit 0).
+
+    field_name ist "main_recipe_id" oder "side_recipe_id" (wie bei
+    week_neighbor_exclude_ids weiter oben): Hauptgericht- und
+    Beilagen-Verwendungen werden getrennt gezählt, da beide Pools bei der
+    Auswahl ohnehin nie vermischt werden (siehe choose_recipe).
+
+    reference_date ist bewusst NICHT date.today(), sondern der Tag, für den
+    gerade geplant wird - die Wochenplanung erlaubt auch vergangene oder
+    zukünftige Wochen, die Zählung soll sich immer auf den Zeitraum
+    UNMITTELBAR VOR dem betrachteten Tag beziehen, unabhängig vom
+    tatsächlichen heutigen Datum.
+
+    Wird von choose_recipe() genutzt, um weighted_recipe_choice() eine
+    weiche (nicht ausschließende) Wiederholungs-Gewichtung mitzugeben -
+    siehe dort.
+    """
+    if not recipe_ids:
+        return {}
+    since = reference_date - timedelta(weeks=REPETITION_LOOKBACK_WEEKS)
+    column = getattr(PlanDay, field_name)
+    rows = PlanDay.query.filter(
+        PlanDay.date >= since, PlanDay.date < reference_date, column.in_(recipe_ids)
+    ).all()
+    return Counter(getattr(pd, field_name) for pd in rows)
+
+
+def weighted_recipe_choice(recipes, usage_counts=None):
     """Wählt zufällig ein Rezept aus einer Liste, funktional wie
-    random.choice(), gewichtet aber als Favorit markierte Rezepte mit
-    FAVORITE_WEIGHT stärker als alle anderen (die implizit Gewicht 1
-    bekommen). random.choices() (mit s!) übernimmt die eigentliche
-    gewichtete Ziehung; k=1 liefert genau ein Element, das per [0]
-    ausgepackt wird."""
-    weights = [FAVORITE_WEIGHT if r.is_favorite else 1 for r in recipes]
+    random.choice(), aber gewichtet nach zwei voneinander unabhängigen
+    Kriterien, die multiplikativ kombiniert werden:
+
+    1. Favoriten (is_favorite) bekommen FAVORITE_WEIGHT-fache
+       Basis-Gewichtung gegenüber allen anderen (Basis-Gewicht 1).
+    2. Weiche Wiederholungs-Gewichtung: usage_counts (siehe
+       recent_usage_counts, optional - fehlt es, verhält sich diese
+       Funktion wie vor Einführung dieser Gewichtung) gibt an, wie oft ein
+       Rezept kürzlich im Plan vorkam. Der Faktor 1/(Anzahl+1) sorgt dafür,
+       dass die Wahrscheinlichkeit mit jeder zusätzlichen kürzlichen
+       Verwendung SINKT (nie verwendet: Faktor 1, einmal: 0.5, zweimal:
+       0.33, ...), aber NIE auf 0 fällt - anders als eine harte Sperre
+       bleibt jedes Rezept theoretisch immer wählbar, nur unwahrscheinlicher.
+
+    Da choose_recipe() diese Funktion erst NACH der Saison-Filterung
+    aufruft (siehe dort), wirkt sich das automatisch auch auf gerade
+    saisonale Rezepte begünstigend aus, ganz ohne einen dritten Faktor hier:
+    ist die Saison-Vorauswahl aktiv, sind schlicht nur noch saisonale
+    Kandidaten überhaupt im Pool, unter denen dann wie gewohnt gewichtet wird.
+
+    random.choices() (mit s!) übernimmt die eigentliche gewichtete Ziehung;
+    k=1 liefert genau ein Element, das per [0] ausgepackt wird.
+    """
+    usage_counts = usage_counts or {}
+    weights = [
+        (FAVORITE_WEIGHT if r.is_favorite else 1) / (usage_counts.get(r.id, 0) + 1)
+        for r in recipes
+    ]
     return random.choices(recipes, weights=weights, k=1)[0]
 
 
@@ -201,7 +264,7 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
     return assigned
 
 
-def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True):
+def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True, reference_date=None):
     """Die zentrale Rezept-Auswahlfunktion: wählt EIN passendes, noch nicht
     verwendetes Rezept aus der Datenbank aus. Wird sowohl beim Erstellen
     einer kompletten Woche als auch bei jedem Einzel-Reroll aufgerufen.
@@ -212,7 +275,8 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     2. exclude_ids schließt Rezepte aus, die (je nach Aufrufer) bereits in
        derselben Woche verwendet werden oder das aktuell an diesem Tag
        stehende Rezept sind (verhindert Dubletten bzw. ein "Reroll" auf
-       dasselbe Ergebnis).
+       dasselbe Ergebnis). Das ist die einzige HARTE Ausschluss-Regel hier -
+       alles Weitere unten ist weiche Gewichtung, kein weiterer Ausschluss.
     3. category_id (optional) schränkt zusätzlich auf eine bestimmte
        Kategorie ein - wird beim automatischen Auffüllen genutzt, um die
        von assign_balanced_categories() bestimmte Kategorie auch wirklich
@@ -233,9 +297,20 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     auf ALLE Kandidaten ausgewichen - eine Saison-Zuordnung darf die
     automatische Auswahl also nie komplett blockieren.
 
+    reference_date (der Tag, für den gerade gewürfelt wird) steuert die
+    weiche Wiederholungs-Gewichtung: recent_usage_counts() zählt, wie oft
+    jeder verbliebene Kandidat in den letzten REPETITION_LOOKBACK_WEEKS
+    Wochen VOR diesem Tag bereits verwendet wurde, und weighted_recipe_choice()
+    reduziert deren Ziehungswahrscheinlichkeit entsprechend (nie auf 0 - siehe
+    dort). Bleibt reference_date leer (None), findet keine Wiederholungs-
+    Gewichtung statt (nur Favoriten zählen dann wie zuvor) - kommt in der
+    aktuellen App nicht vor, alle Aufrufer übergeben den Tag, ist aber ein
+    harmloser Fallback für z.B. zukünftige Aufrufe außerhalb eines
+    Kalendertag-Kontexts.
+
     In beiden Fällen entscheidet letztlich weighted_recipe_choice() (nicht
-    ein einfaches random.choice()), sodass Favoriten unter den verbliebenen
-    Kandidaten bevorzugt gezogen werden.
+    ein einfaches random.choice()), sodass Favoriten und selten verwendete
+    Rezepte unter den verbliebenen Kandidaten bevorzugt gezogen werden.
     """
     base_query = Recipe.query.filter(
         Recipe.is_side_dish.is_(is_side_dish),
@@ -248,12 +323,17 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     if not candidates:
         return None
 
+    usage_counts = {}
+    if reference_date is not None:
+        field_name = 'side_recipe_id' if is_side_dish else 'main_recipe_id'
+        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, field_name)
+
     if prefer_season:
         seasonal_candidates = [r for r in candidates if recipe_available_now(r)]
         if seasonal_candidates:
-            return weighted_recipe_choice(seasonal_candidates)
+            return weighted_recipe_choice(seasonal_candidates, usage_counts)
 
-    return weighted_recipe_choice(candidates)
+    return weighted_recipe_choice(candidates, usage_counts)
 
 
 def jsonify_recipe(recipe):

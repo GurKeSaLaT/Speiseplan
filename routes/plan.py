@@ -285,11 +285,18 @@ def week_generate(start_date):
         all_categories, days_to_fill, final_plan, preexisting_counts=preexisting_counts
     )
 
-    # 5. Restliche Tage mit passenden, noch nicht verwendeten Hauptgerichten auffüllen
+    # 5. Restliche Tage mit passenden, noch nicht verwendeten Hauptgerichten
+    # auffüllen. reference_date=dates[day_index] aktiviert die weiche
+    # Wiederholungs-Gewichtung in choose_recipe() (siehe services/planning.py) -
+    # Rezepte, die in den letzten Wochen VOR genau diesem Kalendertag bereits
+    # oft dran waren, werden dadurch seltener (aber nie unmöglich) gezogen.
     for day_index, needed_cat_id in category_by_day.items():
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids, category_id=needed_cat_id)
+        chosen = choose_recipe(
+            is_side_dish=False, exclude_ids=used_recipe_ids, category_id=needed_cat_id,
+            reference_date=dates[day_index]
+        )
         if not chosen:
-            chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids)
+            chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids, reference_date=dates[day_index])
 
         if chosen:
             final_plan[day_index] = chosen
@@ -349,6 +356,12 @@ def reroll_day(day_date):
     ein Ergebnis (z.B. weil buchstäblich kein Hauptgericht mehr übrig ist),
     wird ein Fehler zurückgegeben statt den Tag stillschweigend leer zu
     lassen.
+
+    reference_date=target_date wird an choose_recipe() durchgereicht und
+    aktiviert dort die weiche Wiederholungs-Gewichtung (siehe
+    services/planning.py: recent_usage_counts/weighted_recipe_choice) -
+    unter den nach obiger Logik verbliebenen Kandidaten werden zuletzt/
+    häufig verwendete Rezepte seltener (aber nie unmöglich) gewürfelt.
     """
     target_date = parse_iso_date(day_date)
     if target_date is None:
@@ -385,11 +398,13 @@ def reroll_day(day_date):
 
     chosen = None
     for best_cat_id in sorted_target_categories:
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids, category_id=best_cat_id)
+        chosen = choose_recipe(
+            is_side_dish=False, exclude_ids=exclude_ids, category_id=best_cat_id, reference_date=target_date
+        )
         if chosen:
             break
     if not chosen:
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids)
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids, reference_date=target_date)
 
     if not chosen:
         return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
@@ -409,10 +424,12 @@ def reroll_side_day(day_date):
 
     Anders als reroll_day() (Hauptgericht) gibt es hier KEINE
     Kategorie-Balance und keine Nachbarschaftsregel - Beilagen werden rein
-    nach "noch nicht diese Woche verwendet" ausgewählt. Auch die
-    Ausnahme-Prüfung entfällt bewusst: eine Beilage lässt sich auch an
-    einem Tag würfeln, der von der Hauptgericht-Planung ausgenommen ist
-    (siehe models.py: PlanDay).
+    nach "noch nicht diese Woche verwendet" (harter Ausschluss) sowie der
+    weichen Wiederholungs-Gewichtung von choose_recipe() ausgewählt (siehe
+    reference_date=target_date unten und services/planning.py:
+    recent_usage_counts). Auch die Ausnahme-Prüfung entfällt bewusst: eine
+    Beilage lässt sich auch an einem Tag würfeln, der von der
+    Hauptgericht-Planung ausgenommen ist (siehe models.py: PlanDay).
 
     Existiert für diesen Tag noch gar keine PlanDay-Zeile (z.B. weil direkt
     über die URL ein Datum außerhalb einer erstellten Woche angesprochen
@@ -434,7 +451,7 @@ def reroll_side_day(day_date):
     if plan_day.side_recipe_id:
         exclude_ids.add(plan_day.side_recipe_id)
 
-    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids)
+    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, reference_date=target_date)
     if not chosen:
         return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
 

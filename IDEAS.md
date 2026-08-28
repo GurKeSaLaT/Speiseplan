@@ -58,6 +58,16 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   z.B. für Hygieneartikel oder Getränke, die zu keinem Gericht gehören.
   Eigener Lösch-Button pro manuellem Posten, reiht sich in dieselbe
   kategorisierte Sortierung ein wie die Rezept-Zutaten.
+- **Weiche Wiederholungs-Gewichtung (keine harte Sperre).** Neue Funktion
+  `services/planning.py: recent_usage_counts()` zählt, wie oft ein Rezept in
+  den letzten `REPETITION_LOOKBACK_WEEKS` Wochen (aktuell 8) VOR dem gerade
+  geplanten Tag im Plan-Kalender vorkam. `weighted_recipe_choice()`
+  reduziert die Ziehungswahrscheinlichkeit je Verwendung um den Faktor
+  1/(Anzahl+1) - nie verwendet = volle Chance, häufig verwendet = kleine,
+  aber nie null Chance. Multipliziert sich mit der bestehenden
+  Favoriten-Gewichtung. Da die Saison-Vorauswahl in `choose_recipe()`
+  bereits VOR dieser Gewichtung greift, werden dadurch automatisch auch
+  gerade saisonale Rezepte bevorzugt, ohne einen eigenen dritten Faktor.
 
 ## Vorgeschlagen
 
@@ -70,10 +80,5 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
 
 ## Weitere Ideen (von Claude vorgeschlagen)
 
-2. **Wiederholungssperre über mehrere Wochen.** Jetzt, wo der Plan-Kalender
-   dauerhaft gespeichert wird, ließe sich beim automatischen Auffüllen/
-   Würfeln zusätzlich vermeiden, ein Rezept zu wählen, das erst vor Kurzem
-   (z.B. in den letzten 2-3 Wochen) schon dran war.
-
-3. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
+2. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
    Quelle importieren, statt jede Zutat manuell einzutippen.
