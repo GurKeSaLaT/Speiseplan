@@ -4,7 +4,7 @@
 <!-- WOCHEN-NAVIGATION -->
 <div class="card shadow-sm border-0 mb-3">
     <div class="card-body p-3">
-        <div class="week-nav d-flex flex-wrap align-items-center">
+        <div class="week-nav">
             <a href="{{ url_for('week_view', start_date=prev_start) }}" class="btn btn-outline-secondary week-nav-prev">
                 <span class="d-none d-sm-inline">← Vorherige Woche</span>
                 <span class="d-sm-none">←</span>
@@ -23,24 +23,27 @@
 </div>
 
 <style>
-.week-nav-prev { order: 1; }
-.week-nav-next { order: 2; }
-.week-nav-date {
-    order: 3;
-    flex-basis: 100%;
-    margin-top: 0.5rem;
+/* Grid statt Flexbox: garantiert prev/date/next feste Positionen unabhängig von der
+   Breite - bei Flexbox+wrap bricht jede umgebrochene Zeile einzeln per space-between
+   um, wodurch "Nächste Woche" bei mittleren Breiten links statt rechts landen kann. */
+.week-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "prev next" "date date";
+    align-items: center;
+    gap: 0.5rem;
 }
+.week-nav-prev { grid-area: prev; justify-self: start; }
+.week-nav-next { grid-area: next; justify-self: end; }
+.week-nav-date { grid-area: date; justify-self: center; margin-top: 0.5rem; }
+
 @media (min-width: 576px) {
     .week-nav {
-        justify-content: space-between;
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas: "prev date next";
     }
     .week-nav-date {
-        order: 2;
-        flex-basis: auto;
         margin-top: 0;
-    }
-    .week-nav-next {
-        order: 3;
     }
 }
 </style>
