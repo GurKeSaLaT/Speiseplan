@@ -91,7 +91,7 @@
         const recipeName = item.getAttribute('data-name').toLowerCase();
         const categoryName = item.getAttribute('data-category').toLowerCase();
 
-        if (selectedRecipeIds.has(recipeId)) {
+        if (assignedRecipeIds.has(recipeId)) {
             item.style.setProperty('display', 'none', 'important');
             return;
         }
@@ -233,4 +233,6 @@
       sourceStatus.classList.add('text-muted');
     } // Setze das gezogene Gericht fest in die neue Zielzone
     assignRecipeToZone(targetZone, id, name, category);
-  } {% endblock %}
+  }
+  </script>
+  {% endblock %}
