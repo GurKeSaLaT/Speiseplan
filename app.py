@@ -120,6 +120,12 @@ def init_db():
     if 'is_favorite' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
+    if 'source_url' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN source_url VARCHAR(500)"))
+        db.session.commit()
+    if 'instructions' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN instructions TEXT"))
+        db.session.commit()
 
     # Einkaufslisten-Kategorie einer Zutat (siehe services/shopping.py) - erst
     # mit der gruppierten/sortierten Einkaufsliste hinzugekommen. Bestehende

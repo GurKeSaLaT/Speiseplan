@@ -13,8 +13,12 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
   Woche, Datumssprung); unbeplante Wochen zeigen einen
   "Neuen Wochenplan erstellen"-Button.
 - **Rezeptverwaltung** – Gerichte mit Kategorie, Nährwerten (Kalorien,
-  Eiweiß, Kohlenhydrate, Fett), Personenzahl und einer beliebigen
-  Zutatenliste anlegen, bearbeiten und löschen.
+  Eiweiß, Kohlenhydrate, Fett), Personenzahl, einer beliebigen Zutatenliste,
+  Link und Zubereitungsanleitung anlegen, bearbeiten und löschen.
+- **Rezept-Import von chefkoch.de** – ein Link genügt: Name, Portionszahl,
+  Nährwerte (falls angegeben), Zutaten und Anleitung werden automatisch
+  ausgelesen und ins Anlegen-Formular übernommen; gespeichert wird erst
+  nach Prüfung/Ergänzung (v.a. der Kategorie) durch den Nutzer.
 - **Wochenplanung per Drag-and-Drop** – Gerichte aus der Live-Suche auf
   einzelne Wochentage ziehen oder klicken, Tage per Drag-and-Drop
   komplett tauschen (auch auf der fertigen Plan-Seite, Beilagen wandern

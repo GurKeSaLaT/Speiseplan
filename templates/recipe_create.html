@@ -8,7 +8,15 @@
    parallele Listen (ing_name[]/ing_amount[]/ing_unit[]/ing_category[]) im
    Formular an - ing_category[] bestimmt, in welchem Supermarkt-Bereich
    diese Zutat später in der Einkaufsliste einsortiert wird (siehe
-   services/shopping.py). #}
+   services/shopping.py).
+
+   Der Import-Kasten ganz oben (außerhalb des <form>, da er per AJAX läuft
+   statt das Formular abzusenden) ruft /manage/recipe/import-preview auf
+   (siehe services/recipe_import.py) und befüllt bei Erfolg NUR die
+   sichtbaren Formularfelder - gespeichert wird trotzdem erst über den
+   normalen "Rezept Speichern"-Button, damit der Nutzer insbesondere die
+   Kategorie (die sich nicht automatisch zuordnen lässt) selbst wählt und
+   alle importierten Werte vor dem Speichern prüfen kann. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -18,6 +26,15 @@
                 <h4 class="card-title mb-0 fw-bold">✨ Neues Essen eintragen</h4>
             </div>
             <div class="card-body p-4">
+                <div class="mb-4 p-3 bg-light rounded border">
+                    <label class="form-label fw-bold mb-2">🔗 Von chefkoch.de importieren</label>
+                    <div class="input-group">
+                        <input type="url" id="importUrl" class="form-control" placeholder="https://www.chefkoch.de/rezepte/...">
+                        <button type="button" class="btn btn-outline-success fw-bold" id="importButton" onclick="importRecipe()">Importieren</button>
+                    </div>
+                    <div id="importStatus" class="form-text"></div>
+                </div>
+
                 <form action="/add-recipe" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
@@ -31,6 +48,11 @@
                             <option value="{{ cat.id }}">{{ cat.name }}</option>
                             {% endfor %}
                         </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Link (optional)</label>
+                        <input type="url" name="source_url" class="form-control" placeholder="z.B. https://www.chefkoch.de/rezepte/...">
+                        <div class="form-text">Wird beim Import automatisch ausgefüllt, lässt sich aber auch von Hand eintragen oder ändern.</div>
                     </div>
 
                     <div class="mb-4">
@@ -107,6 +129,11 @@
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary mb-4" onclick="addIngredientField()">+ Zutat hinzufügen</button>
 
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Anleitung (optional)</label>
+                        <textarea name="instructions" class="form-control" rows="6" placeholder="Zubereitungsschritte..."></textarea>
+                    </div>
+
                     <div class="d-flex gap-2">
                         <a href="/manage" class="btn btn-outline-secondary w-50">Abbrechen</a>
                         <button type="submit" class="btn btn-success w-50 fw-bold">Rezept Speichern</button>
@@ -147,6 +174,72 @@ function addIngredientField() {
         <div class="col-3"><select name="ing_category[]" class="form-select" title="Einkaufslisten-Kategorie">${categoryOptionsHtml()}</select></div>
     `;
     container.appendChild(div);
+}
+
+// Ruft /manage/recipe/import-preview auf (siehe routes/recipes.py und
+// services/recipe_import.py) und befüllt bei Erfolg das Formular über
+// applyImportedRecipe() - siehe Kommentar ganz oben in dieser Datei, warum
+// dabei noch NICHTS gespeichert wird. Deaktiviert den Button während der
+// Anfrage, damit ein Doppelklick nicht zwei parallele Importe auslöst.
+function importRecipe() {
+    const urlInput = document.getElementById('importUrl');
+    const url = urlInput.value.trim();
+    if (!url) return;
+
+    const status = document.getElementById('importStatus');
+    const button = document.getElementById('importButton');
+    status.textContent = 'Importiere...';
+    status.className = 'form-text text-muted';
+    button.disabled = true;
+
+    fetch('/manage/recipe/import-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF_TOKEN },
+        body: JSON.stringify({ url: url }),
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data: data })))
+    .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error || 'Import fehlgeschlagen.');
+        applyImportedRecipe(data);
+        status.textContent = '✓ Importiert - bitte Kategorie wählen und alle Angaben prüfen.';
+        status.className = 'form-text text-success fw-bold';
+    })
+    .catch(err => {
+        status.textContent = err.message;
+        status.className = 'form-text text-danger';
+    })
+    .finally(() => {
+        button.disabled = false;
+    });
+}
+
+// Überträgt die vom Server gelieferten Importdaten in die sichtbaren
+// Formularfelder. Zutaten werden dabei KOMPLETT ersetzt (nicht angehängt) -
+// der Container wird geleert und pro importierter Zutat eine Zeile über
+// addIngredientField() neu angelegt, deren drei Felder anschließend befüllt
+// werden (die Einkaufslisten-Kategorie bleibt bewusst "Sonstiges", da sie
+// sich aus den Importdaten nicht zuverlässig ableiten lässt).
+function applyImportedRecipe(data) {
+    document.querySelector('input[name="name"]').value = data.name || '';
+    document.querySelector('input[name="calories"]').value = data.calories || '';
+    document.querySelector('input[name="protein"]').value = data.protein || '';
+    document.querySelector('input[name="carbs"]').value = data.carbs || '';
+    document.querySelector('input[name="fat"]').value = data.fat || '';
+    document.querySelector('input[name="servings"]').value = data.servings || 2;
+    document.querySelector('input[name="source_url"]').value = data.source_url || '';
+    document.querySelector('textarea[name="instructions"]').value = data.instructions || '';
+
+    const container = document.getElementById('ingredients-container');
+    container.innerHTML = '';
+    const ingredients = (data.ingredients && data.ingredients.length) ? data.ingredients : [{}];
+    ingredients.forEach(ing => {
+        addIngredientField();
+        const rows = container.querySelectorAll('.row');
+        const lastRow = rows[rows.length - 1];
+        lastRow.querySelector('[name="ing_name[]"]').value = ing.name || '';
+        lastRow.querySelector('[name="ing_amount[]"]').value = ing.amount || '';
+        lastRow.querySelector('[name="ing_unit[]"]').value = ing.unit || '';
+    });
 }
 </script>
 {% endblock %}

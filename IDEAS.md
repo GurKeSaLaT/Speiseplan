@@ -89,6 +89,21 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   Auch beim Erstellen einer neuen Woche (`create_week.html`) lassen sich
   einem Tag mehrere Beilagen zuweisen (verteilt sich automatisch auf den
   Tag mit den bisher wenigsten).
+- **Rezept-Import von chefkoch.de.** Neue Felder `Recipe.source_url`
+  (Link) und `Recipe.instructions` (Anleitung als Freitext), beide auch von
+  Hand nutzbar. Neuer Service `services/recipe_import.py`: liest die
+  eingebetteten schema.org/Recipe-JSON-LD-Strukturdaten einer chefkoch.de-
+  Seite aus (dasselbe Format, mit dem Suchmaschinen Rezepte crawlen -
+  robuster als HTML-Scraping, da es sich praktisch nie ändert) und liefert
+  Name, Portionszahl, Nährwerte (falls vorhanden), Zutaten (Best-Effort in
+  Menge/Einheit/Name zerlegt) und Zubereitungsschritte. Der Import-Button
+  auf der Rezept-Erstellen-Seite befüllt damit NUR das Formular - der
+  Nutzer prüft/ergänzt (insbesondere die Kategorie, die sich nicht
+  automatisch zuordnen lässt) und speichert danach ganz normal. Aus
+  SSRF-Sicherheitsgründen bewusst hart auf chefkoch.de beschränkt
+  (`ALLOWED_HOSTS`) - ließe sich später um weitere schema.org/Recipe-
+  kompatible Kochseiten erweitern, da der Parser selbst nicht
+  chefkoch-spezifisch ist.
 
 ## Vorgeschlagen
 
@@ -98,8 +113,8 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    (z.B. Werte je 100g an `Ingredient`/eine eigene Zutaten-Stammdaten-Tabelle)
    plus Einheiten-Umrechnung (g/ml/Stück), da `Ingredient.unit` aktuell
    Freitext ist.
-
-## Weitere Ideen (von Claude vorgeschlagen)
-
-2. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
-   Quelle importieren, statt jede Zutat manuell einzutippen.
+2. **Rezept-Import auf weitere Kochseiten ausweiten.** Der bestehende
+   chefkoch.de-Import (siehe oben) liest bereits Standard-schema.org/
+   Recipe-Strukturdaten - andere Kochseiten (z.B. Kptncook, Lecker.de,
+   Essen&Trinken) ließen sich vermutlich einfach durch Ergänzen ihrer
+   Domain in `ALLOWED_HOSTS` unterstützen, sofern sie dasselbe Format nutzen.

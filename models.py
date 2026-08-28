@@ -78,6 +78,15 @@ class Recipe(db.Model):
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
 
+    # Herkunfts-Link (z.B. die chefkoch.de-Seite, von der importiert wurde,
+    # oder ein von Hand eingetragener Link zu einem Rezept anderswo) und die
+    # Zubereitungsanleitung als freier Text. Beide optional und unabhängig
+    # vom Import nutzbar - auch ein komplett manuell angelegtes Rezept darf
+    # einen Link/eine Anleitung haben. Siehe services/recipe_import.py für
+    # den automatischen Import von chefkoch.de, der beide Felder befüllt.
+    source_url = db.Column(db.String(500), nullable=True)
+    instructions = db.Column(db.Text, nullable=True)
+
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
     # cascade="all, delete-orphan": Zutaten werden automatisch mitgelöscht,
     # sobald das Rezept gelöscht wird - es gibt keine "verwaisten" Zutaten.

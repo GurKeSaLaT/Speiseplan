@@ -1,14 +1,22 @@
 """Rezept-Verwaltung: die Erstellen-/Bearbeiten-/Löschen-Seiten für einzelne
-Gerichte (Recipe), inklusive ihrer Zutaten (Ingredient) und
-Saison-Zuordnung (RecipeSeason, über services/seasons.py verwaltet).
+Gerichte (Recipe), inklusive ihrer Zutaten (Ingredient), Saison-Zuordnung
+(RecipeSeason, über services/seasons.py verwaltet) und dem Import von
+chefkoch.de (über services/recipe_import.py).
 
 Zwei GET-Ansichten (recipe_create_view, recipe_edit_list_view) rendern die
 Formulare; drei POST-Handler (add_recipe, edit_recipe, delete_recipe)
-verarbeiten deren Absenden. Die eigentliche Saison-Formular-Logik
-(Checkboxen + eigener Zeitraum parsen, für die Bearbeiten-Ansicht
-vorbefüllen) liegt bewusst NICHT hier, sondern in services/seasons.py -
-diese Datei bleibt auf "Recipe/Ingredient anlegen, ändern, löschen"
-fokussiert.
+verarbeiten deren Absenden. import_recipe_preview() ist ein vierter,
+JSON-basierter POST-Handler für den AJAX-Import-Button auf der
+Erstellen-Seite - er speichert NICHTS, sondern liefert nur die aus einer
+chefkoch.de-URL ausgelesenen Rezeptdaten zurück, mit denen
+recipe_create.html das normale Formular vorbefüllt (siehe
+services/recipe_import.py für den Grund: die Kategorie muss der Nutzer
+ohnehin selbst wählen, ein direktes Speichern ohne Review wäre riskanter).
+
+Die eigentliche Saison-Formular-Logik (Checkboxen + eigener Zeitraum
+parsen, für die Bearbeiten-Ansicht vorbefüllen) liegt bewusst NICHT hier,
+sondern in services/seasons.py - diese Datei bleibt auf "Recipe/Ingredient
+anlegen, ändern, löschen" fokussiert.
 """
 
 from flask import Blueprint, render_template, request, redirect, url_for
@@ -17,6 +25,7 @@ from models import db, Category, Recipe, Ingredient
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
+from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 
 recipes_bp = Blueprint('recipes', __name__)
 
@@ -113,11 +122,14 @@ def add_recipe():
     is_favorite = request.form.get('is_favorite') == '1'
     # Mindestens 1 Person, auch falls das Formularfeld leer/fehlerhaft ist.
     servings = max(1, int(request.form.get('servings') or 2))
+    source_url = (request.form.get('source_url') or '').strip() or None
+    instructions = (request.form.get('instructions') or '').strip() or None
 
     new_recipe = Recipe(
         name=name, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat,
-        is_side_dish=is_side_dish, is_favorite=is_favorite, servings=servings
+        is_side_dish=is_side_dish, is_favorite=is_favorite, servings=servings,
+        source_url=source_url, instructions=instructions
     )
     db.session.add(new_recipe)
     db.session.flush()
@@ -166,6 +178,8 @@ def edit_recipe(id):
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
     recipe.is_favorite = request.form.get('is_favorite') == '1'
     recipe.servings = max(1, int(request.form.get('servings') or 2))
+    recipe.source_url = (request.form.get('source_url') or '').strip() or None
+    recipe.instructions = (request.form.get('instructions') or '').strip() or None
 
     save_recipe_seasons(recipe.id, request.form)
 
@@ -210,3 +224,32 @@ def delete_recipe(id):
     db.session.delete(recipe)
     db.session.commit()
     return redirect(url_for('recipes.recipe_edit_list_view'))
+
+
+@recipes_bp.route('/manage/recipe/import-preview', methods=['POST'])
+def import_recipe_preview():
+    """AJAX-Endpunkt hinter dem "Importieren"-Button auf der Erstellen-Seite
+    (siehe recipe_create.html): lädt die übergebene chefkoch.de-URL und gibt
+    die daraus ausgelesenen Rezeptdaten als JSON zurück (siehe
+    services/recipe_import.py: fetch_recipe_from_url). Legt selbst NICHTS
+    in der Datenbank an - das Frontend befüllt damit nur das normale
+    Anlegen-Formular, gespeichert wird erst über den regulären
+    add_recipe()-Absende-Weg, nachdem der Nutzer alles (insbesondere die
+    Kategorie) geprüft/ergänzt hat.
+
+    Erwartet einen JSON-Body {"url": str}. Fehler (nicht unterstützte
+    Domain, Netzwerkfehler, kein Rezept gefunden) kommen als
+    RecipeImportError mit einer bereits fertig formulierten deutschen
+    Fehlermeldung zurück, die 1:1 im {"error": ...}-JSON landet.
+    """
+    data = request.get_json() or {}
+    url = (data.get('url') or '').strip()
+    if not url:
+        return {"error": "Bitte einen Link eingeben."}, 400
+
+    try:
+        imported = fetch_recipe_from_url(url)
+    except RecipeImportError as e:
+        return {"error": str(e)}, 400
+
+    return imported
