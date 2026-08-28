@@ -37,11 +37,21 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
 
 ## Weitere Ideen (von Claude vorgeschlagen)
 
-6. **Wiederholungssperre über mehrere Wochen.** Aktuell wird ein generierter
-   Plan nicht gespeichert, daher kann sich ein Gericht direkt in der
-   Folgewoche wiederholen. Mit einer kleinen Plan-Historie (letzte
-   Erstellungsdaten pro Rezept) ließe sich das bei der automatischen Auswahl
-   vermeiden.
+6. **Dauerhafter Plan-Kalender.** Aktuell wird ein generierter Plan nicht
+   gespeichert - er existiert nur serverseitig gerendert bzw. im Browser,
+   solange die Plan-Seite offen ist. Sinnvoller wäre ein echtes
+   Kalender-Modell (z.B. eine `PlanEntry`-Tabelle: Datum, Rezept-ID,
+   Haupt-/Beilage), das jeden erstellten/geänderten Tag dauerhaft
+   persistiert. Das ist die Grundlage für:
+   - Wiederholungssperre über mehrere Wochen (Gerichte meiden, die erst
+     kürzlich dran waren)
+   - Rückblick auf vergangene Wochen ("Was gab's letzten Mittwoch?")
+   - spätere Auswertungen (z.B. wie oft welche Kategorie/welches Rezept
+     vorkam)
+
+   Größerer Umbau: aktuell ist die Plan-Seite reine Anzeige eines einmalig
+   generierten Ergebnisses ohne DB-Anbindung; müsste auf Speichern pro
+   Tag/Woche umgestellt werden.
 
 7. **Favoriten/Bewertung.** Rezepte markieren oder bewerten (z.B. Sterne),
    sodass beliebte Gerichte beim Würfeln häufiger drankommen als selten
