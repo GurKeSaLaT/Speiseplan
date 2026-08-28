@@ -10,12 +10,12 @@
             <div class="list-group list-group-flush" id="wochenplanContainer">
                 {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %}
                 {% for i in range(7) %}
-                {% if i < plan|length %}
-                <div class="list-group-item p-3 recipe-day-card" 
-                     id="day-card-{{ i }}" 
-                     data-recipe-id="{{ plan[i].id }}" 
+                {% if plan[i] %}
+                <div class="list-group-item p-3 recipe-day-card"
+                     id="day-card-{{ i }}"
+                     data-recipe-id="{{ plan[i].id }}"
                      data-category-id="{{ plan[i].category_id }}">
-                    
+
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <div>
                             <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">{{ days[i] }}</h5>
@@ -27,13 +27,25 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay({{ i }})">🎲</button>
                         </div>
                     </div>
-                    
+
                     <div class="text-muted small font-monospace bg-light p-2 rounded">
-                        📊 <span class="recipe-kcal">{{ plan[i].calories }}</span> kcal | 
-                        E: <span class="recipe-protein">{{ plan[i].protein }}</span>g | 
-                        K: <span class="recipe-carbs">{{ plan[i].carbs }}</span>g | 
+                        📊 <span class="recipe-kcal">{{ plan[i].calories }}</span> kcal |
+                        E: <span class="recipe-protein">{{ plan[i].protein }}</span>g |
+                        K: <span class="recipe-carbs">{{ plan[i].carbs }}</span>g |
                         F: <span class="recipe-fat">{{ plan[i].fat }}</span>g
                     </div>
+                </div>
+                {% else %}
+                <div class="list-group-item p-3 text-center text-muted"
+                     id="day-card-{{ i }}"
+                     data-recipe-id=""
+                     data-category-id="">
+                    <h5 class="fw-bold mb-1">{{ days[i] }}</h5>
+                    {% if i in excluded_days %}
+                    <span>🚫 Von der Planung ausgenommen</span>
+                    {% else %}
+                    <span>Kein passendes Rezept verfügbar</span>
+                    {% endif %}
                 </div>
                 {% endif %}
                 {% endfor %}
@@ -57,25 +69,29 @@
 </div>
 
 <script>
-// Initialisiere die Rezepte im JavaScript-Speicher
+// Initialisiere die Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept)
 let weeklyPlanRecipes = [];
 
-{% for recipe in plan %}
+{% for i in range(7) %}
+{% if plan[i] %}
 weeklyPlanRecipes.push({
-    id: parseInt("{{ recipe.id }}"),
-    name: "{{ recipe.name }}",
-    category_id: parseInt("{{ recipe.category_id }}"),
-    category_name: "{{ recipe.category.name }}",
-    calories: parseInt("{{ recipe.calories or 0 }}"),
-    protein: parseFloat("{{ recipe.protein or 0 }}"),
-    carbs: parseFloat("{{ recipe.carbs or 0 }}"),
-    fat: parseFloat("{{ recipe.fat or 0 }}"),
+    id: parseInt("{{ plan[i].id }}"),
+    name: "{{ plan[i].name }}",
+    category_id: parseInt("{{ plan[i].category_id }}"),
+    category_name: "{{ plan[i].category.name }}",
+    calories: parseInt("{{ plan[i].calories or 0 }}"),
+    protein: parseFloat("{{ plan[i].protein or 0 }}"),
+    carbs: parseFloat("{{ plan[i].carbs or 0 }}"),
+    fat: parseFloat("{{ plan[i].fat or 0 }}"),
     ingredients: [
-        {% for ing in recipe.ingredients %}
+        {% for ing in plan[i].ingredients %}
         { name: "{{ ing.name.strip().title() }}", amount: parseFloat("{{ ing.amount }}"), unit: "{{ ing.unit }}" },
         {% endfor %}
     ]
 });
+{% else %}
+weeklyPlanRecipes.push(null);
+{% endif %}
 {% endfor %}
 
 // Initiales Rendern beim Laden der Seite
@@ -83,15 +99,26 @@ document.addEventListener('DOMContentLoaded', () => {
     rebuildShoppingList();
 });
 
+// Sammelt die aktuellen Rezept-IDs für alle 7 Tage (null, wenn Tag leer/ausgenommen ist)
+function collectCurrentRecipeIds() {
+    const ids = [];
+    for (let i = 0; i < 7; i++) {
+        const card = document.getElementById(`day-card-${i}`);
+        const raw = card ? card.getAttribute('data-recipe-id') : '';
+        const parsed = parseInt(raw);
+        ids.push(isNaN(parsed) ? null : parsed);
+    }
+    return ids;
+}
+
 // Funktion zum Neu-Würfeln eines einzelnen Wochentags
 function rerollSingleDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     if (!dayCard) return;
-    
-    // Sammle alle aktuellen Rezept-IDs auf dem Bildschirm
-    const currentRecipeIds = Array.from(document.querySelectorAll('.recipe-day-card'))
-                                  .map(card => parseInt(card.getAttribute('data-recipe-id')));
-    
+
+    // Sammle die Rezept-IDs aller 7 Tage (an der jeweils korrekten Position, Lücken = null)
+    const currentRecipeIds = collectCurrentRecipeIds();
+
     // Sende die Anfrage an Flask
     fetch('/reroll-day', {
         method: 'POST',
@@ -109,17 +136,17 @@ function rerollSingleDay(dayIndex) {
         // 1. HTML-Anzeige des Wochentags aktualisieren
         dayCard.setAttribute('data-recipe-id', newRecipe.id);
         dayCard.setAttribute('data-category-id', newRecipe.category_id);
-        
+
         dayCard.querySelector('.recipe-name').textContent = newRecipe.name;
         dayCard.querySelector('.recipe-category').textContent = newRecipe.category_name;
         dayCard.querySelector('.recipe-kcal').textContent = newRecipe.calories;
         dayCard.querySelector('.recipe-protein').textContent = newRecipe.protein;
         dayCard.querySelector('.recipe-carbs').textContent = newRecipe.carbs;
         dayCard.querySelector('.recipe-fat').textContent = newRecipe.fat;
-        
+
         // 2. JavaScript-Speicher aktualisieren
         weeklyPlanRecipes[dayIndex] = newRecipe;
-        
+
         // 3. Einkaufsliste live neu berechnen
         rebuildShoppingList();
     })
@@ -133,7 +160,7 @@ function rebuildShoppingList() {
     const container = document.getElementById('shoppingListContainer');
     const counterBadge = document.getElementById('totalIngredientsCount');
     if (!container) return;
-    
+
     container.innerHTML = '';
     let consolidated = {};
 
@@ -173,7 +200,7 @@ function rebuildShoppingList() {
                 ${item.amount} ${item.unit}
             </span>
         `;
-        
+
         const checkbox = li.querySelector('input[type="checkbox"]');
         checkbox.addEventListener('change', function() {
             const span = li.querySelector('span.text-dark');
@@ -191,4 +218,3 @@ function rebuildShoppingList() {
 }
 </script>
 {% endblock %}
-

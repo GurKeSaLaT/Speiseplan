@@ -145,96 +145,112 @@ def delete_category(id):
     db.session.commit()
     return redirect(url_for('category_manage_view'))
 
-# --- DIESE FUNKTIONEN IN DER APP.PY ERSETZEN ---
+# --- PLANUNGS-LOGIK ---
 
-def get_balanced_category_slots(all_categories):
-    """Hilfsfunktion zur Berechnung der perfekten Kategorie-Verteilung für 7 Tage"""
+def get_balanced_category_slots(all_categories, n=7, preexisting_counts=None):
+    """Hilfsfunktion zur Berechnung einer möglichst gleichmäßigen Kategorie-Verteilung für n Tage.
+    Bereits fest belegte Tage (preexisting_counts) fließen in die Balance mit ein,
+    ohne dass sich die Länge des Ergebnisses (== n) dadurch ändert."""
+    from collections import Counter
     cat_ids = [c.id for c in all_categories]
-    if not cat_ids:
+    if not cat_ids or n <= 0:
         return []
 
-    import random
-    # Regel 1: Wenn es 7 oder mehr Kategorien gibt, wähle 7 eindeutige aus
-    if len(cat_ids) >= 7:
-        return random.sample(cat_ids, 7)
+    counts = Counter(preexisting_counts or {})
+    for cid in cat_ids:
+        counts.setdefault(cid, 0)
 
-    # Regel 2: Wenn es weniger als 7 sind, muss jede vertreten sein und gleich oft vorkommen
-    slots = list(cat_ids) # Jede ist 1x vertreten
-    while len(slots) < 7:
-        # Füge die Kategorien hinzu, die im Slot-Pool aktuell am seltensten sind
-        from collections import Counter
-        counts = Counter(slots)
-        min_count = min(counts.values())
+    slots = []
+    while len(slots) < n:
+        min_count = min(counts[cid] for cid in cat_ids)
         candidates = [cid for cid in cat_ids if counts[cid] == min_count]
-        slots.append(random.choice(candidates))
+        choice = random.choice(candidates)
+        slots.append(choice)
+        counts[choice] += 1
 
     random.shuffle(slots)
     return slots
 
 @app.route('/generate-plan', methods=['POST'])
 def generate_plan():
-    selected_ids = request.form.getlist('selected_recipes')
-    selected_recipes = Recipe.query.filter(Recipe.id.in_(selected_ids)).all()
-
     all_categories = Category.query.all()
 
-    # Berechne den idealen Kategorie-Fahrplan für eine Woche (7 Tage)
-    target_category_ids = get_balanced_category_slots(all_categories)
+    # 1. Formulardaten pro Tag auslesen: feste Zuweisung + Ausnahme-Status
+    excluded_days = set()
+    day_recipe_ids = {}  # Tag-Index -> Rezept-ID (String)
 
-    final_plan = []
+    for i in range(7):
+        if request.form.get(f'day_excluded_{i}') == '1':
+            excluded_days.add(i)
+            continue
+        rid = (request.form.get(f'day_recipe_{i}') or '').strip()
+        if rid:
+            day_recipe_ids[i] = rid
 
-    # 1. Platziere zuerst die vom Nutzer fest ausgewählten Gerichte
-    for recipe in selected_recipes:
-        if len(final_plan) >= 7:
-            break
-        final_plan.append(recipe)
-        # Entferne die Kategorie dieses Rezepts aus unseren Ziel-Slots, um die Balance zu halten
-        if recipe.category_id in target_category_ids:
-            target_category_ids.remove(recipe.category_id)
-        elif target_category_ids:
-            target_category_ids.pop(0) # Fallback, falls der Nutzer exotische Kombinationen wählt
+    # 2. Feste Rezepte anhand ihrer ID nachladen
+    final_plan = [None] * 7
+    used_recipe_ids = set()
 
-    # 2. Fülle die restlichen Tage strikt nach den balancierten Kategorie-Slots auf
-    import random
-    for needed_cat_id in target_category_ids:
-        if len(final_plan) >= 7:
-            break
+    if day_recipe_ids:
+        unique_ids = list(set(day_recipe_ids.values()))
+        recipes_by_id = {str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_ids)).all()}
+        for day_index, rid in day_recipe_ids.items():
+            recipe = recipes_by_id.get(rid)
+            if recipe:
+                final_plan[day_index] = recipe
+                used_recipe_ids.add(recipe.id)
 
-        # Rezepte aus dieser Kategorie suchen, die noch nicht im Plan sind
-        already_included_ids = [r.id for r in final_plan]
+    # 3. Bestimme, welche Tage noch automatisch aufgefüllt werden müssen
+    #    (weder ausgenommen, noch bereits fest belegt)
+    days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
+
+    # 4. Balancierte Kategorie-Slots für die verbleibenden Tage berechnen.
+    #    Bereits fest zugewiesene Tage fließen als Vorbelastung in die Balance ein,
+    #    damit die Anzahl der Slots exakt der Anzahl der aufzufüllenden Tage entspricht.
+    from collections import Counter
+    preexisting_counts = Counter(
+        final_plan[day_index].category_id
+        for day_index in day_recipe_ids
+        if final_plan[day_index] is not None
+    )
+    target_category_ids = get_balanced_category_slots(
+        all_categories, n=len(days_to_fill), preexisting_counts=preexisting_counts
+    )
+
+    # 5. Restliche Tage nacheinander mit passenden, noch nicht verwendeten Rezepten auffüllen
+    for day_index, needed_cat_id in zip(days_to_fill, target_category_ids):
         cat_recipes = Recipe.query.filter(
             Recipe.category_id == needed_cat_id,
-            ~Recipe.id.in_(already_included_ids)
+            ~Recipe.id.in_(used_recipe_ids)
         ).all()
 
+        chosen = None
         if cat_recipes:
-            final_plan.append(random.choice(cat_recipes))
+            chosen = random.choice(cat_recipes)
         else:
-            # Fallback: Wenn die Wunschkategorie leer ist, nimm irgendein anderes freies Rezept
-            fallback_recipes = Recipe.query.filter(~Recipe.id.in_(already_included_ids)).all()
+            fallback_recipes = Recipe.query.filter(~Recipe.id.in_(used_recipe_ids)).all()
             if fallback_recipes:
-                final_plan.append(random.choice(fallback_recipes))
+                chosen = random.choice(fallback_recipes)
 
-    # Sortierung sichern (falls weniger als 7 Rezepte in der DB existieren)
-    shopping_list = {}
-    for recipe in final_plan:
-        for ing in recipe.ingredients:
-            key = (ing.name.strip().title(), ing.unit.strip())
-            shopping_list[key] = shopping_list.get(key, 0) + ing.amount
+        if chosen:
+            final_plan[day_index] = chosen
+            used_recipe_ids.add(chosen.id)
 
-    return render_template('plan.html', plan=final_plan, shopping_list=shopping_list)
+    return render_template('plan.html', plan=final_plan, excluded_days=excluded_days)
 
 
 @app.route('/reroll-day', methods=['POST'])
 def reroll_day():
     data = request.get_json() or {}
-    current_ids = data.get('current_recipe_ids', [])
+    # current_recipe_ids ist jetzt immer 7 Einträge lang; leere/ausgenommene Tage sind null
+    current_ids_raw = data.get('current_recipe_ids', [])
 
-    # KORRIGIERT: Wir erzwingen einen Integer-Typ oder setzen einen sicheren Fallback
     day_index_raw = data.get('day_index')
     day_index = int(day_index_raw) if day_index_raw is not None else 999
 
-    # 1. Analysiere die Kategorien der ANDEREN 6 Tage im aktuellen Plan
+    # Nur echte, gültige IDs für die DB-Abfragen verwenden
+    current_ids = [cid for cid in current_ids_raw if cid]
+
     other_recipes = Recipe.query.filter(Recipe.id.in_(current_ids)).all()
 
     from collections import Counter
@@ -245,29 +261,23 @@ def reroll_day():
     for r in other_recipes:
         other_cat_counts[r.category_id] = other_cat_counts.get(r.category_id, 0) + 1
 
-    # KORRIGIERT: Die Abfrage ist jetzt absolut sicher vor NoneType-Fehlern
-    target_card_recipe_id = current_ids[day_index] if day_index < len(current_ids) else None
+    target_card_recipe_id = current_ids_raw[day_index] if day_index < len(current_ids_raw) else None
     if target_card_recipe_id:
         old_recipe = Recipe.query.get(target_card_recipe_id)
-        if old_recipe and other_cat_counts[old_recipe.category_id] > 0:
+        if old_recipe and other_cat_counts.get(old_recipe.category_id, 0) > 0:
             other_cat_counts[old_recipe.category_id] -= 1
 
-    
-    # 2. Sortiere die Kategorien danach, welche im restlichen Plan am SELTENSTEN vorkommt
     sorted_target_categories = sorted(all_cat_ids, key=lambda cid: other_cat_counts[cid])
 
-    import random
-    # 3. Gehe die seltensten Kategorien nacheinander durch und suche ein freies Rezept
     for best_cat_id in sorted_target_categories:
         chosen_recipe = Recipe.query.filter(
             Recipe.category_id == best_cat_id,
-            ~Recipe.id.in_(current_ids) # Darf an keinem anderen Tag vorkommen
+            ~Recipe.id.in_(current_ids)
         ).all()
 
         if chosen_recipe:
             return jsonify_recipe(random.choice(chosen_recipe))
 
-    # Absoluter Notfall-Fallback: Nimm einfach irgendein freies Rezept, egal welche Kategorie
     fallback_recipes = Recipe.query.filter(~Recipe.id.in_(current_ids)).all()
     if fallback_recipes:
         return jsonify_recipe(random.choice(fallback_recipes))
@@ -289,4 +299,3 @@ def jsonify_recipe(recipe):
     }
 if __name__ == '__main__':
     app.run(debug=True)
-

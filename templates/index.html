@@ -5,7 +5,7 @@
         <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wöchentliche Speiseplanung & Zuweisung </h4>
       </div>
       <div class="card-body p-4">
-        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. </p>
+        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du einen Tag ganz von der Planung ausnehmen. </p>
         <!-- 1. LIVE-SUCHFELD -->
         <div class="mb-4 position-relative">
           <div class="input-group input-group-lg shadow-sm rounded">
@@ -29,12 +29,18 @@
                 <div class="p-3 bg-light rounded border day-dropzone" id="day-zone-{{ i }}" data-day-index="{{ i }}" ondragover="allowDrop(event)" ondrop="drop(event)">
                   <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-1">
                     <span class="fw-bold text-success">{{ days[i] }}</span>
-                    <small class="text-muted slot-status" id="status-{{ i }}">Automatisch auffüllen</small>
+                    <div class="d-flex align-items-center gap-2">
+                      <small class="text-muted slot-status" id="status-{{ i }}">Automatisch auffüllen</small>
+                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem; line-height: 1.4;" id="exclude-btn-{{ i }}" title="Diesen Tag von der Planung ausnehmen" onclick="toggleExcludeDay({{ i }})">🚫</button>
+                    </div>
                   </div>
                   <!-- Container für das zugewiesene Gericht -->
                   <div class="recipe-slot-container" style="min-height: 54px;">
                     <!-- Wird per JS dynamisch befüllt -->
                   </div>
+                  <!-- Persistente, tag-gebundene Formularfelder (unabhängig vom Kärtchen) -->
+                  <input type="hidden" name="day_recipe_{{ i }}" id="day-recipe-input-{{ i }}" value="">
+                  <input type="hidden" name="day_excluded_{{ i }}" id="day-excluded-input-{{ i }}" value="0">
                 </div>
               </div> {% endfor %} </div>
           </div>
@@ -58,6 +64,15 @@
     transform: scale(1.02);
   }
 
+  .day-dropzone.excluded {
+    background-color: #eee !important;
+    opacity: 0.55;
+  }
+
+  .day-dropzone.excluded .recipe-slot-container {
+    pointer-events: none;
+  }
+
   .draggable-recipe-card {
     cursor: grab;
     transition: transform 0.1s ease;
@@ -76,6 +91,9 @@
   const searchItems = document.querySelectorAll('.search-item');
   // Speichert die IDs der aktuell verplanten Gerichte, um Duplikate zu verhindern
   let assignedRecipeIds = new Set();
+  // Speichert, welche Tage (Index 0-6) von der Planung ausgenommen sind
+  let excludedDays = new Set();
+
   // 1. Live-Suche beim Tippen filtern
   searchInput.addEventListener('input', function() {
     const query = this.value.toLowerCase().trim();
@@ -116,10 +134,12 @@
       const recipeId = this.getAttribute('data-id');
       const recipeName = this.getAttribute('data-name');
       const categoryName = this.getAttribute('data-category');
-      // Finde die erste Dropzone, die noch kein Rezept-Kärtchen enthält
-      const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone => zone.querySelector('.draggable-recipe-card') === null);
+      // Finde die erste Dropzone, die weder ausgenommen ist noch bereits ein Rezept enthält
+      const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone =>
+        !zone.classList.contains('excluded') && zone.querySelector('.draggable-recipe-card') === null
+      );
       if (!freeZone) {
-        alert("Alle 7 Tage sind bereits fest belegt!");
+        alert("Es ist kein freier Tag mehr verfügbar!");
         searchInput.value = '';
         searchResults.style.display = 'none';
         return;
@@ -139,7 +159,12 @@
     statusText.textContent = "Fest verplant";
     statusText.classList.remove('text-muted');
     statusText.classList.add('text-dark', 'fw-bold');
-    // Erstelle das ziehbare Kärtchen
+
+    // Das persistente, tag-gebundene Formularfeld auf diese Rezept-ID setzen
+    const dayInput = document.getElementById('day-recipe-input-' + dayIndex);
+    if (dayInput) dayInput.value = id;
+
+    // Erstelle das ziehbare Kärtchen (rein visuell, ohne eigenes Formularfeld)
     const card = document.createElement('div');
     card.className = 'p-2 bg-white rounded border draggable-recipe-card d-flex justify-content-between align-items-center animate-fade-in';
     card.setAttribute('draggable', 'true');
@@ -150,14 +175,11 @@
     // Drag-Events an das Kärtchen hängen
     card.ondragstart = dragStart;
     card.innerHTML = `
-        
-		<div style="max-width: 85%;">
-			<!-- Verstecktes Input-Feld schickt den Wert an Flask. Der Name 'selected_recipes' bleibt gleich -->
-			<input type="hidden" name="selected_recipes" value="${id}">
-				<strong class="text-dark small d-block text-truncate">${name}</strong>
-				<span class="badge badge-category" style="font-size: 0.7rem;">${category}</span>
-			</div>
-			<button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeRecipeFromZone('${id}', '${dayIndex}')">❌</button>
+        <div style="max-width: 85%;">
+            <strong class="text-dark small d-block text-truncate">${name}</strong>
+            <span class="badge badge-category" style="font-size: 0.7rem;">${category}</span>
+        </div>
+        <button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeRecipeFromZone('${id}', '${dayIndex}')">❌</button>
     `;
     slotContainer.innerHTML = '';
     slotContainer.appendChild(card);
@@ -173,6 +195,8 @@
       statusText.classList.remove('text-dark', 'fw-bold');
       statusText.classList.add('text-muted');
     }
+    const dayInput = document.getElementById('day-recipe-input-' + dayIndex);
+    if (dayInput) dayInput.value = '';
   }
 
   function clearAllDays() {
@@ -183,8 +207,51 @@
       statusText.textContent = "Automatisch auffüllen";
       statusText.classList.remove('text-dark', 'fw-bold');
       statusText.classList.add('text-muted');
+      const dayIndex = zone.getAttribute('data-day-index');
+      const dayInput = document.getElementById('day-recipe-input-' + dayIndex);
+      if (dayInput) dayInput.value = '';
     });
   }
+
+  // 5. Funktion: Tag von der Planung ausnehmen / wieder einschließen
+  function toggleExcludeDay(dayIndex) {
+    const zone = document.getElementById('day-zone-' + dayIndex);
+    const excludedInput = document.getElementById('day-excluded-input-' + dayIndex);
+    const excludeBtn = document.getElementById('exclude-btn-' + dayIndex);
+    const statusText = zone.querySelector('.slot-status');
+    if (!zone || !excludedInput) return;
+
+    const isCurrentlyExcluded = zone.classList.contains('excluded');
+
+    if (isCurrentlyExcluded) {
+      // Tag wieder einschließen
+      zone.classList.remove('excluded');
+      excludedInput.value = '0';
+      excludedDays.delete(parseInt(dayIndex));
+      statusText.textContent = "Automatisch auffüllen";
+      statusText.classList.remove('text-dark', 'fw-bold');
+      statusText.classList.add('text-muted');
+      excludeBtn.classList.remove('btn-danger');
+      excludeBtn.classList.add('btn-outline-secondary');
+      excludeBtn.title = "Diesen Tag von der Planung ausnehmen";
+    } else {
+      // Vorher zugewiesenes Rezept entfernen, dann Tag ausnehmen
+      const existingCard = zone.querySelector('.draggable-recipe-card');
+      if (existingCard) {
+        removeRecipeFromZone(existingCard.getAttribute('data-id'), dayIndex);
+      }
+      zone.classList.add('excluded');
+      excludedInput.value = '1';
+      excludedDays.add(parseInt(dayIndex));
+      statusText.textContent = "Ausgenommen";
+      statusText.classList.remove('text-muted');
+      statusText.classList.add('text-dark', 'fw-bold');
+      excludeBtn.classList.remove('btn-outline-secondary');
+      excludeBtn.classList.add('btn-danger');
+      excludeBtn.title = "Diesen Tag wieder in die Planung aufnehmen";
+    }
+  }
+
   // --- NATIVE DRAG AND DROP IMPLEMENTIERUNG ---
   function dragStart(event) {
     // Speichere die ID des Kärtchens, das gezogen wird, sowie die alte Zone
@@ -193,8 +260,11 @@
   }
 
   function allowDrop(event) {
-    event.preventDefault();
     const zone = event.target.closest('.day-dropzone');
+    if (zone && zone.classList.contains('excluded')) {
+      return; // Kein Drop auf ausgenommene Tage erlauben
+    }
+    event.preventDefault();
     if (zone) {
       zone.classList.add('drag-over');
     }
@@ -207,13 +277,14 @@
   function drop(event) {
     event.preventDefault();
     const targetZone = event.target.closest('.day-dropzone');
-    if (!targetZone) return;
+    if (!targetZone || targetZone.classList.contains('excluded')) return;
     targetZone.classList.remove('drag-over');
     const cardId = event.dataTransfer.getData("text/plain");
     const sourceZoneId = event.dataTransfer.getData("source-zone-id");
     const cardElement = document.getElementById(cardId);
     if (!cardElement || sourceZoneId === targetZone.id) return;
     const sourceZone = document.getElementById(sourceZoneId);
+    const sourceDayIndex = sourceZone.getAttribute('data-day-index');
     // Daten des gezogenen Elements extrahieren
     const id = cardElement.getAttribute('data-id');
     const name = cardElement.getAttribute('data-name');
@@ -225,14 +296,16 @@
       const targetName = existingTargetCard.getAttribute('data-name');
       const targetCategory = existingTargetCard.getAttribute('data-category'); // Setze das Ziel-Gericht in die Ursprungs-Zone zurück
       assignRecipeToZone(sourceZone, targetId, targetName, targetCategory);
-    } else { // Wenn die alte Zone nach dem Verschieben leer wird, Status zurücksetzen
+    } else { // Wenn die alte Zone nach dem Verschieben leer wird, Status und Formularfeld zurücksetzen
       sourceZone.querySelector('.recipe-slot-container').innerHTML = '';
       const sourceStatus = sourceZone.querySelector('.slot-status');
       sourceStatus.textContent = "Automatisch auffüllen";
       sourceStatus.classList.remove('text-dark', 'fw-bold');
       sourceStatus.classList.add('text-muted');
+      const sourceInput = document.getElementById('day-recipe-input-' + sourceDayIndex);
+      if (sourceInput) sourceInput.value = '';
     } // Setze das gezogene Gericht fest in die neue Zielzone
     assignRecipeToZone(targetZone, id, name, category);
   }
-  </script>
-  {% endblock %}
+</script>
+{% endblock %}
