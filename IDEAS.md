@@ -28,28 +28,35 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    automatischen Auffüllen und beim Würfeln berücksichtigt wird - z.B.
    Kürbisgerichte nur im Herbst, Grillgerichte nur im Sommer.
 
+5. **Nährwerte aus den Zutaten errechnen.** Statt Kalorien/Eiweiß/Kohlenhydrate/
+   Fett manuell pro Rezept einzutragen, direkt aus den hinterlegten Zutaten
+   und deren Menge berechnen. Braucht eine Nährwert-Referenz pro Zutat
+   (z.B. Werte je 100g an `Ingredient`/eine eigene Zutaten-Stammdaten-Tabelle)
+   plus Einheiten-Umrechnung (g/ml/Stück), da `Ingredient.unit` aktuell
+   Freitext ist.
+
 ## Weitere Ideen (von Claude vorgeschlagen)
 
-5. **Wiederholungssperre über mehrere Wochen.** Aktuell wird ein generierter
+6. **Wiederholungssperre über mehrere Wochen.** Aktuell wird ein generierter
    Plan nicht gespeichert, daher kann sich ein Gericht direkt in der
    Folgewoche wiederholen. Mit einer kleinen Plan-Historie (letzte
    Erstellungsdaten pro Rezept) ließe sich das bei der automatischen Auswahl
    vermeiden.
 
-6. **Favoriten/Bewertung.** Rezepte markieren oder bewerten (z.B. Sterne),
+7. **Favoriten/Bewertung.** Rezepte markieren oder bewerten (z.B. Sterne),
    sodass beliebte Gerichte beim Würfeln häufiger drankommen als selten
    gekochte.
 
-7. **Portionsanzahl & Mengenskalierung.** Aktuell sind Nährwerte/Zutaten fix
+8. **Portionsanzahl & Mengenskalierung.** Aktuell sind Nährwerte/Zutaten fix
    "pro Portion" hinterlegt. Eine Personenzahl je Plan (oder je Tag) würde
    die Einkaufsliste automatisch mit hochrechnen.
 
-8. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
+9. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
    Bereich gruppieren (Gemüse, Milchprodukte, Tiefkühl, ...) statt nur
    alphabetisch, um den Einkauf zu erleichtern.
 
-9. **Wochen-Nährwertübersicht.** Summe/Durchschnitt von Kalorien und Makros
-   über die ganze Woche anzeigen, nicht nur pro Tag.
+10. **Wochen-Nährwertübersicht.** Summe/Durchschnitt von Kalorien und Makros
+    über die ganze Woche anzeigen, nicht nur pro Tag.
 
-10. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
+11. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
     Quelle importieren, statt jede Zutat manuell einzutippen.
