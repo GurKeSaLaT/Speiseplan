@@ -3,15 +3,73 @@
 
 <!-- WOCHEN-NAVIGATION -->
 <div class="card shadow-sm border-0 mb-3">
-    <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <a href="{{ url_for('week_view', start_date=prev_start) }}" class="btn btn-outline-secondary">← Vorherige Woche</a>
-        <div class="d-flex align-items-center gap-2">
-            <strong class="fs-5">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</strong>
-            <input type="date" class="form-control form-control-sm" style="width: auto;" value="{{ start_date.isoformat() }}" onchange="if (this.value) location.href = '/plan/' + this.value;" title="Zu einer bestimmten Woche springen">
+    <div class="card-body p-3">
+        <div class="week-nav d-flex flex-wrap align-items-center">
+            <a href="{{ url_for('week_view', start_date=prev_start) }}" class="btn btn-outline-secondary week-nav-prev">
+                <span class="d-none d-sm-inline">← Vorherige Woche</span>
+                <span class="d-sm-none">←</span>
+            </a>
+            <div class="week-nav-date d-flex align-items-center justify-content-center gap-2">
+                <strong class="fs-5">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</strong>
+                <input type="text" id="weekDateDisplay" class="form-control form-control-sm" readonly style="width: 110px; cursor: pointer; background: white;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="Zu einer bestimmten Woche springen">
+                <input type="date" id="weekDatePicker" value="{{ start_date.isoformat() }}" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
+            </div>
+            <a href="{{ url_for('week_view', start_date=next_start) }}" class="btn btn-outline-secondary week-nav-next">
+                <span class="d-none d-sm-inline">Nächste Woche →</span>
+                <span class="d-sm-none">→</span>
+            </a>
         </div>
-        <a href="{{ url_for('week_view', start_date=next_start) }}" class="btn btn-outline-secondary">Nächste Woche →</a>
     </div>
 </div>
+
+<style>
+.week-nav-prev { order: 1; }
+.week-nav-next { order: 2; }
+.week-nav-date {
+    order: 3;
+    flex-basis: 100%;
+    margin-top: 0.5rem;
+}
+@media (min-width: 576px) {
+    .week-nav {
+        justify-content: space-between;
+    }
+    .week-nav-date {
+        order: 2;
+        flex-basis: auto;
+        margin-top: 0;
+    }
+    .week-nav-next {
+        order: 3;
+    }
+}
+</style>
+
+<script>
+// Datumsanzeige/-sprung: eigenes dd.mm.yyyy-Textfeld statt des Browser-lokalisierten
+// <input type="date">-Anzeigetexts (der z.B. in Chrome je nach Systemsprache
+// mm/dd/yyyy zeigen kann). Der native Picker bleibt fürs Kalender-Popup erhalten,
+// ist aber unsichtbar und wird per Klick auf das Textfeld geöffnet.
+(function() {
+    const display = document.getElementById('weekDateDisplay');
+    const picker = document.getElementById('weekDatePicker');
+    if (!display || !picker) return;
+
+    display.addEventListener('click', () => {
+        if (picker.showPicker) {
+            picker.showPicker();
+        } else {
+            picker.focus();
+        }
+    });
+
+    picker.addEventListener('change', () => {
+        if (picker.value) {
+            location.href = '/plan/' + picker.value;
+        }
+    });
+})();
+</script>
 
 {% if not has_any_data %}
 <!-- WOCHE OHNE PLAN -->
