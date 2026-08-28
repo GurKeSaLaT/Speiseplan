@@ -13,6 +13,10 @@ class Recipe(db.Model):
     name = db.Column(db.String(100), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     is_side_dish = db.Column(db.Boolean, default=False, nullable=False)
+    # Für wie viele Personen die eingetragenen Zutatenmengen ausgelegt sind.
+    # Nährwerte bleiben davon unberührt (die sind pro Portion/Person), nur die
+    # Zutatenmengen für die Einkaufsliste werden anhand dessen hoch-/runtergerechnet.
+    servings = db.Column(db.Integer, nullable=False, default=2)
 
     # Nährwerte
     calories = db.Column(db.Integer, default=0)

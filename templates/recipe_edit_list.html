@@ -14,6 +14,7 @@
                         <div>
                             <strong class="d-block fs-5 text-dark">{{ recipe.name }}</strong>
                             <span class="badge bg-secondary px-2 py-1 font-monospace" style="font-size: 0.75rem;">{{ recipe.category.name }}</span>
+                            <span class="badge bg-secondary px-2 py-1 font-monospace" style="font-size: 0.75rem;">👥 {{ recipe.servings }}</span>
                             {% if recipe.is_side_dish %}
                             <span class="badge bg-info text-dark px-2 py-1" style="font-size: 0.75rem;">🥗 Beilage</span>
                             {% endif %}
@@ -102,6 +103,12 @@
                         <div class="col-3"><label class="small text-muted mb-0">Eiweiß</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm" value="{{ recipe.protein }}"></div>
                         <div class="col-3"><label class="small text-muted mb-0">Kohlh.</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm" value="{{ recipe.carbs }}"></div>
                         <div class="col-3"><label class="small text-muted mb-0">Fett</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm" value="{{ recipe.fat }}"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Personen</label>
+                        <input type="number" name="servings" class="form-control form-control-sm" style="max-width: 100px;" min="1" step="1" value="{{ recipe.servings }}" required>
+                        <div class="form-text">Für wie viele Personen sind die Zutatenmengen ausgelegt?</div>
                     </div>
 
                     <h6 class="border-bottom pb-1 mb-2 text-muted">Zutaten</h6>

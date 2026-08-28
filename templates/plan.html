@@ -23,6 +23,11 @@
                      ondragleave="event.currentTarget.classList.remove('drag-over')"
                      ondrop="daySwapDrop(event)">
 
+                    <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
+                        <label class="small text-muted mb-0" for="servings-{{ i }}">👥 Personen</label>
+                        <input type="number" id="servings-{{ i }}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="2" onchange="updateDayServings({{ i }}, this.value)">
+                    </div>
+
                     {% if plan[i] %}
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <div>
@@ -110,6 +115,10 @@
 const dayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 // Merkt sich, welche Tage von der Hauptgericht-Planung ausgenommen sind (Index = Wochentag)
 let dayExcluded = [{% for i in range(7) %}{{ 'true' if i in excluded_days else 'false' }}{{ ', ' if not loop.last }}{% endfor %}];
+// Für wie viele Personen an jedem Wochentag eingekauft werden soll (Index = Wochentag,
+// Default 2). Bleibt an den Wochentag gebunden, nicht ans Gericht - wandert beim
+// Tage-Tausch also NICHT mit.
+let dayServings = new Array(7).fill(2);
 
 // Initialisiere die Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept)
 let weeklyPlanRecipes = [];
@@ -123,6 +132,7 @@ weeklyPlanRecipes.push({
     name: "{{ plan[i].name }}",
     category_id: parseInt("{{ plan[i].category_id }}"),
     category_name: "{{ plan[i].category.name }}",
+    servings: parseInt("{{ plan[i].servings }}"),
     calories: parseInt("{{ plan[i].calories or 0 }}"),
     protein: parseFloat("{{ plan[i].protein or 0 }}"),
     carbs: parseFloat("{{ plan[i].carbs or 0 }}"),
@@ -142,6 +152,7 @@ weeklySideRecipes.push({
     name: "{{ side_plan[i].name }}",
     category_id: parseInt("{{ side_plan[i].category_id }}"),
     category_name: "{{ side_plan[i].category.name }}",
+    servings: parseInt("{{ side_plan[i].servings }}"),
     calories: parseInt("{{ side_plan[i].calories or 0 }}"),
     protein: parseFloat("{{ side_plan[i].protein or 0 }}"),
     carbs: parseFloat("{{ side_plan[i].carbs or 0 }}"),
@@ -250,9 +261,17 @@ function renderSideRow(dayIndex, recipe) {
     return `<button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay(${dayIndex})">🥗 Beilage würfeln</button>`;
 }
 
-// Baut den kompletten Innenbereich einer Tageskarte (Hauptgericht-Block + Beilagen-Zeile)
-// aus dem aktuellen JavaScript-Speicher auf - wird nach einem Tage-Tausch pro Tag neu gerendert
+// Baut den kompletten Innenbereich einer Tageskarte (Personen-Zeile + Hauptgericht-Block
+// + Beilagen-Zeile) aus dem aktuellen JavaScript-Speicher auf - wird nach einem
+// Tage-Tausch pro Tag neu gerendert
 function renderDayCardBody(dayIndex) {
+    const servingsHtml = `
+        <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
+            <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Personen</label>
+            <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
+        </div>
+    `;
+
     const recipe = weeklyPlanRecipes[dayIndex];
     let mainHtml;
     if (recipe) {
@@ -286,7 +305,14 @@ function renderDayCardBody(dayIndex) {
 
     const sideHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSideRow(dayIndex, weeklySideRecipes[dayIndex])}</div>`;
 
-    return mainHtml + sideHtml;
+    return servingsHtml + mainHtml + sideHtml;
+}
+
+// Setzt die Personenzahl für einen Wochentag und rechnet die Einkaufsliste neu hoch
+function updateDayServings(dayIndex, value) {
+    const n = parseInt(value);
+    dayServings[dayIndex] = (isNaN(n) || n < 1) ? 1 : n;
+    rebuildShoppingList();
 }
 
 // Aktualisiert Datenattribute und Inhalt einer Tageskarte anhand des aktuellen
@@ -387,18 +413,25 @@ function rebuildShoppingList() {
     container.innerHTML = '';
     let consolidated = {};
 
-    [...weeklyPlanRecipes, ...weeklySideRecipes].forEach(recipe => {
-        if (recipe && recipe.ingredients) {
-            recipe.ingredients.forEach(ing => {
-                const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
-                if (consolidated[key]) {
-                    consolidated[key].amount += ing.amount;
-                } else {
-                    consolidated[key] = { name: ing.name, amount: ing.amount, unit: ing.unit };
-                }
-            });
-        }
-    });
+    // Zutatenmengen werden pro Tag auf die dort eingestellte Personenzahl hochgerechnet
+    // (Verhältnis zur Portionsangabe des jeweiligen Rezepts) - Nährwerte bleiben davon
+    // unberührt, die sind immer pro Portion/Person.
+    for (let i = 0; i < 7; i++) {
+        [weeklyPlanRecipes[i], weeklySideRecipes[i]].forEach(recipe => {
+            if (recipe && recipe.ingredients) {
+                const factor = recipe.servings ? dayServings[i] / recipe.servings : 1;
+                recipe.ingredients.forEach(ing => {
+                    const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
+                    const scaledAmount = ing.amount * factor;
+                    if (consolidated[key]) {
+                        consolidated[key].amount += scaledAmount;
+                    } else {
+                        consolidated[key] = { name: ing.name, amount: scaledAmount, unit: ing.unit };
+                    }
+                });
+            }
+        });
+    }
 
     const items = Object.values(consolidated);
     if (counterBadge) counterBadge.textContent = items.length;
@@ -414,13 +447,16 @@ function rebuildShoppingList() {
     items.forEach(item => {
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
+        // Auf 2 Nachkommastellen runden, um Fließkomma-Artefakte durch die
+        // Personen-Skalierung zu vermeiden (z.B. 133.33333333333334 -> 133.33)
+        const displayAmount = Math.round(item.amount * 100) / 100;
         li.innerHTML = `
             <label class="d-flex align-items-center m-0 flex-grow-1" style="cursor: pointer;">
                 <input type="checkbox" class="form-check-input me-3" style="transform: scale(1.15);">
                 <span class="text-dark fs-5">${item.name}</span>
             </label>
             <span class="badge bg-success px-3 py-2 rounded-pill font-monospace" style="background-color: var(--primary-food) !important; font-size: 0.9rem;">
-                ${item.amount} ${item.unit}
+                ${displayAmount} ${item.unit}
             </span>
         `;
 

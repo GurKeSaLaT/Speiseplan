@@ -117,6 +117,9 @@ def init_db():
     if 'is_side_dish' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_side_dish BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
+    if 'servings' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN servings INTEGER NOT NULL DEFAULT 2"))
+        db.session.commit()
 
     # Migration: die frühere einzelne season-Spalte gibt es nicht mehr (ersetzt durch
     # die recipe_season-Tabelle, die mehrere Zeiträume pro Rezept erlaubt). Bestehende
@@ -228,11 +231,12 @@ def add_recipe():
     carbs = float(request.form.get('carbs') or 0)
     fat = float(request.form.get('fat') or 0)
     is_side_dish = request.form.get('is_side_dish') == '1'
+    servings = max(1, int(request.form.get('servings') or 2))
 
     new_recipe = Recipe(
         name=name, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat,
-        is_side_dish=is_side_dish
+        is_side_dish=is_side_dish, servings=servings
     )
     db.session.add(new_recipe)
     db.session.flush()
@@ -265,6 +269,7 @@ def edit_recipe(id):
     recipe.carbs = float(request.form.get('carbs') or 0)
     recipe.fat = float(request.form.get('fat') or 0)
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
+    recipe.servings = max(1, int(request.form.get('servings') or 2))
 
     save_recipe_seasons(recipe.id, request.form)
 
@@ -542,6 +547,7 @@ def jsonify_recipe(recipe):
         "name": recipe.name,
         "category_name": recipe.category.name,
         "category_id": recipe.category_id,
+        "servings": recipe.servings,
         "calories": recipe.calories,
         "protein": recipe.protein,
         "carbs": recipe.carbs,
