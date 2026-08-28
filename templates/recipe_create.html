@@ -16,6 +16,7 @@
             </div>
             <div class="card-body p-4">
                 <form action="/add-recipe" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label class="form-label fw-bold">Name des Gerichts</label>
                         <input type="text" name="name" class="form-control" required placeholder="z.B. Spaghetti Bolognese">

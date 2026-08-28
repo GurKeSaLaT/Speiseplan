@@ -11,9 +11,11 @@ Anwendungs-Setup.
 """
 
 import os
+import secrets
 
 from sqlalchemy import text
 from flask import Flask
+from flask_wtf import CSRFProtect
 
 from models import db, Category, RecipeSeason
 from services.seasons import SEASON_PRESETS
@@ -31,6 +33,48 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 os.makedirs(app.instance_path, exist_ok=True)
 db.init_app(app)
+
+
+def load_or_create_secret_key():
+    """Liefert den geheimen Schlüssel, mit dem Flask Sessions und
+    CSRF-Tokens signiert (siehe CSRFProtect unten - Flask-WTF speichert den
+    CSRF-Token serverseitig in der signierten Session-Cookie, OHNE dass die
+    App dafür ein eigenes Login/eine eigene Session-Verwaltung braucht).
+
+    Kann über die Umgebungsvariable SECRET_KEY fest vorgegeben werden
+    (sinnvoll, falls mehrere Container-Instanzen denselben Schlüssel
+    brauchen); ist sie nicht gesetzt, wird EINMALIG ein zufälliger
+    Schlüssel erzeugt und in instance/secret_key abgelegt - im selben,
+    dauerhaft gemounteten Ordner wie die Datenbank, damit der Schlüssel
+    (und damit die Gültigkeit ausgestellter CSRF-Tokens/Sessions) einen
+    Container-Neustart übersteht. Ein bei jedem Neustart neu gewürfelter
+    Schlüssel würde sonst alle gerade offenen Formulare im Browser
+    ungültig machen.
+    """
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key:
+        return env_key
+
+    key_path = os.path.join(app.instance_path, 'secret_key')
+    if os.path.exists(key_path):
+        with open(key_path, 'r') as f:
+            return f.read().strip()
+
+    new_key = secrets.token_hex(32)
+    with open(key_path, 'w') as f:
+        f.write(new_key)
+    return new_key
+
+
+app.config['SECRET_KEY'] = load_or_create_secret_key()
+# Schützt alle POST/PUT/PATCH/DELETE-Routen automatisch vor Cross-Site-
+# Request-Forgery: ein Formular-Feld bzw. ein X-CSRFToken-Header mit
+# gültigem, zur Session passendem Token wird ab jetzt bei jedem
+# schreibenden Request verlangt (siehe csrf_token() in den Templates und
+# window.CSRF_TOKEN in base.html für die fetch()-Aufrufe in plan.js) - ohne
+# das würde jede fremde Webseite, die im selben Browser geöffnet ist,
+# unbemerkt Schreibaktionen (Rezept löschen o.ä.) auslösen können.
+CSRFProtect(app)
 
 # Jeder Blueprint bringt seinen eigenen URL-Namensraum mit (z.B. wird aus
 # der Funktion week_view in plan_bp der Endpunkt "plan.week_view", wie er
@@ -109,6 +153,38 @@ def init_db():
 # mit mehreren Workern, die sonst gleichzeitig migrieren könnten).
 with app.app_context():
     init_db()
+
+
+@app.after_request
+def set_security_headers(response):
+    """Setzt bei JEDER Antwort einen Satz grundlegender Security-Header, die
+    Flask standardmäßig nicht mitschickt (per Pentest am 2026-08-28
+    festgestellt). Kein HSTS, da die App bewusst nur über HTTP im Heimnetz
+    läuft (kein TLS-Zertifikat vorhanden) - ein HSTS-Header ohne HTTPS wäre
+    wirkungslos bzw. irreführend.
+
+    Die Content-Security-Policy erlaubt 'unsafe-inline' für Skripte/Styles,
+    weil die Templates durchgängig mit onclick-Attributen und eingebetteten
+    <style>/<script>-Blöcken arbeiten (kein Nonce-/Hash-basiertes Setup) -
+    verhindert aber weiterhin das Nachladen von Code/Bildern aus fremden
+    Quellen, das Einbetten der Seite in ein fremdes iframe
+    (frame-ancestors) und das Absenden von Formularen an fremde Ziele
+    (form-action).
+    """
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'same-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), camera=(), microphone=()'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    return response
 
 
 @app.context_processor

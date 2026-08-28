@@ -64,6 +64,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form action="/edit-recipe/{{ recipe.id }}" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
                     <div class="mb-2">
                         <label class="form-label small fw-bold">Name des Gerichts</label>
@@ -179,6 +180,14 @@ function deleteRecipeSafely(recipeId, recipeName) {
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/delete-recipe/' + recipeId;
+    // CSRF-Token aus dem <meta>-Tag in base.html - dieses Formular existiert
+    // nur zur Laufzeit im DOM (siehe oben), braucht das Token also genauso
+    // wie jedes server-gerenderte <form>.
+    const tokenInput = document.createElement('input');
+    tokenInput.type = 'hidden';
+    tokenInput.name = 'csrf_token';
+    tokenInput.value = window.CSRF_TOKEN;
+    form.appendChild(tokenInput);
     document.body.appendChild(form);
     form.submit();
 }

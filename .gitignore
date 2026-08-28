@@ -12,5 +12,11 @@ instance/*.db-journal
 instance/*.db-wal
 instance/*.db-shm
 
+# Automatisch generierter Flask-Signierschlüssel (CSRF/Sessions, siehe
+# app.py: load_or_create_secret_key) - pro Umgebung eigenständig erzeugt,
+# gehört NICHT ins Repo (sonst könnten alle Deployments dieselben Tokens
+# fälschen).
+instance/secret_key
+
 # Editor/OS
 .DS_Store

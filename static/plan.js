@@ -61,6 +61,26 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
+ * Führt einen POST-fetch()-Request aus und ergänzt dabei automatisch den
+ * X-CSRFToken-Header (aus window.CSRF_TOKEN, siehe base.html) - alle
+ * schreibenden Endpunkte sind serverseitig per Flask-WTF CSRFProtect
+ * abgesichert (siehe app.py) und lehnen POSTs ohne gültiges Token ab.
+ * Zusätzliche fetch()-Optionen (z.B. ein JSON-Body samt eigenem
+ * Content-Type-Header) können über extraOptions ergänzt werden, ohne den
+ * CSRF-Header jedes Mal von Hand mitschreiben zu müssen.
+ */
+function postWithCsrf(url, extraOptions = {}) {
+    return fetch(url, {
+        method: 'POST',
+        ...extraOptions,
+        headers: {
+            'X-CSRFToken': window.CSRF_TOKEN,
+            ...(extraOptions.headers || {}),
+        },
+    });
+}
+
+/**
  * Würfelt das Hauptgericht eines einzelnen Tages neu (ruft serverseitig
  * reroll_day() in routes/plan.py auf, welche eine zufällige Alternative aus
  * derselben Kategorie wählt, die weder in dieser Woche noch in den
@@ -73,7 +93,7 @@ function rerollSingleDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     if (!dayCard) return;
 
-    fetch(`/day/${dayDates[dayIndex]}/reroll-main`, { method: 'POST' })
+    postWithCsrf(`/day/${dayDates[dayIndex]}/reroll-main`)
     .then(response => {
         if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Kein alternatives Rezept verfügbar.'); });
         return response.json();
@@ -205,8 +225,7 @@ function updateDayServings(dayIndex, value) {
     dayServings[dayIndex] = servings;
     rebuildShoppingList();
 
-    fetch(`/day/${dayDates[dayIndex]}/servings`, {
-        method: 'POST',
+    postWithCsrf(`/day/${dayDates[dayIndex]}/servings`, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ servings: servings })
     }).catch(() => {
@@ -274,7 +293,7 @@ function daySwapDrop(event) {
     const j = parseInt(targetCard.getAttribute('data-day-index'));
     if (i === j) return;
 
-    fetch(`/day/${dayDates[i]}/swap/${dayDates[j]}`, { method: 'POST' })
+    postWithCsrf(`/day/${dayDates[i]}/swap/${dayDates[j]}`)
     .then(response => {
         if (!response.ok) throw new Error('Tausch fehlgeschlagen.');
         return response.json();
@@ -305,7 +324,7 @@ function rerollSideDay(dayIndex) {
     const sideRow = document.getElementById(`side-row-${dayIndex}`);
     if (!dayCard || !sideRow) return;
 
-    fetch(`/day/${dayDates[dayIndex]}/reroll-side`, { method: 'POST' })
+    postWithCsrf(`/day/${dayDates[dayIndex]}/reroll-side`)
     .then(response => {
         if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine weitere Beilage verfügbar.'); });
         return response.json();
@@ -332,7 +351,7 @@ function removeSideDish(dayIndex) {
     const sideRow = document.getElementById(`side-row-${dayIndex}`);
     if (!dayCard || !sideRow) return;
 
-    fetch(`/day/${dayDates[dayIndex]}/remove-side`, { method: 'POST' })
+    postWithCsrf(`/day/${dayDates[dayIndex]}/remove-side`)
     .then(response => {
         if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
         dayCard.setAttribute('data-side-recipe-id', '');
