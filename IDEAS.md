@@ -14,10 +14,18 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   `assign_balanced_categories()` in `app.py` meidet beim automatischen
   Auffüllen und beim Reroll die Kategorie des direkten Vorgänger-/
   Nachfolgetags, weicht das aber auf statt einen Tag leer zu lassen.
-- **Saison-Zuordnung für Rezepte.** Neues `Recipe.season`-Feld
-  (Frühling/Sommer/Herbst/Winter, leer = ganzjährig). Die automatische
-  Auswahl (`choose_recipe()`) bevorzugt die aktuelle Saison, weicht aber auf
-  jede Saison aus, wenn nötig - manuelle Auswahl ist nie eingeschränkt.
+- **Saison-Zuordnung für Rezepte.** Rezepte können mehrere Standard-Saisons
+  (Frühling/Sommer/Herbst/Winter) und/oder einen eigenen Zeitraum bekommen,
+  leer = ganzjährig. Die automatische Auswahl (`choose_recipe()`) bevorzugt
+  gerade verfügbare Rezepte, weicht aber auf alle aus, wenn nötig - manuelle
+  Auswahl ist nie eingeschränkt.
+- **Portionsanzahl & Mengenskalierung.** Neues `Recipe.servings`-Feld: für
+  wie viele Personen die eingetragenen Zutatenmengen ausgelegt sind. Auf der
+  Plan-Seite hat jeder Wochentag ein eigenes Personen-Feld (Default 2), das
+  die Zutatenmengen dieses Tages in der Einkaufsliste hoch-/runterrechnet.
+  Nährwerte bleiben unskaliert (die sind pro Portion/Person). Die
+  Personenzahl ist an den Wochentag gebunden, nicht ans Gericht - wandert
+  beim Tage-Tausch also nicht mit.
 
 ## Vorgeschlagen
 
@@ -50,16 +58,12 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    sodass beliebte Gerichte beim Würfeln häufiger drankommen als selten
    gekochte.
 
-4. **Portionsanzahl & Mengenskalierung.** Aktuell sind Nährwerte/Zutaten fix
-   "pro Portion" hinterlegt. Eine Personenzahl je Plan (oder je Tag) würde
-   die Einkaufsliste automatisch mit hochrechnen.
-
-5. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
+4. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
    Bereich gruppieren (Gemüse, Milchprodukte, Tiefkühl, ...) statt nur
    alphabetisch, um den Einkauf zu erleichtern.
 
-6. **Wochen-Nährwertübersicht.** Summe/Durchschnitt von Kalorien und Makros
+5. **Wochen-Nährwertübersicht.** Summe/Durchschnitt von Kalorien und Makros
    über die ganze Woche anzeigen, nicht nur pro Tag.
 
-7. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
+6. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
    Quelle importieren, statt jede Zutat manuell einzutippen.
