@@ -9,6 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 # Werkzeug-Debugger im Deployment deaktiviert (RCE-Risiko bei Netzwerk-Erreichbarkeit)
 ENV FLASK_DEBUG=0
+ENV PORT=80
 
 # 4. Anforderungen kopieren und installieren
 COPY requirements.txt .
@@ -18,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 6. Netzwerk-Port für Flask öffnen
-EXPOSE 5000
+EXPOSE 80
 
 # 7. Die App über das produktionsbereite Modul starten
 CMD ["python", "app.py"]
