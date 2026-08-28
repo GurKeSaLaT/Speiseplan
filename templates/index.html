@@ -1,92 +1,87 @@
-{% extends 'base.html' %}
-{% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-9 col-lg-8">
-        <div class="card shadow-sm border-0">
-            <!-- Nutzen der neuen CSS-Klasse für die Card-Header -->
-            <div class="card-header-custom p-3">
-                <h4 class="mb-0 d-flex align-items-center gap-2">
-                    📅 Speiseplan für die Woche erstellen
-                </h4>
-            </div>
-            <div class="card-body p-4">
-                <p class="text-muted">
-                    Suche nach Gerichten oder Kategorien. Klicke sie an, um sie fest für deine Woche einzuloggen. Der Rest wird automatisch aufgefüllt.
-                </p>
-                
-                <!-- LIVE-SUCHFELD -->
-                <div class="mb-4 position-relative">
-                    <div class="input-group input-group-lg shadow-sm rounded">
-                        <span class="input-group-text bg-white border-end-0">🔍</span>
-                        <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Gericht oder Kategorie eingeben..." autocomplete="off">
-                    </div>
-                    
-                    <div id="searchResults" class="list-group shadow position-absolute w-100 mt-1" style="z-index: 1050; max-height: 250px; overflow-y: auto; display: none;">
-                        {% for recipe in recipes %}
-                        <button type="button" 
-                                class="list-group-item list-group-item-action d-flex justify-content-between align-items-center search-item"
-                                style="display: none;"
-                                data-id="{{ recipe.id }}"
-                                data-name="{{ recipe.name }}"
-                                data-category="{{ recipe.category.name }}">
-                            <span class="fw-bold text-dark">{{ recipe.name }}</span>
-                            <!-- Die neue Badge-Klasse -->
-                            <span class="badge badge-category">{{ recipe.category.name }}</span>
-                        </button>
-                        {% endfor %}
-                    </div>
-                </div>
-
-                <!-- HAUPTFORMULAR -->
-                <form action="/generate-plan" method="POST" id="planForm">
-                    
-                    <div class="mb-4">
-			    <h5 class="fw-bold text-dark mb-3 d-flex justify-content-between align-items-center">
-    <!-- Text und Zähler werden in ein eigenes span gepackt, damit sie zusammenbleiben -->
-    <span>
-        📌 Fest gewählte Gerichte <span class="text-muted font-monospace" style="font-size: 0.95rem;">(<span id="selectedCount">0</span>/7)</span>
-    </span>
-
-    <!-- Der Button steht separat und wandert ganz nach rechts -->
-    <button type="button" class="btn btn-sm btn-outline-danger px-3" style="border-radius: 0.5rem; font-weight: 600;" id="clearAllBtn" onclick="clearAllSelected()">
-        Alle entfernen
-    </button>
-</h5>
-
-                       
-                        <div id="selectedRecipesContainer" class="list-group shadow-sm rounded border bg-light p-2" style="min-height: 80px;">
-                            <div id="noSelectionPlaceholder" class="text-center text-muted my-3">
-                                Noch keine Gerichte fest ausgewählt. Nutze die Suche oben!
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Hier kommt der neue primäre Custom-Button zum Einsatz -->
-                    <button type="submit" class="btn btn-primary-custom btn-lg w-100 py-3 shadow">
-                        🎲 Fehlende Tage auffüllen & Plan erstellen
-                    </button>
-                </form>
-
-            </div>
+{% extends 'base.html' %} {% block content %} <div class="row justify-content-center">
+  <div class="col-md-10 col-lg-9">
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header-custom p-3">
+        <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wöchentliche Speiseplanung & Zuweisung </h4>
+      </div>
+      <div class="card-body p-4">
+        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. </p>
+        <!-- 1. LIVE-SUCHFELD -->
+        <div class="mb-4 position-relative">
+          <div class="input-group input-group-lg shadow-sm rounded">
+            <span class="input-group-text bg-white border-end-0">🔍</span>
+            <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Gericht oder Kategorie eingeben..." autocomplete="off">
+          </div>
+          <div id="searchResults" class="list-group shadow position-absolute w-100 mt-1" style="z-index: 1050; max-height: 250px; overflow-y: auto; display: none;"> {% for recipe in recipes %} <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center search-item" style="display: none;" data-id="{{ recipe.id }}" data-name="{{ recipe.name }}" data-category="{{ recipe.category.name }}">
+              <span class="fw-bold text-dark">{{ recipe.name }}</span>
+              <span class="badge badge-category">{{ recipe.category.name }}</span>
+            </button> {% endfor %} </div>
         </div>
+        <!-- HAUPTFORMULAR AN FLASK -->
+        <form action="/generate-plan" method="POST" id="planForm">
+          <!-- 2. BEREICH: DIE 7 WOCHENTAGE AS CONTAINER -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="fw-bold text-dark mb-0">📌 Feste Tageszuweisung</h5>
+              <button type="button" class="btn btn-sm btn-outline-danger" style="border-radius: 0.5rem;" onclick="clearAllDays()">Alle leeren</button>
+            </div>
+            <div class="row g-3"> {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %} {% for i in range(7) %} <div class="col-md-6 col-xl-4">
+                <div class="p-3 bg-light rounded border day-dropzone" id="day-zone-{{ i }}" data-day-index="{{ i }}" ondragover="allowDrop(event)" ondrop="drop(event)">
+                  <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-1">
+                    <span class="fw-bold text-success">{{ days[i] }}</span>
+                    <small class="text-muted slot-status" id="status-{{ i }}">Automatisch auffüllen</small>
+                  </div>
+                  <!-- Container für das zugewiesene Gericht -->
+                  <div class="recipe-slot-container" style="min-height: 54px;">
+                    <!-- Wird per JS dynamisch befüllt -->
+                  </div>
+                </div>
+              </div> {% endfor %} </div>
+          </div>
+          <!-- 3. ABSENDEN -->
+          <button type="submit" class="btn btn-primary-custom btn-lg w-100 py-3 shadow mt-2"> 🎲 Restliche Tage balanciert auffüllen & Plan erstellen </button>
+        </form>
+      </div>
     </div>
+  </div>
 </div>
+<!-- INLINE STYLES FÜR SMOOTH DRAG-AND-DROP VISUALS -->
+<style>
+  .day-dropzone {
+    transition: all 0.2s ease;
+  }
 
+  .day-dropzone.drag-over {
+    background-color: #E8EFEA !important;
+    border-color: var(--primary-food) !important;
+    border-style: dashed !important;
+    transform: scale(1.02);
+  }
+
+  .draggable-recipe-card {
+    cursor: grab;
+    transition: transform 0.1s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  }
+
+  .draggable-recipe-card:active {
+    cursor: grabbing;
+    transform: scale(0.98);
+  }
+</style>
+<!-- DRAG AND DROP & FILTER LOGIK -->
 <script>
-const searchInput = document.getElementById('searchInput');
-const searchResults = document.getElementById('searchResults');
-const searchItems = document.querySelectorAll('.search-item');
-const selectedContainer = document.getElementById('selectedRecipesContainer');
-const placeholder = document.getElementById('noSelectionPlaceholder');
-const selectedCountSpan = document.getElementById('selectedCount');
-
-let selectedRecipeIds = new Set();
-
-searchInput.addEventListener('input', function() {
+  const searchInput = document.getElementById('searchInput');
+  const searchResults = document.getElementById('searchResults');
+  const searchItems = document.querySelectorAll('.search-item');
+  // Speichert die IDs der aktuell verplanten Gerichte, um Duplikate zu verhindern
+  let assignedRecipeIds = new Set();
+  // 1. Live-Suche beim Tippen filtern
+  searchInput.addEventListener('input', function() {
     const query = this.value.toLowerCase().trim();
     if (query.length === 0) {
         searchResults.style.display = 'none';
-        searchItems.forEach(item => item.style.display = 'none');
+        searchItems.forEach(item => item.style.setProperty('display', 'none', 'important'));
         return;
     }
 
@@ -97,7 +92,7 @@ searchInput.addEventListener('input', function() {
         const categoryName = item.getAttribute('data-category').toLowerCase();
 
         if (selectedRecipeIds.has(recipeId)) {
-            item.style.display = 'none';
+            item.style.setProperty('display', 'none', 'important');
             return;
         }
 
@@ -105,88 +100,137 @@ searchInput.addEventListener('input', function() {
             item.style.setProperty('display', 'flex', 'important');
             hasResults = true;
         } else {
-            item.style.display = 'none';
+            item.style.setProperty('display', 'none', 'important');
         }
     });
-
-    if (hasResults) {
-        searchResults.style.display = 'block';
-    } else {
-        searchResults.style.display = 'none';
-    }
-});
-
-document.addEventListener('click', function(e) {
+   searchResults.style.display = hasResults ? 'block' : 'none';
+  });
+  document.addEventListener('click', function(e) {
     if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-        searchResults.style.display = 'none';
+      searchResults.style.display = 'none';
     }
-});
-
-searchItems.forEach(item => {
+  });
+  // 2. Klick auf Suchergebnis -> In den nächsten freien Tag werfen
+  searchItems.forEach(item => {
     item.addEventListener('click', function() {
-        const recipeId = this.getAttribute('data-id');
-        const recipeName = this.getAttribute('data-name');
-        const categoryName = this.getAttribute('data-category');
-
-        if (selectedRecipeIds.size >= 7) {
-            alert("Du kannst maximal 7 Gerichte fest auswählen!");
-            searchInput.value = '';
-            searchResults.style.display = 'none';
-            return;
-        }
-
-        addRecipeToSelection(recipeId, recipeName, categoryName);
+      const recipeId = this.getAttribute('data-id');
+      const recipeName = this.getAttribute('data-name');
+      const categoryName = this.getAttribute('data-category');
+      // Finde die erste Dropzone, die noch kein Rezept-Kärtchen enthält
+      const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone => zone.querySelector('.draggable-recipe-card') === null);
+      if (!freeZone) {
+        alert("Alle 7 Tage sind bereits fest belegt!");
         searchInput.value = '';
         searchResults.style.display = 'none';
-        this.style.display = 'none';
-        searchInput.focus();
+        return;
+      }
+      assignRecipeToZone(freeZone, recipeId, recipeName, categoryName);
+      searchInput.value = '';
+      searchResults.style.display = 'none';
+      searchInput.focus();
     });
-});
-
-function addRecipeToSelection(id, name, category) {
-    selectedRecipeIds.add(id);
-    if (placeholder) placeholder.style.display = 'none';
-
-    const div = document.createElement('div');
-    div.className = 'list-group-item d-flex justify-content-between align-items-center py-2';
-    div.id = 'selected-item-' + id;
-    div.innerHTML = `
-        <div>
-            <input type="hidden" name="selected_recipes" value="${id}">
-            <strong class="text-dark fs-5">${name}</strong>
-            <span class="badge badge-category ms-2">${category}</span>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeRecipeFromSelection('${id}')">
-            ❌
-        </button>
+  });
+  // 3. Funktion: Rezept in eine bestimmte Zone setzen
+  function assignRecipeToZone(zoneElement, id, name, category) {
+    const slotContainer = zoneElement.querySelector('.recipe-slot-container');
+    const statusText = zoneElement.querySelector('.slot-status');
+    const dayIndex = zoneElement.getAttribute('data-day-index');
+    assignedRecipeIds.add(id);
+    statusText.textContent = "Fest verplant";
+    statusText.classList.remove('text-muted');
+    statusText.classList.add('text-dark', 'fw-bold');
+    // Erstelle das ziehbare Kärtchen
+    const card = document.createElement('div');
+    card.className = 'p-2 bg-white rounded border draggable-recipe-card d-flex justify-content-between align-items-center animate-fade-in';
+    card.setAttribute('draggable', 'true');
+    card.setAttribute('id', 'recipe-card-' + id);
+    card.setAttribute('data-id', id);
+    card.setAttribute('data-name', name);
+    card.setAttribute('data-category', category);
+    // Drag-Events an das Kärtchen hängen
+    card.ondragstart = dragStart;
+    card.innerHTML = `
+        
+		<div style="max-width: 85%;">
+			<!-- Verstecktes Input-Feld schickt den Wert an Flask. Der Name 'selected_recipes' bleibt gleich -->
+			<input type="hidden" name="selected_recipes" value="${id}">
+				<strong class="text-dark small d-block text-truncate">${name}</strong>
+				<span class="badge badge-category" style="font-size: 0.7rem;">${category}</span>
+			</div>
+			<button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeRecipeFromZone('${id}', '${dayIndex}')">❌</button>
     `;
-
-    selectedContainer.appendChild(div);
-    updateCounter();
-}
-
-function removeRecipeFromSelection(id) {
-    selectedRecipeIds.delete(id);
-    const element = document.getElementById('selected-item-' + id);
-    if (element) element.remove();
-
-    if (selectedRecipeIds.size === 0) {
-        if (placeholder) placeholder.style.display = 'block';
+    slotContainer.innerHTML = '';
+    slotContainer.appendChild(card);
+  }
+  // 4. Funktion: Gericht von einem Wochentag entfernen ("Kein Essen verplant")
+  function removeRecipeFromZone(id, dayIndex) {
+    assignedRecipeIds.delete(id);
+    const zone = document.getElementById('day-zone-' + dayIndex);
+    if (zone) {
+      zone.querySelector('.recipe-slot-container').innerHTML = '';
+      const statusText = zone.querySelector('.slot-status');
+      statusText.textContent = "Automatisch auffüllen";
+      statusText.classList.remove('text-dark', 'fw-bold');
+      statusText.classList.add('text-muted');
     }
-    updateCounter();
-}
+  }
 
-function clearAllSelected() {
-    selectedRecipeIds.clear();
-    selectedContainer.innerHTML = '';
-    selectedContainer.appendChild(placeholder);
-    if (placeholder) placeholder.style.display = 'block';
-    updateCounter();
-}
+  function clearAllDays() {
+    assignedRecipeIds.clear();
+    document.querySelectorAll('.day-dropzone').forEach(zone => {
+      zone.querySelector('.recipe-slot-container').innerHTML = '';
+      const statusText = zone.querySelector('.slot-status');
+      statusText.textContent = "Automatisch auffüllen";
+      statusText.classList.remove('text-dark', 'fw-bold');
+      statusText.classList.add('text-muted');
+    });
+  }
+  // --- NATIVE DRAG AND DROP IMPLEMENTIERUNG ---
+  function dragStart(event) {
+    // Speichere die ID des Kärtchens, das gezogen wird, sowie die alte Zone
+    event.dataTransfer.setData("text/plain", event.target.id);
+    event.dataTransfer.setData("source-zone-id", event.target.closest('.day-dropzone').id);
+  }
 
-function updateCounter() {
-    selectedCountSpan.textContent = selectedRecipeIds.size;
-}
-</script>
-{% endblock %}
+  function allowDrop(event) {
+    event.preventDefault();
+    const zone = event.target.closest('.day-dropzone');
+    if (zone) {
+      zone.classList.add('drag-over');
+    }
+  }
+  // Entfernt das visuelle Highlight, wenn das Kärtchen die Zone verlässt
+  document.querySelectorAll('.day-dropzone').forEach(zone => {
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  });
 
+  function drop(event) {
+    event.preventDefault();
+    const targetZone = event.target.closest('.day-dropzone');
+    if (!targetZone) return;
+    targetZone.classList.remove('drag-over');
+    const cardId = event.dataTransfer.getData("text/plain");
+    const sourceZoneId = event.dataTransfer.getData("source-zone-id");
+    const cardElement = document.getElementById(cardId);
+    if (!cardElement || sourceZoneId === targetZone.id) return;
+    const sourceZone = document.getElementById(sourceZoneId);
+    // Daten des gezogenen Elements extrahieren
+    const id = cardElement.getAttribute('data-id');
+    const name = cardElement.getAttribute('data-name');
+    const category = cardElement.getAttribute('data-category'); // Prüfen, ob die Zielzone bereits belegt ist
+    const existingTargetCard = targetZone.querySelector('.draggable-recipe-card');
+    if (existingTargetCard) {
+      // TAUSCH-LOGIK: Wenn die Zielzone belegt ist, tauschen wir die Gerichte einfach über Kreuz!
+      const targetId = existingTargetCard.getAttribute('data-id');
+      const targetName = existingTargetCard.getAttribute('data-name');
+      const targetCategory = existingTargetCard.getAttribute('data-category'); // Setze das Ziel-Gericht in die Ursprungs-Zone zurück
+      assignRecipeToZone(sourceZone, targetId, targetName, targetCategory);
+    } else { // Wenn die alte Zone nach dem Verschieben leer wird, Status zurücksetzen
+      sourceZone.querySelector('.recipe-slot-container').innerHTML = '';
+      const sourceStatus = sourceZone.querySelector('.slot-status');
+      sourceStatus.textContent = "Automatisch auffüllen";
+      sourceStatus.classList.remove('text-dark', 'fw-bold');
+      sourceStatus.classList.add('text-muted');
+    } // Setze das gezogene Gericht fest in die neue Zielzone
+    assignRecipeToZone(targetZone, id, name, category);
+  } {% endblock %}
