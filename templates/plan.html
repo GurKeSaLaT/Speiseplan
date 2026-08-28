@@ -9,7 +9,7 @@
                 <span class="d-none d-sm-inline">← Vorherige Woche</span>
                 <span class="d-sm-none">←</span>
             </a>
-            <div class="week-nav-date d-flex align-items-center justify-content-center gap-2">
+            <div class="week-nav-date d-flex flex-wrap align-items-center justify-content-center gap-2">
                 <strong class="fs-5">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</strong>
                 <input type="text" id="weekDateDisplay" class="form-control form-control-sm" readonly style="width: 110px; cursor: pointer; background: white;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="Zu einer bestimmten Woche springen">
                 <input type="date" id="weekDatePicker" value="{{ start_date.isoformat() }}" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
@@ -23,29 +23,21 @@
 </div>
 
 <style>
-/* Grid statt Flexbox: garantiert prev/date/next feste Positionen unabhängig von der
-   Breite - bei Flexbox+wrap bricht jede umgebrochene Zeile einzeln per space-between
-   um, wodurch "Nächste Woche" bei mittleren Breiten links statt rechts landen kann. */
+/* Grid statt Flexbox: garantiert prev/date/next feste Positionen in EINER Zeile,
+   bei jeder Breite - bei Flexbox+wrap bricht jede umgebrochene Zeile einzeln per
+   space-between um, wodurch "Nächste Woche" bei mittleren Breiten links statt
+   rechts landen kann. Wird die Mitte zu schmal, bricht nur ihr eigener Inhalt
+   (Datumsbereich/Textfeld) intern um, prev/next bleiben an ihrem Platz. */
 .week-nav {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas: "prev next" "date date";
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "prev date next";
     align-items: center;
     gap: 0.5rem;
 }
 .week-nav-prev { grid-area: prev; justify-self: start; }
 .week-nav-next { grid-area: next; justify-self: end; }
-.week-nav-date { grid-area: date; justify-self: center; margin-top: 0.5rem; }
-
-@media (min-width: 576px) {
-    .week-nav {
-        grid-template-columns: auto 1fr auto;
-        grid-template-areas: "prev date next";
-    }
-    .week-nav-date {
-        margin-top: 0;
-    }
-}
+.week-nav-date { grid-area: date; justify-self: center; }
 </style>
 
 <script>
