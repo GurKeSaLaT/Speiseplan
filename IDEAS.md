@@ -104,6 +104,18 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   (`ALLOWED_HOSTS`) - ließe sich später um weitere schema.org/Recipe-
   kompatible Kochseiten erweitern, da der Parser selbst nicht
   chefkoch-spezifisch ist.
+- **Hell-/Dunkelmodus.** Drei Einstellungen (System/Hell/Dunkel), Umschalter
+  in der Verwaltung als `btn-check`-Radiogruppe. `templates/base.html`
+  wendet die gespeicherte Einstellung (localStorage, pro Browser/Gerät) ganz
+  am Anfang von `<head>` an, noch vor den CSS-Links, damit kein falsches
+  Theme aufblitzt - über dasselbe `data-bs-theme`-Attribut, auf das
+  Bootstrap 5.3 selbst reagiert und darüber fast alle eigenen Komponenten
+  automatisch anpasst. `static/style.css` definiert dafür eigene Farb-Tokens
+  unter `[data-bs-theme="dark"]` neu, plus gezielte Korrekturen für die
+  wenigen Bootstrap-Klassen (`.text-dark`, `.bg-light`/`.bg-white`,
+  `.btn-dark`/`.btn-outline-dark`, `.bg-dark`), die "dark"/"light" als
+  reinen, nicht themefähigen Farbnamen verstehen statt sich zusammen mit dem
+  Rest der Seite anzupassen.
 
 ## Vorgeschlagen
 

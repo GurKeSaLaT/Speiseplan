@@ -1,8 +1,10 @@
-{# Verwaltungs-Startseite (/manage): reine Übersichtsseite mit drei Kacheln,
-   die zu den eigentlichen Verwaltungsbereichen verlinken (Rezepte anlegen,
-   Rezepte bearbeiten, Kategorien verwalten). Enthält selbst keine Logik -
-   das render_template()-Objekt kommt ohne zusätzliche Variablen aus, siehe
-   routes/manage.py. #}
+{# Verwaltungs-Startseite (/manage): Übersichtsseite mit drei Kacheln, die
+   zu den eigentlichen Verwaltungsbereichen verlinken (Rezepte anlegen,
+   Rezepte bearbeiten, Kategorien verwalten), plus einer vierten Kachel für
+   den Hell-/Dunkelmodus-Umschalter (System/Hell/Dunkel - siehe Skript
+   unten sowie templates/base.html für die eigentliche Anwendungslogik).
+   Enthält sonst selbst keine Logik - das render_template()-Objekt kommt
+   ohne zusätzliche Variablen aus, siehe routes/manage.py. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -46,6 +48,37 @@
                     </div>
                 </div>
             </div>
+
+            {# 4. Darstellung: Hell-/Dunkelmodus-Umschalter mit drei
+               Stellungen (System/Hell/Dunkel), umgesetzt als Bootstrap
+               btn-check-Radiogruppe statt echter Navigation - anders als
+               die drei Kacheln oben führt diese Karte nirgendwo hin,
+               sondern wendet die Auswahl sofort per JavaScript an (siehe
+               Skript unten). "System" (Default) folgt der
+               Betriebssystem-Einstellung, siehe templates/base.html für
+               die eigentliche Umsetzung - die hier nur wiederverwendet
+               wird (window.speiseplanGetThemePreference/
+               speiseplanSetThemePreference), damit die Logik nicht
+               doppelt gepflegt werden muss. #}
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm border-0 transition-card">
+                    <div class="card-body d-flex flex-column p-4">
+                        <div class="fs-1 mb-2">🎨</div>
+                        <h4 class="card-title fw-bold">Darstellung</h4>
+                        <p class="text-muted flex-grow-1">Hell- oder Dunkelmodus, oder automatisch nach Systemeinstellung.</p>
+                        <div class="btn-group w-100 mt-3" role="group" aria-label="Darstellung wählen" id="themeSwitcher">
+                            <input type="radio" class="btn-check" name="themeChoice" id="themeSystem" value="system" autocomplete="off">
+                            <label class="btn btn-outline-dark fw-bold" for="themeSystem">System</label>
+
+                            <input type="radio" class="btn-check" name="themeChoice" id="themeLight" value="light" autocomplete="off">
+                            <label class="btn btn-outline-dark fw-bold" for="themeLight">Hell</label>
+
+                            <input type="radio" class="btn-check" name="themeChoice" id="themeDark" value="dark" autocomplete="off">
+                            <label class="btn btn-outline-dark fw-bold" for="themeDark">Dunkel</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="mt-4">
@@ -53,5 +86,23 @@
         </div>
     </div>
 </div>
+
+<script>
+// Markiert beim Laden der Seite den aktuell aktiven Radio-Button anhand der
+// gespeicherten Einstellung (window.speiseplanGetThemePreference, siehe
+// templates/base.html) und wendet bei jeder Auswahl sofort das neue Theme
+// an (window.speiseplanSetThemePreference speichert UND wendet an).
+document.addEventListener('DOMContentLoaded', () => {
+    const current = window.speiseplanGetThemePreference ? window.speiseplanGetThemePreference() : 'system';
+    const activeRadio = document.querySelector(`#themeSwitcher input[value="${current}"]`);
+    if (activeRadio) activeRadio.checked = true;
+
+    document.querySelectorAll('#themeSwitcher input[name="themeChoice"]').forEach(input => {
+        input.addEventListener('change', () => {
+            if (input.checked) window.speiseplanSetThemePreference(input.value);
+        });
+    });
+});
+</script>
 {% endblock %}
 

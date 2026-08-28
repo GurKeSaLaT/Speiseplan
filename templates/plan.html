@@ -41,7 +41,7 @@
                    im Hintergrund und wird per Klick auf DIESES Feld über
                    showPicker() geöffnet - siehe static/plan.js, unterster
                    Abschnitt. #}
-                <input type="text" id="weekDateDisplay" class="form-control form-control-sm" readonly style="width: 110px; cursor: pointer; background: white;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="Zu einer bestimmten Woche springen">
+                <input type="text" id="weekDateDisplay" class="form-control form-control-sm" readonly style="width: 110px; cursor: pointer; background: var(--card-bg);" value="{{ start_date.strftime('%d.%m.%Y') }}" title="Zu einer bestimmten Woche springen">
                 <input type="date" id="weekDatePicker" value="{{ start_date.isoformat() }}" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
             </div>
             <a href="{{ url_for('plan.week_view', start_date=next_start) }}" class="btn btn-outline-secondary week-nav-next">
@@ -173,7 +173,7 @@
     cursor: grabbing;
 }
 .recipe-day-card.drag-over {
-    background-color: #E8EFEA;
+    background-color: var(--highlight-bg);
 }
 .recipe-day-card.today-card {
     border-left: 4px solid var(--primary-food) !important;

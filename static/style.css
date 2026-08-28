@@ -1,4 +1,12 @@
 /* static/style.css */
+
+/* Helle Standardwerte (auch der Fallback, falls JavaScript deaktiviert ist -
+   ohne das früh in base.html laufende Theme-Skript bleibt data-bs-theme
+   unbesetzt, und :root greift dann ganz normal). --card-bg/--border-subtle/
+   --scrollbar-thumb/--highlight-bg/--excluded-bg sind zusätzliche, rein
+   app-eigene Tokens (kein Bootstrap-Äquivalent) für die Stellen, an denen
+   früher fest verdrahtete Hex-Farben standen (Karten-Hintergrund,
+   Listen-Trennlinien, Scrollbar, Drag-over-/Ausgenommen-Hervorhebung). */
 :root {
     --primary-food: #2E6F40;       /* Salbeigrün */
     --primary-dark: #1E4A2A;       /* Dunkelgrün für Hover */
@@ -6,6 +14,39 @@
     --bg-warm: #F9F9F6;            /* Creme-Weiß */
     --text-dark: #2B302A;          /* Anthrazit-Grün */
     --radius-main: 1rem;           /* 16px abgerundete Ecken */
+
+    --card-bg: #ffffff;
+    --border-subtle: #F1F1EE;
+    --scrollbar-thumb: #D1D1CB;
+    --highlight-bg: #E8EFEA;       /* Drag-over-/Hover-Hervorhebung */
+    --excluded-bg: #eeeeee;        /* von der Planung ausgenommener Tag */
+}
+
+/* --- DUNKELMODUS ---
+   Wird durch das Attribut data-bs-theme="dark" auf <html> aktiviert - je
+   nach gewählter Einstellung (System/Hell/Dunkel) setzt das früh in
+   base.html laufende Theme-Skript dieses Attribut, BEVOR die Seite sichtbar
+   wird (kein Aufblitzen des falschen Modus). Bootstrap 5.3 selbst reagiert
+   auf genau dasselbe Attribut und passt darüber automatisch alle eigenen
+   Komponenten an (Karten, Formulare, Modals, Badges, Navbar, ...) - hier
+   werden nur die APP-EIGENEN Tokens von oben für den Dunkelmodus neu
+   definiert, plus ein paar gezielte Korrekturen für Bootstrap-Klassen, die
+   NICHT automatisch mitziehen (siehe Kommentare unten bei .text-dark/
+   .bg-dark/.btn-dark/.btn-outline-dark - Bootstrap versteht "dark" als
+   Farbnamen, nicht als "passt sich der Umgebung an", wird im Dunkelmodus
+   selbst aber kaum noch sichtbar). */
+[data-bs-theme="dark"] {
+    --primary-food: #4CAE6E;       /* etwas heller als im Hellmodus, sonst zu dunkel auf dunklem Grund */
+    --primary-dark: #3C8E56;
+    --accent-warm: #F4C430;        /* bleibt gut sichtbar, unverändert */
+    --bg-warm: #1B1F1C;            /* dunkler, leicht grünlicher Hintergrund passend zum Farbthema */
+    --text-dark: #E7E7E2;
+
+    --card-bg: #262B27;
+    --border-subtle: #333833;
+    --scrollbar-thumb: #4A4F4A;
+    --highlight-bg: #2E3B31;
+    --excluded-bg: #2A2E2B;
 }
 
 body {
@@ -14,7 +55,8 @@ body {
     color: var(--text-dark);
 }
 
-/* Navigationsleiste */
+/* Navigationsleiste (bleibt bewusst IMMER grün, in beiden Modi - der
+   Marken-Header ist keine "Oberfläche", die sich dem Thema anpassen soll) */
 .navbar-custom {
     background-color: var(--primary-food);
     border-bottom-left-radius: 1.5rem;
@@ -39,7 +81,7 @@ body {
     border: none !important;
     border-radius: var(--radius-main);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
-    background-color: #ffffff;
+    background-color: var(--card-bg);
 }
 
 .card-header-custom {
@@ -79,7 +121,7 @@ body {
 
 /* Listengruppen */
 .list-group-item {
-    border-color: #F1F1EE !important;
+    border-color: var(--border-subtle) !important;
     transition: background-color 0.2s ease;
 }
 .list-group-item:first-child {
@@ -92,7 +134,7 @@ body {
 
 /* Badges */
 .badge-category {
-    background-color: #E8EFEA !important;
+    background-color: var(--highlight-bg) !important;
     color: var(--primary-food) !important;
     font-weight: 600;
     font-size: 0.8rem;
@@ -106,8 +148,79 @@ body {
     background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-    background: #D1D1CB;
+    background: var(--scrollbar-thumb);
     border-radius: 10px;
+}
+
+/* --- Gezielte Dunkelmodus-Korrekturen für Bootstrap-Klassen, die "dark"
+   wörtlich als feste Farbe verstehen und dadurch im Dunkelmodus kaum noch
+   sichtbar wären (Bootstraps --bs-dark bleibt auch im eigenen Dunkelmodus
+   nahezu identisch mit --bs-body-bg - Text/Buttons mit "dark" würden sonst
+   fast unsichtbar auf dem jetzt ebenfalls dunklen Seitenhintergrund
+   verschwinden). Bewusst NICHT die Bootstrap-Variable --bs-dark selbst
+   umdefiniert (das würde Text- UND Hintergrund-Nutzungen gleichzeitig und
+   nicht immer sinnvoll treffen), sondern die paar tatsächlich in diesem
+   Projekt vorkommenden .text-dark/.bg-dark/.btn-dark/.btn-outline-dark-
+   Stellen gezielt korrigiert.
+
+   Für .btn-dark/.btn-outline-dark werden dabei bewusst die LOKALEN
+   --bs-btn-*-Eigenschaften umgesetzt (--bs-btn-bg/--bs-btn-hover-bg/
+   --bs-btn-active-bg/...) statt einzelner CSS-Properties wie
+   background-color: Bootstraps Button-Varianten setzen ihre Hover-/
+   Active-/Checked-Farben nämlich NICHT über die globale --bs-dark-
+   Variable, sondern über genau diese lokalen, beim Bauen der Bibliothek
+   fest verdrahteten Eigenschaften (z.B. --bs-btn-active-bg:#212529) - ein
+   einfaches background-color-Override würde daher nur den Ruhezustand
+   treffen, nicht aber :hover oder den "ausgewählt"-Zustand des
+   Darstellungs-Umschalters auf der Verwaltungsseite (.btn-check:checked +
+   .btn-outline-dark). Die lokalen Eigenschaften neu zu setzen ist der von
+   Bootstrap 5.3 selbst vorgesehene Weg, eine Variante umzufärben, und
+   funktioniert dadurch automatisch in jedem Button-Zustand. */
+[data-bs-theme="dark"] .btn-dark {
+    --bs-btn-bg: var(--primary-food);
+    --bs-btn-border-color: var(--primary-food);
+    --bs-btn-hover-bg: var(--primary-dark);
+    --bs-btn-hover-border-color: var(--primary-dark);
+    --bs-btn-active-bg: var(--primary-dark);
+    --bs-btn-active-border-color: var(--primary-dark);
+}
+[data-bs-theme="dark"] .bg-dark {
+    background-color: var(--primary-food) !important;
+}
+[data-bs-theme="dark"] .btn-outline-dark {
+    --bs-btn-color: var(--bs-body-color);
+    --bs-btn-border-color: var(--bs-border-color);
+    --bs-btn-hover-color: var(--bg-warm);
+    --bs-btn-hover-bg: var(--primary-food);
+    --bs-btn-hover-border-color: var(--primary-food);
+    --bs-btn-active-color: var(--bg-warm);
+    --bs-btn-active-bg: var(--primary-food);
+    --bs-btn-active-border-color: var(--primary-food);
+}
+
+/* .text-dark soll im Dunkelmodus normalerweise auf helle Schrift wechseln
+   (Überschriften, Namen in Listen/Kärtchen, ...) - AUSSER es steht
+   zusammen mit einer der wenigen bewusst IMMER hellen/farbigen Bootstrap-
+   Hintergrundklassen auf DEMSELBEN Element (.badge: die kleinen Season-/
+   Link-/Beilage-Badges; .bg-warning/.btn-warning: die "Bearbeiten"-
+   Akzentfarbe in recipe_edit_list.html) - deren Hintergrund bleibt
+   unabhängig vom Theme gleich hell, die dunkle Schrift darauf also
+   weiterhin richtig und muss nicht mitziehen.
+   .bg-light/.bg-white als reine "helle Info-Box"-Hintergründe (Panels wie
+   der Import-Kasten/day-dropzone, Kärtchen wie draggable-recipe-card/
+   side-dish-chip, Info-Zeilen wie die Nährwert-Boxen) sollen dagegen
+   selbst mitziehen - wieder AUSSER bei den kleinen Badges, die ihren
+   fixen hellen Hintergrund ebenfalls behalten (season labels, Link-Badge,
+   Nährwert-Zähler-Pille auf dem grünen Header). Zieht ein Panel mit
+   .bg-light/.bg-white so ins Dunkle, macht das automatisch auch sein
+   eingebetteter .text-dark-Text (der keine der Ausnahmeklassen trägt)
+   wieder korrekt lesbar, ganz ohne Kenntnis der konkreten Verschachtelung. */
+[data-bs-theme="dark"] .text-dark:not(.badge):not(.bg-warning):not(.btn-warning) {
+    color: var(--bs-body-color) !important;
+}
+[data-bs-theme="dark"] .bg-light:not(.badge),
+[data-bs-theme="dark"] .bg-white:not(.badge) {
+    background-color: var(--card-bg) !important;
 }
 
 /* Mobile Optimierungen */
@@ -116,4 +229,3 @@ body {
     .card-body { padding: 1.25rem !important; }
     .navbar-custom { border-radius: 0; }
 }
-

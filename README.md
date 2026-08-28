@@ -12,6 +12,9 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
   Startseite zeigt die aktuelle Woche mit Navigation (vorherige/nächste
   Woche, Datumssprung); unbeplante Wochen zeigen einen
   "Neuen Wochenplan erstellen"-Button.
+- **Hell-/Dunkelmodus** – folgt standardmäßig der Betriebssystem-Einstellung,
+  lässt sich in der Verwaltung (⚙️ → 🎨 Darstellung) aber auch fest auf Hell
+  oder Dunkel stellen. Die Auswahl wird pro Browser/Gerät gespeichert.
 - **Rezeptverwaltung** – Gerichte mit Kategorie, Nährwerten (Kalorien,
   Eiweiß, Kohlenhydrate, Fett), Personenzahl, einer beliebigen Zutatenliste,
   Link und Zubereitungsanleitung anlegen, bearbeiten und löschen.
