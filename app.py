@@ -17,6 +17,16 @@ SEASON_PRESETS = {
 }
 SEASON_PRESET_BY_RANGE = {v: k for k, v in SEASON_PRESETS.items()}
 
+# Wie viel wahrscheinlicher ein Favorit bei der automatischen/Zufalls-Auswahl
+# gezogen wird, verglichen mit einem nicht favorisierten Rezept.
+FAVORITE_WEIGHT = 3
+
+
+def weighted_recipe_choice(recipes):
+    """Wie random.choice(), gewichtet Favoriten aber mit FAVORITE_WEIGHT stärker."""
+    weights = [FAVORITE_WEIGHT if r.is_favorite else 1 for r in recipes]
+    return random.choices(recipes, weights=weights, k=1)[0]
+
 
 def _season_range(rs):
     return (rs.start_month, rs.start_day, rs.end_month, rs.end_day)
@@ -119,6 +129,9 @@ def init_db():
         db.session.commit()
     if 'servings' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN servings INTEGER NOT NULL DEFAULT 2"))
+        db.session.commit()
+    if 'is_favorite' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
 
     # Migration: die frühere einzelne season-Spalte gibt es nicht mehr (ersetzt durch
@@ -231,12 +244,13 @@ def add_recipe():
     carbs = float(request.form.get('carbs') or 0)
     fat = float(request.form.get('fat') or 0)
     is_side_dish = request.form.get('is_side_dish') == '1'
+    is_favorite = request.form.get('is_favorite') == '1'
     servings = max(1, int(request.form.get('servings') or 2))
 
     new_recipe = Recipe(
         name=name, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat,
-        is_side_dish=is_side_dish, servings=servings
+        is_side_dish=is_side_dish, is_favorite=is_favorite, servings=servings
     )
     db.session.add(new_recipe)
     db.session.flush()
@@ -269,6 +283,7 @@ def edit_recipe(id):
     recipe.carbs = float(request.form.get('carbs') or 0)
     recipe.fat = float(request.form.get('fat') or 0)
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
+    recipe.is_favorite = request.form.get('is_favorite') == '1'
     recipe.servings = max(1, int(request.form.get('servings') or 2))
 
     save_recipe_seasons(recipe.id, request.form)
@@ -363,8 +378,9 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
 
 
 def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True):
-    """Wählt zufällig ein passendes, noch nicht verwendetes Rezept aus. Bevorzugt
-    (falls prefer_season) gerade jahreszeitlich verfügbare Rezepte (siehe
+    """Wählt ein passendes, noch nicht verwendetes Rezept aus (Favoriten dabei
+    stärker gewichtet, siehe weighted_recipe_choice). Bevorzugt (falls
+    prefer_season) gerade jahreszeitlich verfügbare Rezepte (siehe
     recipe_available_now), weicht aber auf alle aus, wenn dafür keine Kandidaten
     existieren - eine Saison-Zuordnung schränkt die automatische Auswahl also nie
     komplett ein."""
@@ -382,9 +398,9 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     if prefer_season:
         seasonal_candidates = [r for r in candidates if recipe_available_now(r)]
         if seasonal_candidates:
-            return random.choice(seasonal_candidates)
+            return weighted_recipe_choice(seasonal_candidates)
 
-    return random.choice(candidates)
+    return weighted_recipe_choice(candidates)
 
 
 @app.route('/generate-plan', methods=['POST'])

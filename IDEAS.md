@@ -26,6 +26,14 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   Nährwerte bleiben unskaliert (die sind pro Portion/Person). Die
   Personenzahl ist an den Wochentag gebunden, nicht ans Gericht - wandert
   beim Tage-Tausch also nicht mit.
+- **Favoriten.** Neues `Recipe.is_favorite`-Feld. Favoriten werden bei der
+  automatischen Auswahl/beim Würfeln (`weighted_recipe_choice()`) mit
+  `FAVORITE_WEIGHT`-facher Wahrscheinlichkeit gezogen (aktuell 3x), statt
+  gleichverteilt zu würfeln - kein Rating, nur ein Ja/Nein-Bonus.
+- **Wochen-Nährwertübersicht.** Auf der Plan-Seite zeigt eine Karte die
+  Wochensumme und den Ø-Wert pro geplantem Tag für Kalorien/Eiweiß/
+  Kohlenhydrate/Fett (über alle Haupt- und Zusatzgerichte), live
+  aktualisiert bei jeder Änderung am Plan.
 
 ## Vorgeschlagen
 
@@ -54,16 +62,9 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    generierten Ergebnisses ohne DB-Anbindung; müsste auf Speichern pro
    Tag/Woche umgestellt werden.
 
-3. **Favoriten/Bewertung.** Rezepte markieren oder bewerten (z.B. Sterne),
-   sodass beliebte Gerichte beim Würfeln häufiger drankommen als selten
-   gekochte.
-
-4. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
+3. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
    Bereich gruppieren (Gemüse, Milchprodukte, Tiefkühl, ...) statt nur
    alphabetisch, um den Einkauf zu erleichtern.
 
-5. **Wochen-Nährwertübersicht.** Summe/Durchschnitt von Kalorien und Makros
-   über die ganze Woche anzeigen, nicht nur pro Tag.
-
-6. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
+4. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
    Quelle importieren, statt jede Zutat manuell einzutippen.

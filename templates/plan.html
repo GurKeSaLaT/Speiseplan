@@ -79,6 +79,14 @@
                 {% endfor %}
             </div>
         </div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body p-3">
+                <h6 class="fw-bold text-dark mb-2">📊 Wochen-Nährwertübersicht</h6>
+                <div id="weeklyNutritionSummary"></div>
+            </div>
+        </div>
+
         <a href="/" class="btn btn-outline-secondary px-4 py-2" style="border-radius: 0.75rem;"><- Neuer Plan erstellen</a>
     </div>
 
@@ -404,8 +412,49 @@ function removeSideDish(dayIndex) {
     rebuildShoppingList();
 }
 
+// Nährwerte aller Tage (Haupt- + Zusatzgericht) zur Wochenübersicht aufsummieren.
+// Unskaliert (Nährwerte sind immer pro Portion/Person, unabhängig von der
+// Personenzahl - die betrifft nur die Zutatenmengen der Einkaufsliste).
+function rebuildWeeklyNutritionSummary() {
+    const container = document.getElementById('weeklyNutritionSummary');
+    if (!container) return;
+
+    const totals = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+    let plannedDays = 0;
+
+    for (let i = 0; i < 7; i++) {
+        let dayHasSomething = false;
+        [weeklyPlanRecipes[i], weeklySideRecipes[i]].forEach(recipe => {
+            if (recipe) {
+                totals.calories += recipe.calories || 0;
+                totals.protein += recipe.protein || 0;
+                totals.carbs += recipe.carbs || 0;
+                totals.fat += recipe.fat || 0;
+                dayHasSomething = true;
+            }
+        });
+        if (dayHasSomething) plannedDays++;
+    }
+
+    if (plannedDays === 0) {
+        container.innerHTML = '<span class="text-muted small">Noch keine Gerichte im Plan.</span>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="text-muted small font-monospace bg-light p-2 rounded mb-1">
+            Σ Woche: ${Math.round(totals.calories)} kcal | E: ${totals.protein.toFixed(1)}g | K: ${totals.carbs.toFixed(1)}g | F: ${totals.fat.toFixed(1)}g
+        </div>
+        <div class="text-muted small font-monospace bg-light p-2 rounded">
+            Ø pro Tag (${plannedDays} geplant): ${Math.round(totals.calories / plannedDays)} kcal | E: ${(totals.protein / plannedDays).toFixed(1)}g | K: ${(totals.carbs / plannedDays).toFixed(1)}g | F: ${(totals.fat / plannedDays).toFixed(1)}g
+        </div>
+    `;
+}
+
 // Einkaufsliste zusammenrechnen und darstellen
 function rebuildShoppingList() {
+    rebuildWeeklyNutritionSummary();
+
     const container = document.getElementById('shoppingListContainer');
     const counterBadge = document.getElementById('totalIngredientsCount');
     if (!container) return;
