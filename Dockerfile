@@ -7,6 +7,8 @@ WORKDIR /app
 # 3. System-Abhängigkeiten minimieren und Cache bereinigen
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Werkzeug-Debugger im Deployment deaktiviert (RCE-Risiko bei Netzwerk-Erreichbarkeit)
+ENV FLASK_DEBUG=0
 
 # 4. Anforderungen kopieren und installieren
 COPY requirements.txt .

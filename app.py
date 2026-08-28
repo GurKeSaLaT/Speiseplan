@@ -385,4 +385,8 @@ def jsonify_recipe(recipe):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # FLASK_DEBUG=0 im Docker-Deployment gesetzt (siehe Dockerfile) - lokal ohne
+    # gesetzte Variable bleibt der praktische Debug-/Autoreload-Modus aktiv.
+    # Im Container: 0.0.0.0-Bindung noetig, sonst ist die App von aussen nicht erreichbar.
+    debug_mode = os.environ.get('FLASK_DEBUG', '1') == '1'
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
