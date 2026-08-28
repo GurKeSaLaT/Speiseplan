@@ -1,3 +1,8 @@
+{# Verwaltungs-Startseite (/manage): reine Übersichtsseite mit drei Kacheln,
+   die zu den eigentlichen Verwaltungsbereichen verlinken (Rezepte anlegen,
+   Rezepte bearbeiten, Kategorien verwalten). Enthält selbst keine Logik -
+   das render_template()-Objekt kommt ohne zusätzliche Variablen aus, siehe
+   routes/manage.py. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">

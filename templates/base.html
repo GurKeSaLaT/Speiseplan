@@ -1,3 +1,7 @@
+{# Basis-Layout, von JEDEM anderen Template per {% extends 'base.html' %}
+   eingebunden. Definiert Kopfbereich (CSS-Einbindung, Meta-Tags),
+   Navigationsleiste und den Fußbereich (Bootstrap-JS-Bundle) einmalig - die
+   einzelnen Seiten füllen nur noch den {% block content %}-Bereich. #}
 <!DOCTYPE html>
 <html lang="de">
 <head>
@@ -5,10 +9,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🍽️ Speiseplanhelfer</title>
 
-    <!-- 1. LOKALES BOOTSTRAP CSS (Vollkommen offline) -->
+    {# 1. Lokales Bootstrap-CSS (als Datei im static-Ordner, nicht per CDN
+       geladen) - die App soll auch ganz ohne Internetzugang im Heimnetz
+       funktionieren. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" type="text/css">
 
-    <!-- 2. DEINE EIGENE CSS-DATEI MIT CACHE-BREMSE -->
+    {# 2. Eigenes CSS mit Cache-Bremse: der ?v=...-Query-Parameter kommt aus
+       app.py (inject_css_version, siehe dort) und ändert sich automatisch
+       mit dem Änderungszeitpunkt der Datei, damit Browser nach einem
+       Deployment nicht versehentlich eine alte, gecachte style.css
+       weiterverwenden. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_version }}" type="text/css">
 
     <style>
@@ -20,7 +30,11 @@
 </head>
 <body>
 
-    <!-- Navigationsleiste -->
+    {# Navigationsleiste: die active-custom-Klasse markiert den aktuell
+       aktiven Menüpunkt anhand des Request-Pfads - "/" und alles unter
+       "/plan" gilt als Wochenplaner-Bereich (die persistente Kalenderseite
+       ist seit der Kalender-Umstellung die neue Startseite), alles unter
+       "/manage" als Verwaltungsbereich. #}
     <nav class="navbar navbar-expand-md navbar-dark navbar-custom mb-4 py-3">
         <div class="container">
             <a class="navbar-brand fw-bold fs-4" href="/">🍽️ Speiseplan</a>
@@ -40,12 +54,14 @@
         </div>
     </nav>
 
-    <!-- Hauptinhalt -->
+    {# Hauptinhalt: wird von jeder Unterseite über {% block content %}...{% endblock %} befüllt #}
     <div class="container pb-5">
         {% block content %}{% endblock %}
     </div>
 
-    <!-- 3. LOKALES BOOTSTRAP JS BUNDLE (Für funktionierende Menüs) -->
+    {# 3. Lokales Bootstrap-JS-Bundle (inkl. Popper) - wird u.a. für das
+       Umschalt-Menü auf schmalen Bildschirmen (navbar-toggler) und die
+       Bearbeiten-Modals (recipe_edit_list.html) benötigt. #}
     <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 </body>
 </html>

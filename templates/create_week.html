@@ -1,3 +1,11 @@
+{# Seite "Neuen Wochenplan erstellen" (/plan/<start_date>/create), gerendert
+   von routes/plan.py: week_create_view(). Zeigt ein Live-Suchfeld über alle
+   Rezepte sowie 7 Drop-Zonen (eine pro Wochentag), auf die Rezepte per Klick
+   oder Drag-and-Drop gelegt werden können, um sie fest zuzuweisen. Tage ohne
+   feste Zuweisung werden beim Absenden serverseitig automatisch balanciert
+   aufgefüllt (siehe week_generate() in routes/plan.py). Die komplette
+   Interaktionslogik (Suche, Drag-and-Drop, Ausnehmen-Button) liegt in
+   static/create_week.js, nicht in dieser Datei. #}
 {% extends 'base.html' %} {% block content %} <div class="row justify-content-center">
   <div class="col-md-10 col-lg-9">
     <div class="card shadow-sm border-0 mb-4">
@@ -7,7 +15,13 @@
       </div>
       <div class="card-body p-4">
         <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich zusätzlich zum Hauptgericht hinzufügen und funktionieren auch an ausgenommenen Tagen. </p>
-        <!-- 1. LIVE-SUCHFELD -->
+        <!-- Live-Suchfeld: ALLE Rezepte werden bereits jetzt server-seitig als
+             (zunächst per style="display:none" verstecktes) Button-Element
+             mit data-*-Attributen ins DOM gerendert. static/create_week.js
+             filtert beim Tippen rein clientseitig anhand dieser
+             data-Attribute (kein Nachladen per fetch nötig, da die
+             Rezeptliste für eine Einzelnutzer-App klein genug ist, um
+             komplett im DOM zu leben). -->
         <div class="mb-4 position-relative">
           <div class="input-group input-group-lg shadow-sm rounded">
             <span class="input-group-text bg-white border-end-0">🔍</span>
@@ -18,9 +32,15 @@
               <span class="badge badge-category">{{ recipe.category.name }}</span>
             </button> {% endfor %} </div>
         </div>
-        <!-- HAUPTFORMULAR AN FLASK -->
+        <!-- Formular, das beim Absenden an week_generate() (routes/plan.py)
+             geht: die drei versteckten Felder pro Tag (day_recipe_i /
+             day_side_recipe_i / day_excluded_i, siehe unten) werden dabei
+             NICHT vom Nutzer direkt bedient, sondern von create_week.js bei
+             jeder Zuweisung/Entfernung/Ausnahme aktuell gehalten - sie sind
+             die tatsächliche "Quelle der Wahrheit" beim Absenden, die
+             sichtbaren Kärtchen sind nur ihre Darstellung. -->
         <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat()) }}" method="POST" id="planForm">
-          <!-- 2. BEREICH: DIE 7 WOCHENTAGE AS CONTAINER -->
+          <!-- Die 7 Wochentage als Drop-Zonen -->
           <div class="mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
               <h5 class="fw-bold text-dark mb-0">📌 Feste Tageszuweisung</h5>

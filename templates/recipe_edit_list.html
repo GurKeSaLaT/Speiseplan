@@ -1,3 +1,10 @@
+{# Rezept-Übersicht mit Bearbeiten/Löschen (/manage/recipe/edit-list). Jedes
+   Rezept bekommt sein EIGENES Bootstrap-Modal mit vollständig vorbefülltem
+   Bearbeiten-Formular (id "editModal<recipe.id>") - siehe routes/recipes.py:
+   recipe_edit_list_view() für recipe_season_info, das pro Rezept die
+   angehakten Saison-Presets und den ggf. eigenen Zeitraum aufbereitet.
+   Die ingredients-datalist (Zutaten-Autovervollständigung) wird nur EINMAL
+   global definiert und von allen Modals gemeinsam über list="..." referenziert. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -146,6 +153,10 @@
 {% endfor %}
 
 <script>
+// Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
+// Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
+// aber pro Modal ein eigener Container, da auf dieser Seite gleichzeitig
+// mehrere Modals mit eigenen Zutatenlisten im DOM existieren).
 function addEditIngredientField(recipeId) {
     const container = document.getElementById('edit-ingredients-container' + recipeId);
     const div = document.createElement('div');
@@ -158,6 +169,12 @@ function addEditIngredientField(recipeId) {
     container.appendChild(div);
 }
 
+// Löscht ein Rezept per erzeugtem, sofort abgeschicktem POST-Formular (der
+// Löschen-Button selbst ist kein <button type="submit"> in einem echten
+// Formular, da er außerhalb jedes <form> in der Listen-Zeile steht - siehe
+// oben "Löschen 🗑️"). recipeName wird aktuell nicht verwendet (keine
+// Sicherheitsabfrage vor dem Löschen), ist aber Teil der Signatur, falls
+// später ein Bestätigungsdialog ergänzt werden soll.
 function deleteRecipeSafely(recipeId, recipeName) {
     const form = document.createElement('form');
     form.method = 'POST';

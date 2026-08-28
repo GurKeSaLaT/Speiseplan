@@ -1,3 +1,16 @@
+"""Rezept-Verwaltung: die Erstellen-/Bearbeiten-/Löschen-Seiten für einzelne
+Gerichte (Recipe), inklusive ihrer Zutaten (Ingredient) und
+Saison-Zuordnung (RecipeSeason, über services/seasons.py verwaltet).
+
+Zwei GET-Ansichten (recipe_create_view, recipe_edit_list_view) rendern die
+Formulare; drei POST-Handler (add_recipe, edit_recipe, delete_recipe)
+verarbeiten deren Absenden. Die eigentliche Saison-Formular-Logik
+(Checkboxen + eigener Zeitraum parsen, für die Bearbeiten-Ansicht
+vorbefüllen) liegt bewusst NICHT hier, sondern in services/seasons.py -
+diese Datei bleibt auf "Recipe/Ingredient anlegen, ändern, löschen"
+fokussiert.
+"""
+
 from flask import Blueprint, render_template, request, redirect, url_for
 
 from models import db, Category, Recipe, Ingredient
@@ -10,8 +23,19 @@ recipes_bp = Blueprint('recipes', __name__)
 
 @recipes_bp.route('/manage/recipe/create')
 def recipe_create_view():
+    """Zeigt das Formular zum Anlegen eines neuen Rezepts.
+
+    Neben den Kategorien wird auch eine alphabetisch sortierte, über alle
+    bestehenden Rezepte hinweg EINZIGARTIGE Liste bereits verwendeter
+    Zutatennamen mitgeliefert (ingredient_list). Diese füllt im Formular
+    ein <datalist>-Element (Autovervollständigung beim Tippen einer neuen
+    Zutat), damit z.B. "Zwiebel" nicht in einem Rezept als "Zwiebeln" und
+    im nächsten als "zwiebel" landet.
+    """
     categories = Category.query.all()
-    # Holt alle einzigartigen Zutatennamen, alphabetisch sortiert
+    # distinct() dedupliziert auf DB-Ebene; das "if ing[0]" filtert defensiv
+    # rein leere Strings heraus, falls je ein Formular mit leerem
+    # Zutatennamen abgeschickt wurde.
     existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
@@ -20,23 +44,35 @@ def recipe_create_view():
 
 @recipes_bp.route('/manage/recipe/edit-list')
 def recipe_edit_list_view():
+    """Zeigt die Liste aller Rezepte mit einem Bearbeiten-Modal pro Rezept
+    (siehe templates/recipe_edit_list.html - ein <div class="modal"> je
+    Rezept, per Bootstrap-Button geöffnet).
+
+    Da jedes Modal sein eigenes vorbefülltes Saison-Formular braucht (welche
+    Standard-Saison-Checkboxen sind angehakt, welcher eigene Zeitraum steht
+    in den Datumsfeldern), wird das für JEDES Rezept einzeln über
+    describe_recipe_seasons() aufbereitet und in recipe_season_info
+    (ein Dict, Rezept-ID -> aufbereitete Daten) an das Template gereicht.
+    Die 'custom_start'/'custom_end'-Werte bekommen dabei ein beliebiges
+    (Schaltjahr-taugliches) Platzhalterjahr vorangestellt, weil
+    <input type="date"> zwingend ein vollständiges Datum erwartet, obwohl
+    beim Speichern ohnehin nur Monat und Tag ausgewertet werden (siehe
+    services/seasons.py: parse_recipe_seasons).
+    """
     recipes = Recipe.query.all()
     categories = Category.query.all()
-    # Holt alle einzigartigen Zutatennamen, alphabetisch sortiert
     existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
-    # Für jedes Rezept: welche Saison-Checkboxen vorbelegt sein sollen, ein
-    # eigener Zeitraum zum Vorbefüllen der Datumsfelder sowie die Badge-Labels
     recipe_season_info = {}
     for recipe in recipes:
         selected_presets, custom_range = describe_recipe_seasons(recipe)
         recipe_season_info[recipe.id] = {
             'selected_presets': selected_presets,
-            # Beliebiges (Schaltjahr-)Jahr, da <input type="date"> volle Daten
-            # verlangt - beim Speichern wird ohnehin nur Monat/Tag ausgewertet
             'custom_start': f"2000-{custom_range.start_month:02d}-{custom_range.start_day:02d}" if custom_range else '',
             'custom_end': f"2000-{custom_range.end_month:02d}-{custom_range.end_day:02d}" if custom_range else '',
+            # Fertig formatierte Badge-Labels (z.B. "Sommer", "15.5.–20.6."),
+            # damit das Template selbst keine Formatierungslogik braucht.
             'labels': format_recipe_seasons(recipe),
         }
 
@@ -48,6 +84,22 @@ def recipe_edit_list_view():
 
 @recipes_bp.route('/add-recipe', methods=['POST'])
 def add_recipe():
+    """Legt ein neues Rezept samt seiner Zutaten und Saison-Zuordnung an.
+
+    Ablauf: zuerst wird das Recipe-Objekt angelegt und per db.session.flush()
+    (statt commit()) in die Datenbank geschrieben - flush() weist bereits
+    eine ID zu, OHNE die Transaktion abzuschließen, damit diese ID direkt
+    für die abhängigen RecipeSeason- und Ingredient-Zeilen verwendet werden
+    kann. Erst der abschließende commit() macht alles zusammen dauerhaft
+    (bei einem Fehler dazwischen würde alles zurückgerollt).
+
+    Die Zutaten kommen als drei parallele Listen aus dem Formular
+    (ing_name[], ing_amount[], ing_unit[] - ein HTML-Formular mit
+    dynamisch per JavaScript hinzugefügten Zeilen, siehe
+    recipe_create.html), werden über den gemeinsamen Index paarweise
+    zusammengeführt und Zeilen mit leerem Namen übersprungen (z.B. eine
+    ungenutzte letzte leere Zeile im Formular).
+    """
     name = request.form.get('name')
     category_id = request.form.get('category_id')
     calories = int(request.form.get('calories') or 0)
@@ -56,6 +108,7 @@ def add_recipe():
     fat = float(request.form.get('fat') or 0)
     is_side_dish = request.form.get('is_side_dish') == '1'
     is_favorite = request.form.get('is_favorite') == '1'
+    # Mindestens 1 Person, auch falls das Formularfeld leer/fehlerhaft ist.
     servings = max(1, int(request.form.get('servings') or 2))
 
     new_recipe = Recipe(
@@ -79,12 +132,22 @@ def add_recipe():
             db.session.add(ingredient)
 
     db.session.commit()
-    # Zurück zur "Erstellen"-Unterseite für den nächsten Eintrag
+    # Zurück zur "Erstellen"-Unterseite (nicht zur Liste), damit direkt das
+    # nächste Rezept eingetragen werden kann, ohne erst zu navigieren.
     return redirect(url_for('recipes.recipe_create_view'))
 
 
 @recipes_bp.route('/edit-recipe/<int:id>', methods=['POST'])
 def edit_recipe(id):
+    """Überschreibt ein bestehendes Rezept vollständig mit den Formulardaten.
+
+    Die Zutaten werden dabei nicht einzeln abgeglichen (kein Diff aus
+    "geändert/neu/gelöscht"), sondern komplett gelöscht und aus dem
+    Formularinhalt neu angelegt - deutlich einfacher als ein Merge, und da
+    das Formular ohnehin immer ALLE aktuellen Zutaten mitschickt (auch
+    unveränderte), verliert dieser Ansatz keine Daten. Ebenso verfährt
+    save_recipe_seasons() mit den Saison-Zeiträumen.
+    """
     recipe = Recipe.query.get_or_404(id)
 
     recipe.name = request.form.get('name')
@@ -112,12 +175,26 @@ def edit_recipe(id):
             db.session.add(ingredient)
 
     db.session.commit()
-    # Zurück zur Bearbeitungsliste
+    # Zurück zur Bearbeitungsliste (im Gegensatz zu add_recipe, das zurück
+    # zur Erstellen-Seite leitet) - hier gibt es kein "nächstes" Rezept,
+    # zu dem man direkt weiterspringen würde.
     return redirect(url_for('recipes.recipe_edit_list_view'))
 
 
 @recipes_bp.route('/delete-recipe/<int:id>', methods=['POST'])
 def delete_recipe(id):
+    """Löscht ein Rezept unwiderruflich. Zugehörige Ingredient- und
+    RecipeSeason-Zeilen werden durch die cascade="all, delete-orphan"-
+    Konfiguration in models.py automatisch mitgelöscht.
+
+    Bewusst KEINE Prüfung, ob das Rezept noch in einem PlanDay (dem
+    Wochenplan-Kalender) referenziert wird: main_recipe_id/side_recipe_id
+    in PlanDay sind nullable und ohne ON DELETE-Constraint, ein gelöschtes
+    Rezept hinterlässt dort einfach eine "hängende" ID. Das ist ein
+    bekanntes, in Kauf genommenes Verhalten (siehe IDEAS.md) - für die
+    kleine, persönliche Nutzung dieser App bislang nicht relevant genug,
+    um dafür extra eine Lösch-Sperre oder Kaskade einzubauen.
+    """
     recipe = Recipe.query.get_or_404(id)
     db.session.delete(recipe)
     db.session.commit()

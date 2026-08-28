@@ -1,26 +1,74 @@
-// Plan-Seite (plan.html): Live-Interaktionen für den dauerhaften Wochenplan
-// (würfeln, tauschen, Beilage, Personenzahl, Einkaufsliste, Wochen-Nährwert-
-// übersicht) sowie der Wochen-Sprung-Datepicker. Erwartet, dass window.PLAN_DATA
-// (siehe plan.html) vor diesem Script gesetzt wurde.
+/**
+ * plan.js - Client-seitige Logik der Wochenplan-Ansicht (templates/plan.html).
+ *
+ * Verantwortlich für alles, was auf der Plan-Seite ohne Neuladen der Seite
+ * passiert: einzelne Tage neu würfeln (Haupt- und Beilagengericht), zwei
+ * Tage per Drag-and-Drop komplett tauschen, die Personenzahl pro Tag ändern,
+ * sowie die daraus abgeleiteten Übersichten (Wochen-Nährwerte, Einkaufsliste)
+ * live neu berechnen, ohne dafür die Seite neu laden zu müssen.
+ *
+ * Jede Aktion, die den Plan verändert (würfeln, tauschen, Personenzahl,
+ * Beilage entfernen), schickt zuerst einen fetch()-Request an den Server
+ * (siehe routes/plan.py), der die Änderung in der Datenbank persistiert -
+ * erst wenn die Antwort erfolgreich war, wird auch der lokale JavaScript-
+ * Speicher und das DOM aktualisiert. Ein Fehlschlag (z.B. "keine
+ * Alternative verfügbar") führt NICHT zu einer optimistischen, dann wieder
+ * zurückgerollten UI-Änderung, sondern zu einem alert() und sonst nichts -
+ * der bisherige Zustand bleibt unverändert sichtbar.
+ *
+ * Erwartet, dass window.PLAN_DATA (siehe plan.html, per Jinja tojson-Filter
+ * sicher aus Python-Daten erzeugt) VOR diesem Script im DOM gesetzt wurde.
+ */
 
+// Wochentag-Beschriftungen ("Montag", "Dienstag", ...) und die zugehörigen
+// ISO-Datumsstrings (z.B. "2026-08-31") - beide Arrays sind über den Index
+// (0 = erster Wochentag) miteinander und mit den weiteren Arrays unten
+// verknüpft und ändern sich nach dem initialen Laden nicht mehr (nur ihr
+// Inhalt an den jeweiligen Indizes über dayServings/weeklyPlanRecipes/... -
+// ein Tage-Tausch tauscht z.B. NICHT die dayDates, sondern die Rezepte an
+// den bestehenden Datums-Indizes).
 const dayLabels = window.PLAN_DATA.dayLabels;
 const dayDates = window.PLAN_DATA.weekDates;
+
+// Ob ein Tag bewusst von der automatischen Planung ausgenommen wurde
+// (Checkbox auf der Erstellen-Seite). Wird beim Tage-Tausch mitgetauscht,
+// da ein "ausgenommener Tag" eine Eigenschaft des Kalendertags ist (z.B.
+// "wir essen dienstags immer auswärts"), nicht des zufällig dort
+// gelandeten Gerichts.
 let dayExcluded = window.PLAN_DATA.excludedDays;
+
 // Für wie viele Personen an jedem Wochentag eingekauft werden soll (Index = Wochentag,
 // aus der Datenbank vorbefüllt). Bleibt an den Wochentag gebunden, nicht ans Gericht -
 // wandert beim Tage-Tausch also NICHT mit.
 let dayServings = window.PLAN_DATA.servingsList;
-// Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept)
+
+// Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept).
+// Dies ist die "Quelle der Wahrheit" für alles, was clientseitig aus dem
+// Plan berechnet wird (Nährwertsumme, Einkaufsliste) - nach jeder
+// erfolgreichen serverseitigen Änderung wird dieses Array aktualisiert,
+// damit diese Berechnungen ohne Seiten-Reload konsistent bleiben.
 let weeklyPlanRecipes = window.PLAN_DATA.plan;
+
 // Zusatzgerichte/Beilagen, unabhängig vom Hauptgericht (Index = Wochentag, null = keine Beilage)
 let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 
-// Initiales Rendern beim Laden der Seite
+// Beim ersten Laden der Seite die Einkaufsliste (und darüber auch die
+// Wochen-Nährwertübersicht, siehe rebuildShoppingList) einmal aus den
+// bereits vom Server mitgelieferten Daten aufbauen - ab dann übernehmen die
+// einzelnen Aktionen unten das Neu-Berechnen bei jeder Änderung.
 document.addEventListener('DOMContentLoaded', () => {
     rebuildShoppingList();
 });
 
-// Funktion zum Neu-Würfeln eines einzelnen Wochentags (persistiert serverseitig)
+/**
+ * Würfelt das Hauptgericht eines einzelnen Tages neu (ruft serverseitig
+ * reroll_day() in routes/plan.py auf, welche eine zufällige Alternative aus
+ * derselben Kategorie wählt, die weder in dieser Woche noch in den
+ * category-Nachbartagen bereits vorkommt). Bei Erfolg werden sowohl die
+ * Tageskarte im DOM als auch der lokale weeklyPlanRecipes-Speicher und die
+ * Einkaufsliste aktualisiert; bei Misserfolg (keine Alternative verfügbar)
+ * bleibt alles unverändert und der Nutzer bekommt eine Fehlermeldung.
+ */
 function rerollSingleDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     if (!dayCard) return;
@@ -53,7 +101,15 @@ function rerollSingleDay(dayIndex) {
     });
 }
 
-// Baut den HTML-Inhalt einer Beilagen-Zeile für einen Tag auf (mit oder ohne Beilage)
+/**
+ * Erzeugt das HTML für die Beilagen-Zeile einer Tageskarte. Zwei
+ * Zustände: ist bereits eine Beilage zugewiesen, wird sie mit
+ * Neu-würfeln- und Entfernen-Button dargestellt; ist keine zugewiesen,
+ * erscheint stattdessen nur ein "Beilage würfeln"-Button über die volle
+ * Breite. Wird sowohl beim initialen Rendern (renderDayCardBody) als auch
+ * nach jedem erfolgreichen Beilagen-Reroll/-Entfernen erneut aufgerufen,
+ * um exakt dasselbe Markup ohne Duplikation zu erzeugen.
+ */
 function renderSideRow(dayIndex, recipe) {
     if (recipe) {
         return `
@@ -73,9 +129,16 @@ function renderSideRow(dayIndex, recipe) {
     return `<button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay(${dayIndex})">🥗 Beilage würfeln</button>`;
 }
 
-// Baut den kompletten Innenbereich einer Tageskarte (Personen-Zeile + Hauptgericht-Block
-// + Beilagen-Zeile) aus dem aktuellen JavaScript-Speicher auf - wird nach einem
-// Tage-Tausch pro Tag neu gerendert
+/**
+ * Baut den kompletten Innenbereich einer Tageskarte auf: Personenzahl-Zeile,
+ * Hauptgericht-Block (oder Platzhaltertext, falls kein Rezept zugewiesen
+ * ist bzw. der Tag ausgenommen wurde) und Beilagen-Zeile. Liest dabei
+ * ausschließlich aus dem aktuellen JavaScript-Speicher (weeklyPlanRecipes/
+ * weeklySideRecipes/dayServings/dayExcluded), nicht aus dem DOM - wird
+ * nach einem Tage-Tausch für beide beteiligten Tage komplett neu
+ * aufgerufen, statt einzelne DOM-Knoten gezielt zu aktualisieren, weil
+ * sich beim Tausch potenziell jedes Feld ändert.
+ */
 function renderDayCardBody(dayIndex) {
     const servingsHtml = `
         <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
@@ -106,6 +169,11 @@ function renderDayCardBody(dayIndex) {
             </div>
         `;
     } else {
+        // Zwei mögliche Gründe für ein leeres Hauptgericht: der Tag wurde
+        // bewusst ausgenommen (Checkbox), oder die automatische Planung hat
+        // schlicht kein passendes Rezept mehr gefunden (z.B. Kategorie
+        // erschöpft) - beide Fälle bekommen einen eigenen, unterscheidbaren
+        // Hinweistext statt einer nichtssagend leeren Karte.
         const placeholderText = dayExcluded[dayIndex] ? '🚫 Von der Planung ausgenommen' : 'Kein passendes Rezept verfügbar';
         mainHtml = `
             <div class="text-center text-muted">
@@ -120,8 +188,17 @@ function renderDayCardBody(dayIndex) {
     return servingsHtml + mainHtml + sideHtml;
 }
 
-// Setzt die Personenzahl für einen Wochentag (optimistisch sofort übernommen für
-// reaktionsschnelle UI) und speichert sie serverseitig
+/**
+ * Übernimmt eine geänderte Personenzahl für einen Wochentag sofort in die
+ * lokale Anzeige (optimistisch, für ein reaktionsschnelles Gefühl beim
+ * Tippen) und schickt sie parallel an den Server zur dauerhaften
+ * Speicherung. Anders als bei den würfeln/tauschen-Aktionen wird hier NICHT
+ * auf die Serverantwort gewartet, bevor die UI reagiert - ein Fehlschlag
+ * führt nur zu einer nachträglichen Fehlermeldung, die Eingabe bleibt aber
+ * stehen (ein Zurückrollen der Zahl im Eingabefeld wäre für den Nutzer
+ * verwirrender als eine kurze Fehlermeldung bei einem seltenen
+ * Netzwerkfehler).
+ */
 function updateDayServings(dayIndex, value) {
     const n = parseInt(value);
     const servings = (isNaN(n) || n < 1) ? 1 : n;
@@ -137,8 +214,14 @@ function updateDayServings(dayIndex, value) {
     });
 }
 
-// Aktualisiert Datenattribute und Inhalt einer Tageskarte anhand des aktuellen
-// JavaScript-Speichers (weeklyPlanRecipes/weeklySideRecipes/dayExcluded)
+/**
+ * Schreibt die data-*-Attribute und den kompletten Inhalt einer Tageskarte
+ * anhand des aktuellen JavaScript-Speichers neu (siehe renderDayCardBody).
+ * Wird nach einem Tage-Tausch für beide betroffenen Tage aufgerufen, da
+ * sich dort potenziell alle Felder auf einmal ändern und ein gezieltes
+ * Aktualisieren einzelner DOM-Knoten (wie es rerollSingleDay tut) hier
+ * unnötig fehleranfällig wäre.
+ */
 function refreshDayCard(dayIndex) {
     const card = document.getElementById(`day-card-${dayIndex}`);
     if (!card) return;
@@ -152,17 +235,31 @@ function refreshDayCard(dayIndex) {
 }
 
 // --- TAGE TAUSCHEN PER DRAG-AND-DROP ---
-// Tauscht Hauptgericht, Beilage UND Ausnahme-Status zweier Tage komplett miteinander -
-// serverseitig persistiert, die Personenzahl bleibt bewusst am Wochentag hängen.
+// Nutzt die native HTML5-Drag-and-Drop-API. Getauscht werden Hauptgericht,
+// Beilage UND der Ausnahme-Status der beiden Tage komplett miteinander (die
+// Personenzahl bewusst NICHT, siehe Kommentar bei dayServings oben) - der
+// Tausch wird über /day/<datum>/swap/<datum> serverseitig persistiert,
+// bevor die lokale Anzeige aktualisiert wird.
+
+/** Merkt beim Start des Ziehens die HTML-id der Quellkarte im DataTransfer. */
 function daySwapDragStart(event) {
     event.dataTransfer.setData('text/plain', event.currentTarget.id);
 }
 
+/** Erlaubt das Ablegen auf dieser Karte (sonst ignoriert der Browser drop-Events per Default) und markiert sie optisch. */
 function daySwapAllowDrop(event) {
     event.preventDefault();
     event.currentTarget.classList.add('drag-over');
 }
 
+/**
+ * Führt den eigentlichen Tausch aus, sobald eine Karte auf einer anderen
+ * abgelegt wird: liest zunächst die Quellkarte aus dem DataTransfer, bricht
+ * bei fehlender/identischer Quelle ab, ruft dann den Server-Endpunkt auf
+ * und tauscht erst nach dessen Bestätigung die drei betroffenen Arrays
+ * (weeklyPlanRecipes, weeklySideRecipes, dayExcluded) per
+ * Destrukturierungs-Swap, bevor beide Karten neu gerendert werden.
+ */
 function daySwapDrop(event) {
     event.preventDefault();
     const targetCard = event.currentTarget;
@@ -196,7 +293,13 @@ function daySwapDrop(event) {
     });
 }
 
-// Funktion zum (Neu-)Würfeln einer Beilage für einen einzelnen Wochentag (persistiert serverseitig)
+/**
+ * Würfelt die Beilage eines Tages neu (unabhängig vom Hauptgericht -
+ * funktioniert auch, wenn noch gar keine Beilage zugewiesen war, ruft dann
+ * serverseitig effektiv eine erstmalige Zuweisung auf). Aktualisiert bei
+ * Erfolg nur die Beilagen-Zeile dieses Tages (renderSideRow), nicht die
+ * ganze Karte.
+ */
 function rerollSideDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     const sideRow = document.getElementById(`side-row-${dayIndex}`);
@@ -218,7 +321,12 @@ function rerollSideDay(dayIndex) {
     });
 }
 
-// Funktion zum Entfernen einer bereits zugewiesenen Beilage (serverseitig persistiert)
+/**
+ * Entfernt eine bereits zugewiesene Beilage von einem Tag wieder komplett
+ * (im Gegensatz zu rerollSideDay, das durch eine ANDERE Beilage ersetzt).
+ * Nach Erfolg zeigt die Beilagen-Zeile wieder nur den "Beilage würfeln"-
+ * Button (siehe renderSideRow mit recipe=null).
+ */
 function removeSideDish(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     const sideRow = document.getElementById(`side-row-${dayIndex}`);
@@ -237,9 +345,16 @@ function removeSideDish(dayIndex) {
     });
 }
 
-// Nährwerte aller Tage (Haupt- + Zusatzgericht) zur Wochenübersicht aufsummieren.
-// Unskaliert (Nährwerte sind immer pro Portion/Person, unabhängig von der
-// Personenzahl - die betrifft nur die Zutatenmengen der Einkaufsliste).
+/**
+ * Summiert die Nährwerte aller Tage (Haupt- + Zusatzgericht, sofern
+ * vorhanden) zu einer Wochenübersicht und einem Tagesdurchschnitt (nur über
+ * tatsächlich geplante Tage gemittelt, nicht über alle 7). Die Werte
+ * bleiben dabei bewusst UNskaliert bezüglich der Personenzahl: Nährwerte
+ * in diesem Projekt sind immer "pro Portion/Person" gemeint, unabhängig
+ * davon wie viele Personen an dem Tag mitessen - die Personenzahl
+ * beeinflusst ausschließlich die Zutatenmengen der Einkaufsliste (siehe
+ * rebuildShoppingList).
+ */
 function rebuildWeeklyNutritionSummary() {
     const container = document.getElementById('weeklyNutritionSummary');
     if (!container) return;
@@ -276,7 +391,14 @@ function rebuildWeeklyNutritionSummary() {
     `;
 }
 
-// Einkaufsliste zusammenrechnen und darstellen
+/**
+ * Rechnet die komplette Einkaufsliste der Woche aus dem aktuellen
+ * JavaScript-Speicher neu zusammen und rendert sie. Wird nach JEDER
+ * Änderung am Plan aufgerufen (würfeln, tauschen, Personenzahl,
+ * Beilage entfernen), da praktisch jede dieser Änderungen die benötigten
+ * Zutatenmengen beeinflusst. Ruft dabei auch rebuildWeeklyNutritionSummary()
+ * mit auf, da beide Übersichten stets gemeinsam aktuell gehalten werden.
+ */
 function rebuildShoppingList() {
     rebuildWeeklyNutritionSummary();
 
@@ -295,6 +417,11 @@ function rebuildShoppingList() {
             if (recipe && recipe.ingredients) {
                 const factor = recipe.servings ? dayServings[i] / recipe.servings : 1;
                 recipe.ingredients.forEach(ing => {
+                    // Zusammenfassungs-Schlüssel aus Name+Einheit: dieselbe
+                    // Zutat in unterschiedlicher Einheit (z.B. "Mehl" in g
+                    // an einem Tag, in EL an einem anderen) wird bewusst
+                    // NICHT zusammengerechnet, da die Mengen sonst nicht
+                    // vergleichbar wären.
                     const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
                     const scaledAmount = ing.amount * factor;
                     if (consolidated[key]) {
@@ -334,6 +461,10 @@ function rebuildShoppingList() {
             </span>
         `;
 
+        // Checkbox dient rein der Anzeige beim Einkaufen (durchgestrichen +
+        // ausgegraut, sobald abgehakt) - der Zustand wird bewusst NICHT
+        // gespeichert (weder serverseitig noch in localStorage), da die
+        // Liste ohnehin bei jeder Planänderung komplett neu aufgebaut wird.
         const checkbox = li.querySelector('input[type="checkbox"]');
         checkbox.addEventListener('change', function() {
             const span = li.querySelector('span.text-dark');
@@ -353,7 +484,10 @@ function rebuildShoppingList() {
 // Datumsanzeige/-sprung: eigenes dd.mm.yyyy-Textfeld statt des Browser-lokalisierten
 // <input type="date">-Anzeigetexts (der z.B. in Chrome je nach Systemsprache
 // mm/dd/yyyy zeigen kann). Der native Picker bleibt fürs Kalender-Popup erhalten,
-// ist aber unsichtbar und wird per Klick auf das Textfeld geöffnet.
+// ist aber unsichtbar (siehe CSS in plan.html) und wird per Klick auf das
+// sichtbare Textfeld programmatisch geöffnet (showPicker()). Wählt der Nutzer
+// im Popup ein Datum, navigiert das change-Event direkt zur Plan-Seite der
+// Woche, in der dieses Datum liegt.
 (function() {
     const display = document.getElementById('weekDateDisplay');
     const picker = document.getElementById('weekDatePicker');
@@ -363,6 +497,9 @@ function rebuildShoppingList() {
         if (picker.showPicker) {
             picker.showPicker();
         } else {
+            // Fallback für Browser ohne showPicker()-Unterstützung: Fokus
+            // auf das (unsichtbare) native Feld, damit zumindest
+            // Tastatureingabe/native Bedienung möglich bleibt.
             picker.focus();
         }
     });

@@ -1,7 +1,24 @@
+{# Persistente Wochenplan-Seite (/ und /plan/<start_date>) - seit der
+   Kalender-Umstellung die neue Startseite der App, gerendert von
+   routes/plan.py: week_view(). Zeigt entweder den "Neuen Wochenplan
+   erstellen"-Hinweis (falls has_any_data False ist, also für diese Woche
+   noch kein einziger PlanDay in der Datenbank existiert) oder den
+   vollständigen 7-Tage-Plan samt Einkaufsliste.
+
+   Der initiale Render-Zustand kommt komplett server-seitig aus plan/
+   side_plan/servings_list (Jinja-Schleife über range(7)); JEDE danach
+   folgende Interaktion (würfeln, tauschen, Beilage, Personenzahl) läuft
+   über static/plan.js und window.PLAN_DATA (siehe ganz unten) - dieses
+   JSON-Objekt enthält dieselben Daten nochmal in maschinenlesbarer Form,
+   damit plan.js nicht bei jeder Änderung das DOM neu parsen muss. #}
 {% extends 'base.html' %}
 {% block content %}
 
-<!-- WOCHEN-NAVIGATION -->
+<!-- Wochen-Navigation: Grid-Layout statt Flexbox+wrap, siehe CSS-Kommentar
+     unten - garantiert "Vorherige Woche" links / Datum mittig / "Nächste
+     Woche" rechts bei jeder Bildschirmbreite. Ab < 768px (Bootstrap-
+     Breakpoint md) wird der Button-Text durch reine Pfeile ersetzt, damit
+     der Platz in der Mitte für das Datum plus Datepicker-Textfeld reicht. -->
 <div class="card shadow-sm border-0 mb-3">
     <div class="card-body p-3">
         <div class="week-nav">
@@ -11,6 +28,13 @@
             </a>
             <div class="week-nav-date d-flex flex-wrap align-items-center justify-content-center gap-2">
                 <strong class="fs-5">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</strong>
+                {# Sichtbares, readonly dd.mm.yyyy-Textfeld statt des
+                   browser-lokalisierten <input type="date">-Anzeigetexts
+                   (der z.B. in manchen Locales mm/dd/yyyy zeigt). Der
+                   eigentliche native Datepicker (unten) bleibt unsichtbar
+                   im Hintergrund und wird per Klick auf DIESES Feld über
+                   showPicker() geöffnet - siehe static/plan.js, unterster
+                   Abschnitt. #}
                 <input type="text" id="weekDateDisplay" class="form-control form-control-sm" readonly style="width: 110px; cursor: pointer; background: white;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="Zu einer bestimmten Woche springen">
                 <input type="date" id="weekDatePicker" value="{{ start_date.isoformat() }}" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
             </div>
@@ -167,6 +191,13 @@
 </style>
 
 {% endif %}
+{# window.PLAN_DATA wird per Jinja tojson-Filter aus dem Python-Dict
+   plan_data (siehe routes/plan.py: week_view) erzeugt - tojson escaped
+   dabei automatisch Anführungszeichen/Sonderzeichen in Rezeptnamen o.ä.
+   korrekt für eingebettetes JavaScript, anders als eine frühere,
+   inzwischen ersetzte Version dieser Seite, die Werte per Hand als
+   JS-String-Literale zusammengesetzt hatte (dort hätte z.B. ein
+   Anführungszeichen im Rezeptnamen das Script gebrochen). #}
 <script>
 window.PLAN_DATA = {{ plan_data | tojson }};
 </script>

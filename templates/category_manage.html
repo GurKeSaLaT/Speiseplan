@@ -1,3 +1,9 @@
+{# Kategorie-Verwaltung (/manage/categories): Formular zum Anlegen einer neuen
+   Kategorie sowie eine Liste aller bestehenden mit Lösch-Button. Der
+   Lösch-Button ist deaktiviert, sobald cat.recipes nicht leer ist (siehe
+   routes/categories.py: delete_category lehnt das Löschen serverseitig
+   ohnehin ab - die Deaktivierung hier ist nur die entsprechende
+   UI-Vorwegnahme, damit der Nutzer den Fehler gar nicht erst provoziert). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
