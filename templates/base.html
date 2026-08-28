@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🍽️ Speiseplanhelfer</title>
-    
+
     <!-- 1. LOKALES BOOTSTRAP CSS (Vollkommen offline) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" type="text/css">
-    
+
     <!-- 2. DEINE EIGENE CSS-DATEI MIT CACHE-BREMSE -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_version }}" type="text/css">
-    
+
     <style>
         /* Fallback für die Schriftart, falls Google Fonts blockiert ist */
         body {
@@ -39,7 +39,7 @@
             </div>
         </div>
     </nav>
-    
+
     <!-- Hauptinhalt -->
     <div class="container pb-5">
         {% block content %}{% endblock %}

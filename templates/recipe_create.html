@@ -38,7 +38,7 @@
                     </div>
 
                     <h5 class="border-bottom pb-2 mb-3 text-success fw-bold">Zutaten (optional)</h5>
-                    
+
                     <datalist id="ingredients-datalist">
                         {% for ing_name in ingredient_list %}
                         <option value="{{ ing_name }}"></option>
@@ -53,7 +53,7 @@
                         </div>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary mb-4" onclick="addIngredientField()">+ Zutat hinzufügen</button>
-                    
+
                     <div class="d-flex gap-2">
                         <a href="/manage" class="btn btn-outline-secondary w-50">Abbrechen</a>
                         <button type="submit" class="btn btn-success w-50 fw-bold">Rezept Speichern</button>

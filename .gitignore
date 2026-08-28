@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtualenv
+.venv/
+venv/
+
+# SQLite runtime files (die eigentliche speiseplan.db bleibt versioniert)
+instance/*.db-journal
+instance/*.db-wal
+instance/*.db-shm
+
+# Editor/OS
+.DS_Store

@@ -1,7 +1,9 @@
 import os
 import random
+from collections import Counter
+
 from sqlalchemy import text
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for
 from models import db, Category, Recipe, Ingredient
 
 app = Flask(__name__)
@@ -10,6 +12,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 os.makedirs(app.instance_path, exist_ok=True)
 db.init_app(app)
+
 
 def init_db():
     db.create_all()
@@ -26,8 +29,22 @@ def init_db():
             db.session.add(Category(name=cat_name))
         db.session.commit()
 
+
 with app.app_context():
     init_db()
+
+
+@app.context_processor
+def inject_css_version():
+    # Cache-Bremse für style.css: Änderungsdatum der Datei als Query-Parameter,
+    # damit Browser nach einem Update nicht die alte Version aus dem Cache laden
+    css_path = os.path.join(app.static_folder, 'style.css')
+    try:
+        css_version = int(os.path.getmtime(css_path))
+    except OSError:
+        css_version = 0
+    return {'css_version': css_version}
+
 
 # 1. HAUPTSEITE: Reine Essensauswahl
 @app.route('/')
@@ -36,11 +53,13 @@ def index():
     categories = Category.query.all()
     return render_template('index.html', recipes=recipes, categories=categories)
 
+
 # --- NEU STRUKTURIERTE VERWALTUNGS-ROUTEN ---
 
 @app.route('/manage')
 def manage():
     return render_template('manage.html')
+
 
 @app.route('/manage/recipe/create')
 def recipe_create_view():
@@ -51,6 +70,7 @@ def recipe_create_view():
 
     return render_template('recipe_create.html', categories=categories, ingredient_list=ingredient_list)
 
+
 @app.route('/manage/recipe/edit-list')
 def recipe_edit_list_view():
     recipes = Recipe.query.all()
@@ -60,6 +80,7 @@ def recipe_edit_list_view():
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
     return render_template('recipe_edit_list.html', recipes=recipes, categories=categories, ingredient_list=ingredient_list)
+
 
 @app.route('/manage/categories')
 def category_manage_view():
@@ -101,6 +122,7 @@ def add_recipe():
     # Zurück zur "Erstellen"-Unterseite für den nächsten Eintrag
     return redirect(url_for('recipe_create_view'))
 
+
 @app.route('/edit-recipe/<int:id>', methods=['POST'])
 def edit_recipe(id):
     recipe = Recipe.query.get_or_404(id)
@@ -129,12 +151,14 @@ def edit_recipe(id):
     # Zurück zur Bearbeitungsliste
     return redirect(url_for('recipe_edit_list_view'))
 
+
 @app.route('/delete-recipe/<int:id>', methods=['POST'])
 def delete_recipe(id):
     recipe = Recipe.query.get_or_404(id)
     db.session.delete(recipe)
     db.session.commit()
     return redirect(url_for('recipe_edit_list_view'))
+
 
 @app.route('/add-category', methods=['POST'])
 def add_category():
@@ -147,6 +171,7 @@ def add_category():
             db.session.commit()
     return redirect(url_for('category_manage_view'))
 
+
 @app.route('/delete-category/<int:id>', methods=['POST'])
 def delete_category(id):
     category = Category.query.get_or_404(id)
@@ -156,13 +181,13 @@ def delete_category(id):
     db.session.commit()
     return redirect(url_for('category_manage_view'))
 
+
 # --- PLANUNGS-LOGIK ---
 
 def get_balanced_category_slots(all_categories, n=7, preexisting_counts=None):
     """Hilfsfunktion zur Berechnung einer möglichst gleichmäßigen Kategorie-Verteilung für n Tage.
     Bereits fest belegte Tage (preexisting_counts) fließen in die Balance mit ein,
     ohne dass sich die Länge des Ergebnisses (== n) dadurch ändert."""
-    from collections import Counter
     cat_ids = [c.id for c in all_categories]
     if not cat_ids or n <= 0:
         return []
@@ -181,6 +206,7 @@ def get_balanced_category_slots(all_categories, n=7, preexisting_counts=None):
 
     random.shuffle(slots)
     return slots
+
 
 @app.route('/generate-plan', methods=['POST'])
 def generate_plan():
@@ -238,7 +264,6 @@ def generate_plan():
     # 4. Balancierte Kategorie-Slots für die verbleibenden Tage berechnen.
     #    Bereits fest zugewiesene Tage fließen als Vorbelastung in die Balance ein,
     #    damit die Anzahl der Slots exakt der Anzahl der aufzufüllenden Tage entspricht.
-    from collections import Counter
     preexisting_counts = Counter(
         final_plan[day_index].category_id
         for day_index in day_recipe_ids
@@ -253,7 +278,7 @@ def generate_plan():
     for day_index, needed_cat_id in zip(days_to_fill, target_category_ids):
         cat_recipes = Recipe.query.filter(
             Recipe.category_id == needed_cat_id,
-            Recipe.is_side_dish == False,
+            Recipe.is_side_dish.is_(False),
             ~Recipe.id.in_(used_recipe_ids)
         ).all()
 
@@ -262,7 +287,7 @@ def generate_plan():
             chosen = random.choice(cat_recipes)
         else:
             fallback_recipes = Recipe.query.filter(
-                Recipe.is_side_dish == False,
+                Recipe.is_side_dish.is_(False),
                 ~Recipe.id.in_(used_recipe_ids)
             ).all()
             if fallback_recipes:
@@ -291,7 +316,6 @@ def reroll_day():
 
     other_recipes = Recipe.query.filter(Recipe.id.in_(current_ids)).all()
 
-    from collections import Counter
     all_categories = Category.query.all()
     all_cat_ids = [c.id for c in all_categories]
 
@@ -310,7 +334,7 @@ def reroll_day():
     for best_cat_id in sorted_target_categories:
         chosen_recipe = Recipe.query.filter(
             Recipe.category_id == best_cat_id,
-            Recipe.is_side_dish == False,
+            Recipe.is_side_dish.is_(False),
             ~Recipe.id.in_(current_ids)
         ).all()
 
@@ -318,7 +342,7 @@ def reroll_day():
             return jsonify_recipe(random.choice(chosen_recipe))
 
     fallback_recipes = Recipe.query.filter(
-        Recipe.is_side_dish == False,
+        Recipe.is_side_dish.is_(False),
         ~Recipe.id.in_(current_ids)
     ).all()
     if fallback_recipes:
@@ -335,7 +359,7 @@ def reroll_side_day():
     current_ids = [cid for cid in current_ids_raw if cid]
 
     candidates = Recipe.query.filter(
-        Recipe.is_side_dish == True,
+        Recipe.is_side_dish.is_(True),
         ~Recipe.id.in_(current_ids)
     ).all()
 
@@ -343,6 +367,7 @@ def reroll_side_day():
         return jsonify_recipe(random.choice(candidates))
 
     return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
+
 
 def jsonify_recipe(recipe):
     # Hilfsfunktion, um Rezeptdaten lesbar für JavaScript bereitzustellen
@@ -357,5 +382,7 @@ def jsonify_recipe(recipe):
         "fat": recipe.fat,
         "ingredients": [{"name": ing.name.strip().title(), "amount": ing.amount, "unit": ing.unit} for ing in recipe.ingredients]
     }
+
+
 if __name__ == '__main__':
     app.run(debug=True)

@@ -2,9 +2,11 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
+
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
+
 
 class Recipe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -17,9 +19,10 @@ class Recipe(db.Model):
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
-    
+
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
     ingredients = db.relationship('Ingredient', backref='recipe', cascade="all, delete-orphan")
+
 
 class Ingredient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
