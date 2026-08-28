@@ -19,6 +19,7 @@ from flask_wtf import CSRFProtect
 
 from models import db, Category, RecipeSeason
 from services.seasons import SEASON_PRESETS
+from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
 from routes.plan import plan_bp
 from routes.manage import manage_bp
 from routes.recipes import recipes_bp
@@ -120,6 +121,17 @@ def init_db():
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
 
+    # Einkaufslisten-Kategorie einer Zutat (siehe services/shopping.py) - erst
+    # mit der gruppierten/sortierten Einkaufsliste hinzugekommen. Bestehende
+    # Zutaten bleiben dabei NULL (landen in der Einkaufsliste vorerst in der
+    # Sonstiges-Sammelgruppe, bis das jeweilige Rezept einmal neu gespeichert
+    # wird) - eine automatische Zuordnung ist ohne Nutzereingabe nicht
+    # zuverlässig möglich.
+    existing_ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
+    if 'category' not in existing_ingredient_columns:
+        db.session.execute(text("ALTER TABLE ingredient ADD COLUMN category VARCHAR(50)"))
+        db.session.commit()
+
     if 'season' in existing_columns:
         old_seasons = db.session.execute(text("SELECT id, season FROM recipe WHERE season IS NOT NULL")).fetchall()
         for recipe_id, season_name in old_seasons:
@@ -206,6 +218,17 @@ def inject_css_version():
     except OSError:
         css_version = 0
     return {'css_version': css_version}
+
+
+@app.context_processor
+def inject_shopping_categories():
+    """Stellt allen Templates die feste Einkaufslisten-Kategorie-Reihenfolge
+    zur Verfügung (siehe services/shopping.py) - gebraucht sowohl von den
+    Kategorie-Dropdowns beim Zutaten-Eintragen (recipe_create.html,
+    recipe_edit_list.html) als auch, über window.SHOPPING_CATEGORIES in
+    base.html, von der clientseitigen Sortierung/Gruppierung der
+    Einkaufsliste (static/plan.js)."""
+    return {'shopping_categories': SHOPPING_CATEGORIES, 'shopping_uncategorized': UNCATEGORIZED}
 
 
 if __name__ == '__main__':

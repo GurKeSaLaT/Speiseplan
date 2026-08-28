@@ -4,12 +4,15 @@
  * Verantwortlich für alles, was auf der Plan-Seite ohne Neuladen der Seite
  * passiert: einzelne Tage neu würfeln (Haupt- und Beilagengericht), zwei
  * Tage per Drag-and-Drop komplett tauschen, die Personenzahl pro Tag ändern,
- * sowie die daraus abgeleiteten Übersichten (Wochen-Nährwerte, Einkaufsliste)
- * live neu berechnen, ohne dafür die Seite neu laden zu müssen.
+ * manuelle Einkaufslisten-Artikel hinzufügen/entfernen, sowie die daraus
+ * abgeleiteten Übersichten (Wochen-Nährwerte, nach Supermarkt-Kategorie
+ * gruppierte Einkaufsliste) live neu berechnen, ohne dafür die Seite neu
+ * laden zu müssen.
  *
  * Jede Aktion, die den Plan verändert (würfeln, tauschen, Personenzahl,
- * Beilage entfernen), schickt zuerst einen fetch()-Request an den Server
- * (siehe routes/plan.py), der die Änderung in der Datenbank persistiert -
+ * Beilage entfernen, Artikel hinzufügen/entfernen), schickt zuerst einen
+ * fetch()-Request an den Server (siehe routes/plan.py), der die Änderung
+ * in der Datenbank persistiert -
  * erst wenn die Antwort erfolgreich war, wird auch der lokale JavaScript-
  * Speicher und das DOM aktualisiert. Ein Fehlschlag (z.B. "keine
  * Alternative verfügbar") führt NICHT zu einer optimistischen, dann wieder
@@ -51,6 +54,15 @@ let weeklyPlanRecipes = window.PLAN_DATA.plan;
 
 // Zusatzgerichte/Beilagen, unabhängig vom Hauptgericht (Index = Wochentag, null = keine Beilage)
 let weeklySideRecipes = window.PLAN_DATA.sidePlan;
+
+// Manuell zur Einkaufsliste dieser Woche hinzugefügte Artikel, die zu keinem
+// Rezept gehören (z.B. Hygieneartikel) - jeder Eintrag ist ein Objekt
+// {id, name, amount, unit, category} und wurde bereits serverseitig
+// persistiert (siehe routes/plan.py: add_shopping_item). Anders als
+// weeklyPlanRecipes/weeklySideRecipes NICHT nach Wochentag indiziert,
+// sondern eine flache Liste - ein manueller Artikel gehört der Woche als
+// Ganzes, keinem bestimmten Tag.
+let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
 // Beim ersten Laden der Seite die Einkaufsliste (und darüber auch die
 // Wochen-Nährwertübersicht, siehe rebuildShoppingList) einmal aus den
@@ -411,12 +423,36 @@ function rebuildWeeklyNutritionSummary() {
 }
 
 /**
+ * Liefert die Sortierposition einer Einkaufslisten-Kategorie gemäß der
+ * festen Reihenfolge in window.SHOPPING_CATEGORIES (siehe base.html/
+ * services/shopping.py). Unbekannte oder fehlende Kategorien (null,
+ * undefined, oder ein Wert, der nicht in der Liste steht - z.B. weil eine
+ * Zutat aus der Zeit vor Einführung dieses Felds stammt) bekommen die
+ * höchste Positionsnummer und landen dadurch immer GANZ AM ENDE der
+ * Einkaufsliste, in der "Sonstiges"-Sammelgruppe.
+ */
+function categorySortIndex(category) {
+    const categories = window.SHOPPING_CATEGORIES || [];
+    const idx = categories.indexOf(category);
+    return idx === -1 ? categories.length : idx;
+}
+
+/**
  * Rechnet die komplette Einkaufsliste der Woche aus dem aktuellen
- * JavaScript-Speicher neu zusammen und rendert sie. Wird nach JEDER
- * Änderung am Plan aufgerufen (würfeln, tauschen, Personenzahl,
- * Beilage entfernen), da praktisch jede dieser Änderungen die benötigten
- * Zutatenmengen beeinflusst. Ruft dabei auch rebuildWeeklyNutritionSummary()
- * mit auf, da beide Übersichten stets gemeinsam aktuell gehalten werden.
+ * JavaScript-Speicher neu zusammen und rendert sie, gruppiert nach fester
+ * Einkaufslisten-Kategorie-Reihenfolge (siehe categorySortIndex) und
+ * innerhalb einer Gruppe alphabetisch. Wird nach JEDER Änderung am Plan
+ * aufgerufen (würfeln, tauschen, Personenzahl, Beilage entfernen, Artikel
+ * hinzufügen/entfernen), da praktisch jede dieser Änderungen die
+ * benötigten Zutatenmengen beeinflusst. Ruft dabei auch
+ * rebuildWeeklyNutritionSummary() mit auf, da beide Übersichten stets
+ * gemeinsam aktuell gehalten werden.
+ *
+ * Zwei Quellen fließen in die Liste ein: aus Rezept-Zutaten abgeleitete
+ * Posten (nach Name+Einheit über die ganze Woche konsolidiert und mit der
+ * jeweiligen Tages-Personenzahl skaliert, wie schon zuvor) sowie manuell
+ * hinzugefügte Artikel aus weeklyExtraItems (unskaliert, jeder für sich
+ * einzeln mit eigenem Lösch-Button, da sie zu keinem Rezept/Tag gehören).
  */
 function rebuildShoppingList() {
     rebuildWeeklyNutritionSummary();
@@ -445,15 +481,33 @@ function rebuildShoppingList() {
                     const scaledAmount = ing.amount * factor;
                     if (consolidated[key]) {
                         consolidated[key].amount += scaledAmount;
+                        // Falls dieselbe Zutat in mehreren Rezepten leicht
+                        // unterschiedlich kategorisiert wurde, gewinnt die
+                        // zuletzt gesehene nicht-leere Kategorie - kein
+                        // harter Fehlerfall, kommt in der Praxis kaum vor.
+                        if (ing.category) consolidated[key].category = ing.category;
                     } else {
-                        consolidated[key] = { name: ing.name, amount: scaledAmount, unit: ing.unit };
+                        consolidated[key] = { name: ing.name, amount: scaledAmount, unit: ing.unit, category: ing.category || null };
                     }
                 });
             }
         });
     }
 
-    const items = Object.values(consolidated);
+    // Konsolidierte Rezept-Zutaten und manuelle Artikel zu einer
+    // gemeinsamen Liste zusammenführen, damit beide zusammen sortiert und
+    // gruppiert dargestellt werden - isExtra unterscheidet später, ob ein
+    // Eintrag einen Lösch-Button bekommt (nur manuelle Artikel sind
+    // einzeln entfernbar, Rezept-Zutaten ergeben sich automatisch aus dem
+    // Plan).
+    const items = Object.values(consolidated).map(item => ({ ...item, isExtra: false }));
+    weeklyExtraItems.forEach(extra => {
+        items.push({
+            id: extra.id, name: extra.name, amount: extra.amount, unit: extra.unit,
+            category: extra.category, isExtra: true,
+        });
+    });
+
     if (counterBadge) counterBadge.textContent = items.length;
 
     if (items.length === 0) {
@@ -461,42 +515,158 @@ function rebuildShoppingList() {
         return;
     }
 
-    // Alphabetisch sortieren
-    items.sort((a, b) => a.name.localeCompare(b.name));
+    // Erst nach fester Einkaufs-Kategorie-Reihenfolge sortieren, innerhalb
+    // derselben Kategorie alphabetisch nach Name.
+    items.sort((a, b) => {
+        const catDiff = categorySortIndex(a.category) - categorySortIndex(b.category);
+        return catDiff !== 0 ? catDiff : a.name.localeCompare(b.name);
+    });
 
+    // Gruppen-Überschriften einfügen, sobald sich die Kategorie zum
+    // vorherigen Posten ändert (die Liste ist bereits danach sortiert, ein
+    // einfacher Wechsel-Check reicht daher statt vorab zu gruppieren).
+    let lastCategoryLabel = undefined;
     items.forEach(item => {
+        const categoryLabel = item.category || window.SHOPPING_UNCATEGORIZED;
+        if (categoryLabel !== lastCategoryLabel) {
+            const header = document.createElement('li');
+            header.className = 'list-group-item bg-light text-muted small fw-bold text-uppercase py-1 px-3';
+            header.textContent = categoryLabel;
+            container.appendChild(header);
+            lastCategoryLabel = categoryLabel;
+        }
+
         const li = document.createElement('li');
         li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
+
+        const label = document.createElement('label');
+        label.className = 'd-flex align-items-center m-0 flex-grow-1';
+        label.style.cursor = 'pointer';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input me-3';
+        checkbox.style.transform = 'scale(1.15)';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'text-dark fs-5';
+        // textContent statt innerHTML: item.name kann Nutzereingabe sein
+        // (sowohl ein Zutatenname aus einem Rezept als auch - neu - der
+        // frei eingetippte Name eines manuellen Artikels), textContent
+        // umgeht dadurch jedes HTML/Script-Injection-Risiko von vornherein.
+        nameSpan.textContent = item.name;
+
+        label.appendChild(checkbox);
+        label.appendChild(nameSpan);
+
+        const right = document.createElement('div');
+        right.className = 'd-flex align-items-center';
+
         // Auf 2 Nachkommastellen runden, um Fließkomma-Artefakte durch die
-        // Personen-Skalierung zu vermeiden (z.B. 133.33333333333334 -> 133.33)
-        const displayAmount = Math.round(item.amount * 100) / 100;
-        li.innerHTML = `
-            <label class="d-flex align-items-center m-0 flex-grow-1" style="cursor: pointer;">
-                <input type="checkbox" class="form-check-input me-3" style="transform: scale(1.15);">
-                <span class="text-dark fs-5">${item.name}</span>
-            </label>
-            <span class="badge bg-success px-3 py-2 rounded-pill font-monospace" style="background-color: var(--primary-food) !important; font-size: 0.9rem;">
-                ${displayAmount} ${item.unit}
-            </span>
-        `;
+        // Personen-Skalierung zu vermeiden (z.B. 133.33333333333334 -> 133.33).
+        // Manuelle Artikel dürfen ganz ohne Mengenangabe existieren (null).
+        const displayAmount = (item.amount === null || item.amount === undefined) ? null : Math.round(item.amount * 100) / 100;
+        if (displayAmount !== null) {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-success px-3 py-2 rounded-pill font-monospace';
+            badge.style.backgroundColor = 'var(--primary-food)';
+            badge.style.fontSize = '0.9rem';
+            badge.textContent = item.unit ? `${displayAmount} ${item.unit}` : `${displayAmount}`;
+            right.appendChild(badge);
+        }
+
+        if (item.isExtra) {
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'btn btn-sm text-danger border-0 p-1 ms-1';
+            deleteBtn.title = 'Artikel entfernen';
+            deleteBtn.textContent = '❌';
+            deleteBtn.onclick = () => removeExtraShoppingItem(item.id);
+            right.appendChild(deleteBtn);
+        }
+
+        li.appendChild(label);
+        li.appendChild(right);
 
         // Checkbox dient rein der Anzeige beim Einkaufen (durchgestrichen +
         // ausgegraut, sobald abgehakt) - der Zustand wird bewusst NICHT
         // gespeichert (weder serverseitig noch in localStorage), da die
         // Liste ohnehin bei jeder Planänderung komplett neu aufgebaut wird.
-        const checkbox = li.querySelector('input[type="checkbox"]');
         checkbox.addEventListener('change', function() {
-            const span = li.querySelector('span.text-dark');
             if (this.checked) {
-                span.style.textDecoration = 'line-through';
-                span.style.opacity = '0.5';
+                nameSpan.style.textDecoration = 'line-through';
+                nameSpan.style.opacity = '0.5';
             } else {
-                span.style.textDecoration = 'none';
-                span.style.opacity = '1';
+                nameSpan.style.textDecoration = 'none';
+                nameSpan.style.opacity = '1';
             }
         });
 
         container.appendChild(li);
+    });
+}
+
+/**
+ * Liest das "Artikel hinzufügen"-Mini-Formular aus (siehe plan.html), legt
+ * den Artikel serverseitig für die aktuell angezeigte Woche an (dayDates[0]
+ * ist der Montag dieser Woche) und hängt ihn bei Erfolg an weeklyExtraItems
+ * an, bevor die Einkaufsliste neu aufgebaut wird. name ist die einzige
+ * Pflichtangabe - ist das Feld leer, passiert nichts (kein Fehler nötig,
+ * der Button/Enter-Druck bleibt einfach wirkungslos).
+ */
+function addExtraShoppingItem() {
+    const nameInput = document.getElementById('extraItemName');
+    const amountInput = document.getElementById('extraItemAmount');
+    const unitInput = document.getElementById('extraItemUnit');
+    const categorySelect = document.getElementById('extraItemCategory');
+    if (!nameInput) return;
+
+    const name = nameInput.value.trim();
+    if (!name) return;
+
+    postWithCsrf(`/plan/${dayDates[0]}/shopping-item/add`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: name,
+            amount: amountInput.value ? parseFloat(amountInput.value) : null,
+            unit: unitInput.value.trim(),
+            category: categorySelect.value,
+        }),
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Hinzufügen fehlgeschlagen.');
+        return response.json();
+    })
+    .then(newItem => {
+        weeklyExtraItems.push(newItem);
+        rebuildShoppingList();
+        // Formular für den nächsten Artikel zurücksetzen und den Fokus
+        // gleich wieder ins Namensfeld legen, damit mehrere Artikel
+        // hintereinander schnell per Enter eingetragen werden können.
+        nameInput.value = '';
+        amountInput.value = '';
+        unitInput.value = '';
+        categorySelect.value = '';
+        nameInput.focus();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+/**
+ * Entfernt einen manuell hinzugefügten Artikel wieder aus der Einkaufsliste
+ * (serverseitig endgültig gelöscht, nicht nur ausgeblendet).
+ */
+function removeExtraShoppingItem(itemId) {
+    postWithCsrf(`/shopping-item/${itemId}/delete`)
+    .then(response => {
+        if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
+        weeklyExtraItems = weeklyExtraItems.filter(item => item.id !== itemId);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
     });
 }
 

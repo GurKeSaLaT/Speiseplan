@@ -269,7 +269,9 @@ def jsonify_recipe(recipe):
     damit z.B. "  nudeln" und "Nudeln" in der clientseitig konsolidierten
     Einkaufsliste (siehe static/plan.js: rebuildShoppingList) als derselbe
     Eintrag erkannt werden, auch wenn sie bei verschiedenen Rezepten leicht
-    unterschiedlich eingetragen wurden.
+    unterschiedlich eingetragen wurden. Die Einkaufslisten-Kategorie jeder
+    Zutat (siehe services/shopping.py) wird unverändert mitgegeben - sie
+    bestimmt dort, in welcher Gruppe/Reihenfolge die Zutat einsortiert wird.
     """
     return {
         "id": recipe.id,
@@ -281,5 +283,8 @@ def jsonify_recipe(recipe):
         "protein": recipe.protein,
         "carbs": recipe.carbs,
         "fat": recipe.fat,
-        "ingredients": [{"name": ing.name.strip().title(), "amount": ing.amount, "unit": ing.unit} for ing in recipe.ingredients]
+        "ingredients": [
+            {"name": ing.name.strip().title(), "amount": ing.amount, "unit": ing.unit, "category": ing.category}
+            for ing in recipe.ingredients
+        ]
     }

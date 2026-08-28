@@ -1,6 +1,6 @@
 """SQLAlchemy-Datenmodelle der Speiseplan-App.
 
-Fünf Tabellen mit folgenden Beziehungen:
+Sechs Tabellen mit folgenden Beziehungen:
 
     Category 1---n Recipe 1---n Ingredient
                       |  1
@@ -9,10 +9,16 @@ Fünf Tabellen mit folgenden Beziehungen:
 
     Recipe 1---n PlanDay (einmal als main_recipe, einmal als side_recipe)
 
+    ExtraShoppingItem (eigenständig, nur über week_start lose an eine
+                        Kalenderwoche gebunden - kein Fremdschlüssel)
+
 Rezepte (Recipe) sind die zentrale Entität: sie gehören zu genau einer
 Kategorie, tragen ihre eigenen Zutaten sowie optional mehrere
 Verfügbarkeitszeiträume (RecipeSeason). Der Wochenplan-Kalender (PlanDay)
 verweist pro Kalendertag auf höchstens ein Haupt- und ein Zusatzgericht.
+ExtraShoppingItem ergänzt die aus den Rezept-Zutaten abgeleitete
+Einkaufsliste um manuell hinzugefügte Posten (z.B. Hygieneartikel), die zu
+keinem Rezept gehören.
 """
 
 from flask_sqlalchemy import SQLAlchemy
@@ -110,12 +116,20 @@ class Ingredient(db.Model):
     Recipe.servings festgelegte Personenzahl. Beim Zusammenstellen der
     Einkaufsliste wird amount clientseitig mit der pro Wochentag
     eingestellten Personenzahl skaliert (siehe static/plan.js).
+
+    category ist optional und einer der festen Werte aus
+    services/shopping.py: SHOPPING_CATEGORIES (kein eigener Fremdschlüssel,
+    da die Liste bewusst klein/fest ist) - bestimmt, in welchem
+    Supermarkt-Bereich diese Zutat in der Einkaufsliste einsortiert wird.
+    None (z.B. bei Zutaten aus der Zeit vor Einführung dieses Felds) landet
+    dort in der Sonstiges-Sammelgruppe.
     """
     id = db.Column(db.Integer, primary_key=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     unit = db.Column(db.String(20), nullable=False)
+    category = db.Column(db.String(50), nullable=True)
 
 
 class PlanDay(db.Model):
@@ -155,3 +169,25 @@ class PlanDay(db.Model):
     # eindeutig zuordnen kann, welche der beiden FK-Spalten gemeint ist.
     main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
     side_recipe = db.relationship('Recipe', foreign_keys=[side_recipe_id])
+
+
+class ExtraShoppingItem(db.Model):
+    """Ein manuell zur Einkaufsliste einer Woche hinzugefügter Posten, der zu
+    keinem Rezept gehört (z.B. Hygieneartikel oder Getränke, die nicht als
+    Zutat irgendeines Gerichts eingetragen sind).
+
+    week_start ist bewusst NUR ein Datum (der Montag der betreffenden
+    Kalenderwoche, wie start_date überall sonst im Projekt) statt eines
+    Fremdschlüssels auf PlanDay/eine eigene "Week"-Tabelle - es gibt kein
+    eigenes Wochen-Modell, Wochen existieren nur implizit über die 7
+    zusammengehörigen PlanDay-Zeilen. amount/unit sind wie bei Ingredient
+    optional und frei, werden aber (anders als Zutaten aus Rezepten) NICHT
+    mit der Personenzahl eines Wochentags skaliert, da sie an keinen
+    bestimmten Tag oder ein bestimmtes Rezept gebunden sind.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    week_start = db.Column(db.Date, nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.Float, nullable=True)
+    unit = db.Column(db.String(20), nullable=True)
+    category = db.Column(db.String(50), nullable=True)

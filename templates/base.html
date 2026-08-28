@@ -17,6 +17,17 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script>window.CSRF_TOKEN = {{ csrf_token() | tojson }};</script>
 
+    {# Feste Einkaufslisten-Kategorie-Reihenfolge (siehe services/shopping.py,
+       app.py: inject_shopping_categories) - static/plan.js sortiert/gruppiert
+       die Einkaufsliste danach, unabhängig davon, welche Seite gerade
+       geladen ist (die Kategorie-Dropdowns beim Zutaten-Eintragen bekommen
+       dieselbe Liste zusätzlich direkt server-seitig gerendert, siehe
+       recipe_create.html/recipe_edit_list.html). #}
+    <script>
+        window.SHOPPING_CATEGORIES = {{ shopping_categories | tojson }};
+        window.SHOPPING_UNCATEGORIZED = {{ shopping_uncategorized | tojson }};
+    </script>
+
     {# 1. Lokales Bootstrap-CSS (als Datei im static-Ordner, nicht per CDN
        geladen) - die App soll auch ganz ohne Internetzugang im Heimnetz
        funktionieren. #}

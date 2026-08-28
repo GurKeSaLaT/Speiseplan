@@ -7,10 +7,12 @@
 
    Der initiale Render-Zustand kommt komplett server-seitig aus plan/
    side_plan/servings_list (Jinja-Schleife über range(7)); JEDE danach
-   folgende Interaktion (würfeln, tauschen, Beilage, Personenzahl) läuft
-   über static/plan.js und window.PLAN_DATA (siehe ganz unten) - dieses
-   JSON-Objekt enthält dieselben Daten nochmal in maschinenlesbarer Form,
-   damit plan.js nicht bei jeder Änderung das DOM neu parsen muss. #}
+   folgende Interaktion (würfeln, tauschen, Beilage, Personenzahl, manuelle
+   Einkaufslisten-Artikel) läuft über static/plan.js und window.PLAN_DATA
+   (siehe ganz unten) - dieses JSON-Objekt enthält dieselben Daten nochmal
+   in maschinenlesbarer Form (inkl. extraItems, den manuell hinzugefügten
+   Einkaufslisten-Posten dieser Woche), damit plan.js nicht bei jeder
+   Änderung das DOM neu parsen muss. #}
 {% extends 'base.html' %}
 {% block content %}
 
@@ -167,6 +169,37 @@
                 <h4 class="mb-0 fw-bold">🛒 Einkaufsliste</h4>
                 <span class="badge bg-white text-success px-2 py-1 rounded-pill" style="color: var(--primary-food) !important;" id="totalIngredientsCount">0</span>
             </div>
+
+            {# Mini-Formular zum manuellen Hinzufügen eines Artikels, der zu
+               keinem Rezept gehört (z.B. Hygieneartikel). name ist das
+               einzige Pflichtfeld; die Kategorie-Auswahl bestimmt, in
+               welcher Gruppe der Artikel unten in der Liste landet (siehe
+               static/plan.js: addExtraShoppingItem/rebuildShoppingList). #}
+            <div class="p-2 border-bottom">
+                <div class="row g-1">
+                    <div class="col-12 col-sm-4">
+                        <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="Artikel..." onkeydown="if(event.key==='Enter'){addExtraShoppingItem();}">
+                    </div>
+                    <div class="col-4 col-sm-2">
+                        <input type="number" step="0.1" id="extraItemAmount" class="form-control form-control-sm" placeholder="Menge">
+                    </div>
+                    <div class="col-4 col-sm-2">
+                        <input type="text" id="extraItemUnit" class="form-control form-control-sm" placeholder="Einheit">
+                    </div>
+                    <div class="col-4 col-sm-3">
+                        <select id="extraItemCategory" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
+                            <option value="" selected>Sonstiges</option>
+                            {% for cat in shopping_categories %}
+                            <option value="{{ cat }}">{{ cat }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-1 d-grid">
+                        <button type="button" class="btn btn-sm btn-success" style="background-color: var(--primary-food) !important; border-color: var(--primary-food) !important;" onclick="addExtraShoppingItem()" title="Zur Einkaufsliste hinzufügen">+</button>
+                    </div>
+                </div>
+            </div>
+
             <ul class="list-group list-group-flush p-2" id="shoppingListContainer" style="max-height: 75vh; overflow-y: auto;">
                 <!-- Wird per JavaScript befüllt -->
             </ul>

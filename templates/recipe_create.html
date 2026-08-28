@@ -4,8 +4,11 @@
    services/seasons.py: save_recipe_seasons() ausgewertet - beide Wege sind
    miteinander kombinierbar, keiner schließt den anderen aus. Die
    Zutatenzeilen werden per JavaScript (addIngredientField, unten im
-   <script>-Block) dynamisch vermehrt und kommen beim Absenden als drei
-   parallele Listen (ing_name[]/ing_amount[]/ing_unit[]) im Formular an. #}
+   <script>-Block) dynamisch vermehrt und kommen beim Absenden als vier
+   parallele Listen (ing_name[]/ing_amount[]/ing_unit[]/ing_category[]) im
+   Formular an - ing_category[] bestimmt, in welchem Supermarkt-Bereich
+   diese Zutat später in der Einkaufsliste einsortiert wird (siehe
+   services/shopping.py). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -89,9 +92,17 @@
 
                     <div id="ingredients-container" class="mb-2">
                         <div class="row g-2 mb-2">
-                            <div class="col-6"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
-                            <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
+                            <div class="col-4"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
+                            <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
                             <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, Stk)"></div>
+                            <div class="col-3">
+                                <select name="ing_category[]" class="form-select" title="Einkaufslisten-Kategorie">
+                                    <option value="">Sonstiges</option>
+                                    {% for cat in shopping_categories %}
+                                    <option value="{{ cat }}">{{ cat }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary mb-4" onclick="addIngredientField()">+ Zutat hinzufügen</button>
@@ -107,19 +118,33 @@
 </div>
 
 <script>
-// Fügt eine weitere leere Zutaten-Zeile (Name/Menge/Einheit) hinzu. Die
-// name-Attribute enden bewusst auf "[]" und sind für alle Zeilen identisch -
-// so liefert Flask beim Absenden über request.form.getlist() automatisch
-// eine Liste aller Werte in DOM-Reihenfolge zurück (siehe add_recipe() in
-// routes/recipes.py), ganz ohne eigene Indexnummerierung.
+// Baut die <option>-Liste für eine Einkaufslisten-Kategorie-Auswahl aus
+// window.SHOPPING_CATEGORIES (siehe base.html) - wird von addIngredientField
+// unten für jede neu hinzugefügte Zutatenzeile aufgerufen, damit die
+// Kategorie-Liste nicht doppelt (einmal server-seitig für die erste Zeile,
+// einmal hart codiert in JS) gepflegt werden muss.
+function categoryOptionsHtml() {
+    let html = '<option value="" selected>Sonstiges</option>';
+    (window.SHOPPING_CATEGORIES || []).forEach(cat => {
+        html += `<option value="${cat}">${cat}</option>`;
+    });
+    return html;
+}
+
+// Fügt eine weitere leere Zutaten-Zeile (Name/Menge/Einheit/Kategorie) hinzu.
+// Die name-Attribute enden bewusst auf "[]" und sind für alle Zeilen
+// identisch - so liefert Flask beim Absenden über request.form.getlist()
+// automatisch eine Liste aller Werte in DOM-Reihenfolge zurück (siehe
+// add_recipe() in routes/recipes.py), ganz ohne eigene Indexnummerierung.
 function addIngredientField() {
     const container = document.getElementById('ingredients-container');
     const div = document.createElement('div');
     div.className = 'row g-2 mb-2';
     div.innerHTML = `
-        <div class="col-6"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
-        <div class="col-3"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
+        <div class="col-4"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
+        <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
         <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, Stk)"></div>
+        <div class="col-3"><select name="ing_category[]" class="form-select" title="Einkaufslisten-Kategorie">${categoryOptionsHtml()}</select></div>
     `;
     container.appendChild(div);
 }

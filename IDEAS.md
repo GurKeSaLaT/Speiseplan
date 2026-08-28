@@ -46,6 +46,18 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   welches Rezept vorkam), aber noch **ohne** wochenübergreifende
   Wiederholungssperre oder Rückblicks-/Auswertungsansicht - beides wäre mit
   den vorhandenen Daten jetzt leicht nachrüstbar.
+- **Zutaten-Kategorien für die Einkaufsliste.** Neues `Ingredient.category`-
+  Feld (fester Wertebereich aus `services/shopping.py: SHOPPING_CATEGORIES`,
+  in Einkaufsreihenfolge: Obst/Gemüse, Milchprodukte, Hygieneartikel,
+  Getränke, Teigwaren, Konserven, Tiefkühlware, Rest = Sonstiges). Wird beim
+  Zutat-Eintragen per Dropdown gewählt und gruppiert/sortiert die
+  Einkaufsliste entsprechend statt rein alphabetisch. Bestehende Zutaten
+  landen bis zur nächsten Bearbeitung in Sonstiges.
+- **Manuell Artikel zur Einkaufsliste hinzufügen.** Neues Modell
+  `ExtraShoppingItem` (an eine Kalenderwoche gebunden, kein Rezept nötig) -
+  z.B. für Hygieneartikel oder Getränke, die zu keinem Gericht gehören.
+  Eigener Lösch-Button pro manuellem Posten, reiht sich in dieselbe
+  kategorisierte Sortierung ein wie die Rezept-Zutaten.
 
 ## Vorgeschlagen
 
@@ -63,9 +75,5 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    Würfeln zusätzlich vermeiden, ein Rezept zu wählen, das erst vor Kurzem
    (z.B. in den letzten 2-3 Wochen) schon dran war.
 
-3. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
-   Bereich gruppieren (Gemüse, Milchprodukte, Tiefkühl, ...) statt nur
-   alphabetisch, um den Einkauf zu erleichtern.
-
-4. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
+3. **Rezept-Import.** Rezepte per URL oder Copy-Paste aus einer bestehenden
    Quelle importieren, statt jede Zutat manuell einzutippen.

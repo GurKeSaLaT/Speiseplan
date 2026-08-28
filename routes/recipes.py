@@ -93,12 +93,15 @@ def add_recipe():
     kann. Erst der abschließende commit() macht alles zusammen dauerhaft
     (bei einem Fehler dazwischen würde alles zurückgerollt).
 
-    Die Zutaten kommen als drei parallele Listen aus dem Formular
-    (ing_name[], ing_amount[], ing_unit[] - ein HTML-Formular mit
-    dynamisch per JavaScript hinzugefügten Zeilen, siehe
+    Die Zutaten kommen als vier parallele Listen aus dem Formular
+    (ing_name[], ing_amount[], ing_unit[], ing_category[] - ein
+    HTML-Formular mit dynamisch per JavaScript hinzugefügten Zeilen, siehe
     recipe_create.html), werden über den gemeinsamen Index paarweise
     zusammengeführt und Zeilen mit leerem Namen übersprungen (z.B. eine
-    ungenutzte letzte leere Zeile im Formular).
+    ungenutzte letzte leere Zeile im Formular). ing_category[] ist dabei
+    der einzige der vier optional: ein leerer String wird zu None (siehe
+    services/shopping.py: UNCATEGORIZED - None landet in der Einkaufsliste
+    in der Sonstiges-Sammelgruppe, ganz ohne extra Sonderfall hier).
     """
     name = request.form.get('name')
     category_id = request.form.get('category_id')
@@ -124,11 +127,15 @@ def add_recipe():
     ing_names = request.form.getlist('ing_name[]')
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
+    ing_categories = request.form.getlist('ing_category[]')
 
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
-            ingredient = Ingredient(recipe_id=new_recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i])
+            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            ingredient = Ingredient(
+                recipe_id=new_recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i], category=category
+            )
             db.session.add(ingredient)
 
     db.session.commit()
@@ -167,11 +174,15 @@ def edit_recipe(id):
     ing_names = request.form.getlist('ing_name[]')
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
+    ing_categories = request.form.getlist('ing_category[]')
 
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
-            ingredient = Ingredient(recipe_id=recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i])
+            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            ingredient = Ingredient(
+                recipe_id=recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i], category=category
+            )
             db.session.add(ingredient)
 
     db.session.commit()
