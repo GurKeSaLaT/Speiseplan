@@ -1,8 +1,9 @@
 """Der Wochenplan-Kalender: Anzeige, Erstellen und alle Live-Interaktionen
-(würfeln, tauschen, Beilage hinzufügen/entfernen, Personenzahl ändern) mit
-dem dauerhaft in PlanDay gespeicherten Plan.
+(würfeln, manuell auswählen, tauschen, Beilagen hinzufügen/entfernen/
+verschieben, Personenzahl ändern) mit dem dauerhaft in PlanDay/PlanDaySide
+gespeicherten Plan.
 
-Zwei Arten von Routen leben hier nebeneinander:
+Drei Arten von Routen leben hier nebeneinander:
 
 - Seiten-Routen (/, /plan/<start_date>, /plan/<start_date>/create,
   /plan/<start_date>/generate): liefern ganze HTML-Seiten bzw. leiten
@@ -15,7 +16,10 @@ Zwei Arten von Routen leben hier nebeneinander:
   Wochenstart+Index - das macht sie unabhängig davon, in welcher
   Wochenansicht der Nutzer sie gerade auslöst, und lässt z.B. die
   Nachbarschafts-Kategorie-Regel beim Reroll sogar über Wochengrenzen
-  hinweg funktionieren (siehe reroll_day).
+  hinweg funktionieren (siehe reroll_day). Die Beilagen-Aktionen darunter
+  (/day/<day_date>/side/...) sind zusätzlich POSTEN-bezogen (ein Tag kann
+  mehrere Beilagen haben, siehe models.py: PlanDaySide) - alle bis auf
+  "add" adressieren daher eine konkrete PlanDaySide-Zeile per <int:side_id>.
 
 - Einkaufslisten-Aktionen (/plan/<start_date>/shopping-item/add,
   /shopping-item/<id>/delete): AJAX-Endpunkte für manuell zur Einkaufsliste
@@ -30,11 +34,24 @@ from datetime import date, timedelta
 
 from flask import Blueprint, render_template, request, redirect, url_for, abort
 
-from models import db, Category, Recipe, PlanDay, ExtraShoppingItem
+from models import db, Category, Recipe, PlanDay, PlanDaySide, ExtraShoppingItem
 from services.planning import (
     DAY_NAMES_DE, monday_of, week_dates_for, parse_iso_date, week_neighbor_exclude_ids,
-    assign_balanced_categories, choose_recipe, jsonify_recipe
+    week_side_recipe_ids, assign_balanced_categories, choose_recipe, jsonify_recipe
 )
+
+
+def jsonify_side(plan_day_side):
+    """Wie jsonify_recipe(), aber für eine PlanDaySide-Zeile: hängt an das
+    serialisierte Rezept-Dict zusätzlich side_id an - die ID der
+    PlanDaySide-Zeile selbst, NICHT des Rezepts. static/plan.js braucht
+    diese ID, um genau DIESEN Beilagen-Slot gezielt neu zu würfeln, manuell
+    zu ersetzen, zu entfernen oder auf einen anderen Tag zu verschieben,
+    unabhängig davon, ob dasselbe Rezept vielleicht noch als Beilage an
+    einem anderen Tag steht."""
+    data = jsonify_recipe(plan_day_side.recipe)
+    data['side_id'] = plan_day_side.id
+    return data
 
 plan_bp = Blueprint('plan', __name__)
 
@@ -68,9 +85,10 @@ def week_view(start_date):
     (falls vorhanden - ordered enthält an der jeweiligen Position None,
     wenn für diesen Tag noch nichts geplant wurde) und leitet daraus vier
     parallele, nach Tag-Index (0=Montag...6=Sonntag) sortierte Listen ab:
-    plan (Hauptgerichte), side_plan (Beilagen), excluded_days (welche
-    Tag-Indizes als "ausgenommen" markiert sind) und servings_list
-    (Personenzahl je Tag, Default 2 für noch ungeplante Tage).
+    plan (Hauptgerichte), side_plan (je Tag eine LISTE von Beilagen, siehe
+    models.py: PlanDay.sides - ein Tag kann beliebig viele haben),
+    excluded_days (welche Tag-Indizes als "ausgenommen" markiert sind) und
+    servings_list (Personenzahl je Tag, Default 2 für noch ungeplante Tage).
 
     has_any_data unterscheidet "diese Woche wurde noch NIE erstellt"
     (any(ordered) ist False, alle 7 Einträge sind None) von "diese Woche
@@ -82,9 +100,13 @@ def week_view(start_date):
     nötigen Daten (siehe static/plan.js) in einem einzigen, über den
     Jinja-Filter `tojson` sicher als JSON eingebetteten Objekt
     (window.PLAN_DATA) - dieselben Recipe-Objekte werden dafür über
-    jsonify_recipe() in einfache Dicts umgewandelt, exakt dieselbe
-    Hilfsfunktion, die auch die /day/...-AJAX-Endpunkte weiter unten für
-    ihre Antworten verwenden, damit das Datenformat konsistent bleibt.
+    jsonify_recipe()/jsonify_side() in einfache Dicts umgewandelt, exakt
+    dieselben Hilfsfunktionen, die auch die /day/...-AJAX-Endpunkte weiter
+    unten für ihre Antworten verwenden, damit das Datenformat konsistent
+    bleibt. allRecipes enthält zusätzlich ALLE Rezepte (unabhängig vom
+    aktuellen Plan) in einer schlanken Form - Grundlage für die manuelle
+    Rezeptauswahl (Such-/Auswahlbox, siehe static/plan.js:
+    openMainManualSelect/openSideManualSelect).
     """
     start = parse_iso_date(start_date)
     if start is None:
@@ -99,7 +121,7 @@ def week_view(start_date):
     has_any_data = any(ordered)
 
     plan = [pd.main_recipe if pd else None for pd in ordered]
-    side_plan = [pd.side_recipe if pd else None for pd in ordered]
+    side_plan = [pd.sides if pd else [] for pd in ordered]
     excluded_days = {i for i, pd in enumerate(ordered) if pd and pd.excluded}
     servings_list = [pd.servings if pd else 2 for pd in ordered]
 
@@ -116,23 +138,34 @@ def week_view(start_date):
     # kein Fremdschlüssel auf PlanDay o.ä. nötig.
     extra_items = ExtraShoppingItem.query.filter_by(week_start=normalized).order_by(ExtraShoppingItem.id).all()
 
+    all_recipes = Recipe.query.all()
+
     plan_data = {
         'weekDates': [d.isoformat() for d in dates],
         'dayLabels': day_labels,
         'excludedDays': [i in excluded_days for i in range(7)],
         'servingsList': servings_list,
         'plan': [jsonify_recipe(r) if r else None for r in plan],
-        'sidePlan': [jsonify_recipe(r) if r else None for r in side_plan],
+        'sidePlan': [[jsonify_side(s) for s in sides] for sides in side_plan],
         'extraItems': [
             {"id": it.id, "name": it.name, "amount": it.amount, "unit": it.unit, "category": it.category}
             for it in extra_items
         ],
+        'allRecipes': [
+            {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
+            for r in all_recipes
+        ],
     }
 
+    # plan/side_plan/excluded_days/servings_list/days werden NICHT mehr an
+    # das Template gereicht: die Tageskarten werden komplett clientseitig
+    # aus plan_data aufgebaut (siehe templates/plan.html - der Kommentar
+    # dort erklärt, warum). Das Template braucht für die Kartenhülle nur
+    # noch week_dates/today (für data-date und die "Heute"-Markierung) und
+    # has_any_data.
     return render_template(
         'plan.html',
-        plan=plan, side_plan=side_plan, excluded_days=excluded_days, servings_list=servings_list,
-        week_dates=dates, start_date=normalized, has_any_data=has_any_data, days=DAY_NAMES_DE,
+        week_dates=dates, start_date=normalized, has_any_data=has_any_data,
         prev_start=(normalized - timedelta(days=7)).isoformat(),
         next_start=(normalized + timedelta(days=7)).isoformat(),
         today=today, plan_data=plan_data,
@@ -181,20 +214,23 @@ def week_generate(start_date):
        NICHT dasselbe wie ein Kalenderdatum - das Formular kennt nur die
        Position innerhalb der Woche) wird geprüft, ob er als "ausgenommen"
        markiert ist (day_excluded_i), sonst ob ihm eine Rezept-ID fest
-       zugewiesen wurde (day_recipe_i). Die Beilagen-ID (day_side_recipe_i)
-       wird IMMER gelesen, unabhängig vom Ausnahme-Status - ein
-       ausgenommener Tag (kein Hauptgericht) darf trotzdem eine feste
-       Beilage haben.
+       zugewiesen wurde (day_recipe_i). Die Beilagen-IDs
+       (day_side_recipes_i[], eine LISTE - ein Tag kann beliebig viele
+       Beilagen bekommen) werden IMMER gelesen, unabhängig vom
+       Ausnahme-Status - ein ausgenommener Tag (kein Hauptgericht) darf
+       trotzdem feste Beilagen haben.
 
     2./2b. Die im Formular referenzierten Rezept-IDs werden in EINER
        Datenbankabfrage pro Liste (statt einer Abfrage pro Tag) nachgeladen
-       und in final_plan/final_side_plan (je eine Liste mit 7 Einträgen,
-       None = noch nichts zugewiesen) eingetragen. used_recipe_ids sammelt
-       dabei alle bereits fest verwendeten HAUPTGERICHT-IDs, damit sie beim
-       automatischen Auffüllen in Schritt 5 nicht doppelt vergeben werden.
-       Beilagen werden bewusst NIE automatisch gewürfelt - nur eine fest
-       zugewiesene Beilage landet im Plan; alles Weitere läuft über den
-       🎲-Button auf der fertigen Plan-Seite (reroll_side_day unten).
+       und in final_plan (eine Liste mit 7 Einträgen, None = noch nichts
+       zugewiesen) bzw. final_side_plan (eine Liste mit 7 LISTEN von
+       Rezepten) eingetragen. used_recipe_ids sammelt dabei alle bereits
+       fest verwendeten HAUPTGERICHT-IDs, damit sie beim automatischen
+       Auffüllen in Schritt 5 nicht doppelt vergeben werden. Beilagen werden
+       bewusst NIE automatisch gewürfelt - nur fest zugewiesene Beilagen
+       landen beim Erstellen im Plan; alles Weitere läuft über die
+       🎲/✏️-Buttons auf der fertigen Plan-Seite (siehe add_side/
+       reroll_one_side/set_one_side weiter unten).
 
     3. days_to_fill: die Tag-Indizes, die weder ausgenommen noch bereits
        fest belegt sind - genau die, die die folgenden zwei Schritte noch
@@ -215,11 +251,13 @@ def week_generate(start_date):
 
     6. Erst jetzt wird persistiert: für jeden der 7 Kalendertage dieser
        Woche wird die passende PlanDay-Zeile geholt oder neu angelegt
-       (get-or-create) und mit dem Ergebnis überschrieben. Das deckt sowohl
-       das erstmalige Erstellen einer Woche ab als auch ein erneutes
-       "Woche neu erstellen" über eine bereits vorhandene Woche (dann
-       werden die vorhandenen Zeilen einfach überschrieben statt
-       dupliziert).
+       (get-or-create) und mit dem Ergebnis überschrieben. Für die Beilagen
+       werden dabei zuerst ALLE bestehenden PlanDaySide-Zeilen dieses Tages
+       gelöscht und dann aus final_side_plan[i] neu angelegt - deutlich
+       einfacher als ein Diff aus "geändert/neu/gelöscht", analog zum
+       Zutaten-Ersetzen bei edit_recipe() in routes/recipes.py. Das deckt
+       sowohl das erstmalige Erstellen einer Woche ab als auch ein erneutes
+       "Woche neu erstellen" über eine bereits vorhandene Woche.
     """
     start = parse_iso_date(start_date)
     if start is None:
@@ -232,7 +270,7 @@ def week_generate(start_date):
     # 1. Formulardaten pro Tag auslesen: feste Zuweisung + Ausnahme-Status
     excluded_days = set()
     day_recipe_ids = {}  # Tag-Index -> Hauptgericht-Rezept-ID (String)
-    day_side_recipe_ids = {}  # Tag-Index -> Zusatzgericht-Rezept-ID (String)
+    day_side_recipe_ids = {}  # Tag-Index -> Liste von Zusatzgericht-Rezept-IDs (Strings)
 
     for i in range(7):
         if request.form.get(f'day_excluded_{i}') == '1':
@@ -242,9 +280,12 @@ def week_generate(start_date):
             if rid:
                 day_recipe_ids[i] = rid
 
-        side_rid = (request.form.get(f'day_side_recipe_{i}') or '').strip()
-        if side_rid:
-            day_side_recipe_ids[i] = side_rid
+        # dict.fromkeys() statt set(): entfernt Duplikate (z.B. durch
+        # doppeltes Klicken im Formular), erhält dabei aber die
+        # Reihenfolge, in der die Beilagen zugewiesen wurden.
+        side_rids = [rid.strip() for rid in request.form.getlist(f'day_side_recipes_{i}[]') if rid.strip()]
+        if side_rids:
+            day_side_recipe_ids[i] = list(dict.fromkeys(side_rids))
 
     # 2. Feste Hauptgerichte anhand ihrer ID nachladen
     final_plan = [None] * 7
@@ -259,18 +300,20 @@ def week_generate(start_date):
                 final_plan[day_index] = recipe
                 used_recipe_ids.add(recipe.id)
 
-    # 2b. Feste Zusatzgerichte (Beilagen) anhand ihrer ID nachladen.
-    final_side_plan = [None] * 7
+    # 2b. Feste Zusatzgerichte (Beilagen) anhand ihrer IDs nachladen - je
+    # Tag jetzt eine LISTE von Rezepten statt höchstens einem einzelnen.
+    final_side_plan = [[] for _ in range(7)]
 
     if day_side_recipe_ids:
-        unique_side_ids = list(set(day_side_recipe_ids.values()))
+        unique_side_ids = list({rid for rids in day_side_recipe_ids.values() for rid in rids})
         side_recipes_by_id = {
             str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_side_ids)).all()
         }
-        for day_index, rid in day_side_recipe_ids.items():
-            recipe = side_recipes_by_id.get(rid)
-            if recipe:
-                final_side_plan[day_index] = recipe
+        for day_index, rids in day_side_recipe_ids.items():
+            for rid in rids:
+                recipe = side_recipes_by_id.get(rid)
+                if recipe:
+                    final_side_plan[day_index].append(recipe)
 
     # 3. Welche Tage müssen noch automatisch aufgefüllt werden?
     days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
@@ -309,9 +352,13 @@ def week_generate(start_date):
         if not plan_day:
             plan_day = PlanDay(date=day_date, servings=2)
             db.session.add(plan_day)
+            db.session.flush()  # weist plan_day.id zu, für die PlanDaySide-Zeilen unten
         plan_day.excluded = i in excluded_days
         plan_day.main_recipe_id = final_plan[i].id if final_plan[i] else None
-        plan_day.side_recipe_id = final_side_plan[i].id if final_side_plan[i] else None
+
+        PlanDaySide.query.filter_by(plan_day_id=plan_day.id).delete()
+        for side_recipe in final_side_plan[i]:
+            db.session.add(PlanDaySide(plan_day_id=plan_day.id, recipe_id=side_recipe.id))
 
     db.session.commit()
     return redirect(url_for('plan.week_view', start_date=start.isoformat()))
@@ -371,7 +418,7 @@ def reroll_day(day_date):
     if not plan_day or plan_day.excluded:
         return {"error": "Dieser Tag ist nicht Teil eines Plans oder von der Hauptgericht-Planung ausgenommen."}, 400
 
-    exclude_ids = week_neighbor_exclude_ids(target_date, 'main_recipe_id')
+    exclude_ids = week_neighbor_exclude_ids(target_date)
     if plan_day.main_recipe_id:
         exclude_ids.add(plan_day.main_recipe_id)
 
@@ -414,69 +461,227 @@ def reroll_day(day_date):
     return jsonify_recipe(chosen)
 
 
-@plan_bp.route('/day/<day_date>/reroll-side', methods=['POST'])
-def reroll_side_day(day_date):
-    """AJAX-Endpunkt hinter dem 🎲-Button einer Beilage: würfelt für diesen
-    Kalendertag eine neue Beilage und persistiert sie sofort. Wird sowohl
-    zum erstmaligen Hinzufügen einer Beilage verwendet (der Button zeigt
-    dann "🥗 Beilage würfeln" statt eines Emoji-Icons, siehe plan.html) als
-    auch zum Ersetzen einer bereits vorhandenen.
+@plan_bp.route('/day/<day_date>/set-main', methods=['POST'])
+def set_main_day(day_date):
+    """AJAX-Endpunkt hinter dem ✏️-Button eines Hauptgerichts: setzt für
+    GENAU DIESEN Kalendertag ein vom Nutzer explizit ausgewähltes
+    Hauptgericht (statt eines zufällig gewürfelten, siehe reroll_day oben).
 
-    Anders als reroll_day() (Hauptgericht) gibt es hier KEINE
-    Kategorie-Balance und keine Nachbarschaftsregel - Beilagen werden rein
-    nach "noch nicht diese Woche verwendet" (harter Ausschluss) sowie der
-    weichen Wiederholungs-Gewichtung von choose_recipe() ausgewählt (siehe
-    reference_date=target_date unten und services/planning.py:
-    recent_usage_counts). Auch die Ausnahme-Prüfung entfällt bewusst: eine
-    Beilage lässt sich auch an einem Tag würfeln, der von der
-    Hauptgericht-Planung ausgenommen ist (siehe models.py: PlanDay).
+    Bewusst OHNE jede der in reroll_day() beschriebenen Automatik-Regeln
+    (Kategorie-Balance, Nachbarschaft, Wiederholungs-Gewichtung, Wochen-
+    Dubletten-Ausschluss) - eine manuelle Auswahl ist ein expliziter
+    Nutzerwunsch und soll nie durch eine automatische Regel blockiert
+    werden, genau wie die manuelle Zuweisung auf der Erstellen-Seite
+    (week_generate) auch keiner dieser Regeln unterliegt.
 
-    Existiert für diesen Tag noch gar keine PlanDay-Zeile (z.B. weil direkt
-    über die URL ein Datum außerhalb einer erstellten Woche angesprochen
-    wird), wird sie hier neu angelegt statt einen Fehler zu werfen - der
-    reguläre Weg dorthin führt zwar immer über eine bereits per
-    week_generate() erstellte Woche, aber diese Route soll auch robust
-    gegen den (in der aktuellen UI nicht vorgesehenen) Sonderfall sein.
+    Setzt außerdem excluded auf False: ein Tag, dem gerade explizit ein
+    Hauptgericht zugewiesen wird, kann per Definition nicht mehr
+    "von der Hauptgericht-Planung ausgenommen" sein (siehe models.py:
+    PlanDay) - so lässt sich ein ausgenommener Tag über den ✏️-Button auch
+    wieder in die Planung zurückholen, ohne einen Umweg über die
+    Erstellen-Seite.
     """
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+
+    data = request.get_json() or {}
+    try:
+        recipe_id = int(data.get('recipe_id'))
+    except (TypeError, ValueError):
+        return {"error": "Ungültiges Rezept"}, 400
+
+    recipe = Recipe.query.filter_by(id=recipe_id, is_side_dish=False).first()
+    if not recipe:
+        return {"error": "Rezept nicht gefunden."}, 400
 
     plan_day = PlanDay.query.filter_by(date=target_date).first()
     if not plan_day:
         plan_day = PlanDay(date=target_date, servings=2)
         db.session.add(plan_day)
 
-    exclude_ids = week_neighbor_exclude_ids(target_date, 'side_recipe_id')
-    if plan_day.side_recipe_id:
-        exclude_ids.add(plan_day.side_recipe_id)
-
-    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, reference_date=target_date)
-    if not chosen:
-        return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
-
-    plan_day.side_recipe_id = chosen.id
+    plan_day.excluded = False
+    plan_day.main_recipe_id = recipe.id
     db.session.commit()
-    return jsonify_recipe(chosen)
+    return jsonify_recipe(recipe)
 
 
-@plan_bp.route('/day/<day_date>/remove-side', methods=['POST'])
-def remove_side_day(day_date):
-    """AJAX-Endpunkt hinter dem ❌-Button einer Beilage: entfernt sie
-    wieder, ohne den Rest des Tages (Hauptgericht, Ausnahme-Status,
-    Personenzahl) anzutasten. Existiert für diesen Tag noch gar keine
-    PlanDay-Zeile, gibt es nichts zu tun - wird still mit {"ok": True}
-    quittiert statt eines Fehlers, da das Endergebnis ("keine Beilage an
-    diesem Tag") in beiden Fällen identisch ist."""
+def _get_or_create_plan_day(target_date):
+    """Get-or-create-Hilfsfunktion, die in mehreren der Beilagen-Endpunkte
+    unten identisch gebraucht wird (add_side/reroll_one_side/set_one_side/
+    move_one_side legen alle bei Bedarf eine neue, leere PlanDay-Zeile an,
+    falls für target_date noch keine existiert - z.B. wenn eine Beilage auf
+    einen Tag verschoben wird, der bislang noch gar nicht Teil der Woche
+    war). db.session.flush() stellt sicher, dass eine neu angelegte Zeile
+    sofort eine echte id hat, bevor der Aufrufer eine PlanDaySide darauf
+    verweisen lässt."""
+    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    if not plan_day:
+        plan_day = PlanDay(date=target_date, servings=2)
+        db.session.add(plan_day)
+        db.session.flush()
+    return plan_day
+
+
+@plan_bp.route('/day/<day_date>/side/add', methods=['POST'])
+def add_side(day_date):
+    """AJAX-Endpunkt hinter den Beilagen-"Hinzufügen"-Buttons am Ende der
+    Beilagen-Liste einer Tageskarte: legt eine NEUE Beilage für diesen Tag
+    an, zusätzlich zu bereits vorhandenen (ein Tag kann beliebig viele
+    haben, siehe models.py: PlanDaySide).
+
+    Erwartet einen JSON-Body {"recipe_id": <id> oder null}:
+    - Ist recipe_id gesetzt (🥗-Auswahl-Button in static/plan.js:
+      openSideManualSelect), wird GENAU dieses vom Nutzer gewählte Rezept
+      übernommen - ohne jede Zufalls-/Ausschluss-Logik, analog zu
+      set_main_day() oben.
+    - Ist recipe_id leer/null (🎲-Button), wird stattdessen zufällig
+      gewürfelt: choose_recipe() mit week_side_recipe_ids() als
+      Ausschluss-Menge (verhindert Dubletten sowohl mit anderen Tagen als
+      auch mit bereits an DIESEM Tag vorhandenen Beilagen) und der weichen
+      Wiederholungs-Gewichtung (reference_date).
+    """
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
 
-    plan_day = PlanDay.query.filter_by(date=target_date).first()
-    if plan_day:
-        plan_day.side_recipe_id = None
+    data = request.get_json() or {}
+    raw_recipe_id = data.get('recipe_id')
+
+    plan_day = _get_or_create_plan_day(target_date)
+
+    if raw_recipe_id:
+        try:
+            recipe_id = int(raw_recipe_id)
+        except (TypeError, ValueError):
+            return {"error": "Ungültiges Rezept"}, 400
+        chosen = Recipe.query.filter_by(id=recipe_id, is_side_dish=True).first()
+        if not chosen:
+            return {"error": "Rezept nicht gefunden."}, 400
+    else:
+        exclude_ids = week_side_recipe_ids(target_date)
+        chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, reference_date=target_date)
+        if not chosen:
+            return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
+
+    plan_day_side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=chosen.id)
+    db.session.add(plan_day_side)
+    db.session.commit()
+    return jsonify_side(plan_day_side)
+
+
+@plan_bp.route('/day/<day_date>/side/<int:side_id>/reroll', methods=['POST'])
+def reroll_one_side(day_date, side_id):
+    """AJAX-Endpunkt hinter dem 🎲-Button EINER bestimmten Beilage: ersetzt
+    genau diesen Beilagen-Slot durch ein neu gewürfeltes, anderes Rezept
+    (im Gegensatz zu add_side oben, das einen ZUSÄTZLICHEN Slot anlegt).
+
+    Die PlanDaySide-Zeile wird dabei nicht gelöscht und neu angelegt,
+    sondern ihre recipe_id direkt überschrieben - so bleibt ihre id (und
+    damit z.B. eine gerade offene Referenz im Frontend) über den Reroll
+    hinweg stabil.
+    """
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day_side = PlanDaySide.query.join(PlanDay).filter(
+        PlanDaySide.id == side_id, PlanDay.date == target_date
+    ).first()
+    if not plan_day_side:
+        return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
+
+    exclude_ids = week_side_recipe_ids(target_date)
+    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, reference_date=target_date)
+    if not chosen:
+        return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
+
+    plan_day_side.recipe_id = chosen.id
+    db.session.commit()
+    return jsonify_side(plan_day_side)
+
+
+@plan_bp.route('/day/<day_date>/side/<int:side_id>/set', methods=['POST'])
+def set_one_side(day_date, side_id):
+    """AJAX-Endpunkt hinter dem ✏️-Button EINER bestimmten Beilage: ersetzt
+    genau diesen Slot durch ein vom Nutzer explizit gewähltes Rezept (das
+    manuelle Pendant zu reroll_one_side oben - ohne Zufall/Ausschluss-Logik,
+    analog zu set_main_day)."""
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day_side = PlanDaySide.query.join(PlanDay).filter(
+        PlanDaySide.id == side_id, PlanDay.date == target_date
+    ).first()
+    if not plan_day_side:
+        return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
+
+    data = request.get_json() or {}
+    try:
+        recipe_id = int(data.get('recipe_id'))
+    except (TypeError, ValueError):
+        return {"error": "Ungültiges Rezept"}, 400
+
+    recipe = Recipe.query.filter_by(id=recipe_id, is_side_dish=True).first()
+    if not recipe:
+        return {"error": "Rezept nicht gefunden."}, 400
+
+    plan_day_side.recipe_id = recipe.id
+    db.session.commit()
+    return jsonify_side(plan_day_side)
+
+
+@plan_bp.route('/day/<day_date>/side/<int:side_id>/remove', methods=['POST'])
+def remove_one_side(day_date, side_id):
+    """AJAX-Endpunkt hinter dem ❌-Button EINER bestimmten Beilage: entfernt
+    genau diesen Slot, ohne den Rest des Tages (Hauptgericht, andere
+    Beilagen, Ausnahme-Status, Personenzahl) anzutasten. Gehört side_id
+    nicht (mehr) zu diesem Tag, wird das still mit {"ok": True} quittiert
+    statt eines Fehlers - das Endergebnis ("diese Beilage ist an diesem Tag
+    nicht mehr vorhanden") ist in beiden Fällen identisch."""
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day_side = PlanDaySide.query.join(PlanDay).filter(
+        PlanDaySide.id == side_id, PlanDay.date == target_date
+    ).first()
+    if plan_day_side:
+        db.session.delete(plan_day_side)
         db.session.commit()
     return {"ok": True}
+
+
+@plan_bp.route('/day/<day_date>/side/<int:side_id>/move/<target_date_str>', methods=['POST'])
+def move_one_side(day_date, side_id, target_date_str):
+    """AJAX-Endpunkt hinter dem Drag-and-Drop-Verschieben EINER einzelnen
+    Beilage auf eine andere Tageskarte (siehe static/plan.js:
+    moveSideDish): hängt die PlanDaySide-Zeile einfach an eine ANDERE
+    PlanDay-Zeile um (plan_day_id ändern) - ein einseitiges Verschieben,
+    kein Tausch. Im Gegensatz zum kompletten Tages-Tausch (swap_days unten,
+    ausgelöst durch Ziehen der ganzen Tageskarte inkl. Hauptgericht) bleibt
+    dabei alles andere an Quell- UND Zieltag komplett unangetastet.
+
+    Existiert für den Zieltag noch keine PlanDay-Zeile (z.B. weil dort noch
+    nie etwas geplant wurde), wird sie hier neu angelegt statt einen Fehler
+    zu werfen - analog zu add_side/reroll_one_side.
+    """
+    source_date = parse_iso_date(day_date)
+    target_date = parse_iso_date(target_date_str)
+    if source_date is None or target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day_side = PlanDaySide.query.join(PlanDay).filter(
+        PlanDaySide.id == side_id, PlanDay.date == source_date
+    ).first()
+    if not plan_day_side:
+        return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
+
+    target_plan_day = _get_or_create_plan_day(target_date)
+    plan_day_side.plan_day_id = target_plan_day.id
+    db.session.commit()
+    return jsonify_side(plan_day_side)
 
 
 @plan_bp.route('/day/<day_date>/servings', methods=['POST'])
@@ -517,15 +722,25 @@ def set_day_servings(day_date):
 
 @plan_bp.route('/day/<date_a>/swap/<date_b>', methods=['POST'])
 def swap_days(date_a, date_b):
-    """AJAX-Endpunkt hinter dem Drag-and-Drop-Tausch zweier Tageskarten auf
-    der Plan-Seite: vertauscht Hauptgericht, Beilage UND Ausnahme-Status
-    zweier Kalendertage komplett miteinander.
+    """AJAX-Endpunkt hinter dem Drag-and-Drop-Tausch zweier ganzer
+    Tageskarten auf der Plan-Seite (Ziehen der KARTE selbst, nicht einer
+    einzelnen Beilage - für Letzteres siehe move_one_side oben): vertauscht
+    Hauptgericht, ALLE Beilagen UND Ausnahme-Status zweier Kalendertage
+    komplett miteinander. "Wird das Hauptgericht verschoben, kommen die
+    Beilagen mit" - deshalb hängen hier an einem Tages-Tausch immer alle
+    zugehörigen PlanDaySide-Zeilen mit dran, nicht nur main_recipe_id.
 
     Fehlt für einen der beiden Tage noch eine PlanDay-Zeile, wird sie mit
     leeren Werten neu angelegt, bevor getauscht wird - so funktioniert der
     Tausch auch dann, wenn z.B. ein Tag zwar zur bereits erstellten Woche
-    gehört, aber (weil ausgenommen und ohne Beilage) noch nie eine eigene
-    Zeile bekommen hat.
+    gehört, aber (weil ausgenommen und ohne Beilagen) noch nie eine eigene
+    Zeile bekommen hat. db.session.flush() stellt sicher, dass neu
+    angelegte Zeilen sofort eine echte id haben, bevor die Beilagen-Zeilen
+    unten darauf umgehängt werden.
+
+    Die Beilagen werden dabei NICHT einzeln kopiert, sondern per
+    plan_day_id einfach komplett auf die jeweils andere Seite umgehängt -
+    effizienter als ein Item-für-Item-Tausch und mit identischem Ergebnis.
 
     Die Personenzahl (servings) wird bewusst NICHT mitgetauscht: sie gilt
     konzeptionell dem WOCHENTAG selbst ("am Freitag sind wir zu viert"),
@@ -545,10 +760,17 @@ def swap_days(date_a, date_b):
     if not plan_day_b:
         plan_day_b = PlanDay(date=parsed_b, servings=2)
         db.session.add(plan_day_b)
+    db.session.flush()
 
     plan_day_a.main_recipe_id, plan_day_b.main_recipe_id = plan_day_b.main_recipe_id, plan_day_a.main_recipe_id
-    plan_day_a.side_recipe_id, plan_day_b.side_recipe_id = plan_day_b.side_recipe_id, plan_day_a.side_recipe_id
     plan_day_a.excluded, plan_day_b.excluded = plan_day_b.excluded, plan_day_a.excluded
+
+    sides_a = PlanDaySide.query.filter_by(plan_day_id=plan_day_a.id).all()
+    sides_b = PlanDaySide.query.filter_by(plan_day_id=plan_day_b.id).all()
+    for side in sides_a:
+        side.plan_day_id = plan_day_b.id
+    for side in sides_b:
+        side.plan_day_id = plan_day_a.id
 
     db.session.commit()
     return {"ok": True}

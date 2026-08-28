@@ -3,7 +3,10 @@
    Rezepte sowie 7 Drop-Zonen (eine pro Wochentag), auf die Rezepte per Klick
    oder Drag-and-Drop gelegt werden können, um sie fest zuzuweisen. Tage ohne
    feste Zuweisung werden beim Absenden serverseitig automatisch balanciert
-   aufgefüllt (siehe week_generate() in routes/plan.py). Die komplette
+   aufgefüllt (siehe week_generate() in routes/plan.py). Hauptgerichte sind
+   höchstens EINEM Tag zugewiesen (per Klick oder Drag-and-Drop), Beilagen
+   dagegen BELIEBIG VIELEN Tagen UND beliebig vielen pro Tag gleichzeitig
+   (nur per Klick, siehe assignSideToZone in create_week.js). Die komplette
    Interaktionslogik (Suche, Drag-and-Drop, Ausnehmen-Button) liegt in
    static/create_week.js, nicht in dieser Datei. #}
 {% extends 'base.html' %} {% block content %} <div class="row justify-content-center">
@@ -14,7 +17,7 @@
         <a href="{{ url_for('plan.week_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-light fw-bold">← Zurück</a>
       </div>
       <div class="card-body p-4">
-        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich zusätzlich zum Hauptgericht hinzufügen und funktionieren auch an ausgenommenen Tagen. </p>
+        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Hauptgerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich beliebig oft zusätzlich zum Hauptgericht hinzufügen (jeweils dem Tag mit den bisher wenigsten Beilagen) und funktionieren auch an ausgenommenen Tagen - Feintuning, welche Beilage an welchem Tag landet, geht danach jederzeit auf der fertigen Plan-Seite. </p>
         <!-- Live-Suchfeld: ALLE Rezepte werden bereits jetzt server-seitig als
              (zunächst per style="display:none" verstecktes) Button-Element
              mit data-*-Attributen ins DOM gerendert. static/create_week.js
@@ -60,13 +63,18 @@
                   <div class="recipe-slot-container" style="min-height: 54px;">
                     <!-- Wird per JS dynamisch befüllt -->
                   </div>
-                  <!-- Container für das zugewiesene Zusatzgericht/Beilage (unabhängig vom Hauptgericht) -->
+                  <!-- Container für beliebig viele zugewiesene Zusatzgerichte/Beilagen
+                       (unabhängig vom Hauptgericht - siehe assignSideToZone/removeSideFromZone
+                       in create_week.js, die hier je zugewiesener Beilage ein eigenes
+                       Kärtchen UND ein eigenes verstecktes Formularfeld anhängen) -->
                   <div class="side-slot-container mt-2 pt-2 border-top" id="side-slot-{{ i }}">
-                    <span class="text-muted small fst-italic">Keine Beilage</span>
+                    <span class="text-muted small fst-italic no-side-placeholder">Keine Beilage</span>
                   </div>
-                  <!-- Persistente, tag-gebundene Formularfelder (unabhängig vom Kärtchen) -->
+                  <!-- Persistente, tag-gebundene Formularfelder (unabhängig vom Kärtchen).
+                       Für Beilagen gibt es HIER absichtlich kein festes Feld (anders als
+                       day_recipe_i) - die können 0 bis N sein, ihre Felder werden dynamisch
+                       in create_week.js angelegt (name="day_side_recipes_{{ i }}[]"). -->
                   <input type="hidden" name="day_recipe_{{ i }}" id="day-recipe-input-{{ i }}" value="">
-                  <input type="hidden" name="day_side_recipe_{{ i }}" id="day-side-recipe-input-{{ i }}" value="">
                   <input type="hidden" name="day_excluded_{{ i }}" id="day-excluded-input-{{ i }}" value="0">
                 </div>
               </div> {% endfor %} </div>

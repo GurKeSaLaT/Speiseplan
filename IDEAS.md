@@ -68,6 +68,27 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   Favoriten-Gewichtung. Da die Saison-Vorauswahl in `choose_recipe()`
   bereits VOR dieser Gewichtung greift, werden dadurch automatisch auch
   gerade saisonale Rezepte bevorzugt, ohne einen eigenen dritten Faktor.
+- **Manuelle Rezeptauswahl auf der Plan-Seite.** Sowohl Hauptgericht als
+  auch jede einzelne Beilage lassen sich per ✏️-Button statt zu würfeln
+  auch direkt aus allen Rezepten auswählen (Such-/Auswahlbox, ersetzt die
+  Anzeige an Ort und Stelle). Bewusst OHNE jede der beim Würfeln geltenden
+  Automatik-Regeln (Kategorie-Balance, Nachbarschaft, Wochen-Dubletten,
+  Wiederholungs-Gewichtung) - eine manuelle Auswahl ist ein expliziter
+  Nutzerwunsch. Setzt bei einem ausgenommenen Tag `excluded` automatisch
+  zurück (`routes/plan.py: set_main_day`).
+- **Beliebig viele Beilagen pro Tag.** Neue Tabelle `PlanDaySide` ersetzt
+  die frühere `PlanDay.side_recipe_id`-Einzelspalte (Migration in `app.py`
+  inkl. Tabellen-Neuaufbau, da SQLite eine per Fremdschlüssel referenzierte
+  Spalte nicht direkt per `DROP COLUMN` entfernen lässt). Ein Tag kann jetzt
+  beliebig viele Beilagen gleichzeitig haben, jede einzeln würfelbar/manuell
+  ersetzbar/entfernbar (`side/add`, `side/<id>/reroll`, `side/<id>/set`,
+  `side/<id>/remove`) und per Drag-and-Drop einzeln auf einen anderen Tag
+  verschiebbar (`side/<id>/move/<datum>`, `static/plan.js: moveSideDish`) -
+  ohne den Rest des Ziel-/Quelltags anzutasten. Wird die ganze Tageskarte
+  (Hauptgericht) verschoben/getauscht, wandern alle ihre Beilagen mit.
+  Auch beim Erstellen einer neuen Woche (`create_week.html`) lassen sich
+  einem Tag mehrere Beilagen zuweisen (verteilt sich automatisch auf den
+  Tag mit den bisher wenigsten).
 
 ## Vorgeschlagen
 

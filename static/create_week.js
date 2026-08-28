@@ -14,11 +14,16 @@
  * Alles hier ist rein CLIENTSEITIGER Zwischenzustand: nichts wird
  * gespeichert, bevor nicht das Formular #planForm abgeschickt wird (POST an
  * /plan/<start_date>/generate, siehe routes/plan.py: week_generate). Die
- * Zuweisung eines Rezepts zu einem Tag landet dafür in einem versteckten
- * <input type="hidden">-Feld pro Tag (day-recipe-input-<i> bzw.
- * day-side-recipe-input-<i>), das Formular selbst wird von den sichtbaren
- * "Kärtchen" nur SPIEGELND begleitet - ein Kärtchen zu verschieben/löschen
- * heißt also immer auch, das zugehörige Formularfeld zu aktualisieren.
+ * Zuweisung eines Hauptgerichts zu einem Tag landet dafür in einem
+ * versteckten <input type="hidden">-Feld pro Tag (day-recipe-input-<i>),
+ * das Formular selbst wird von den sichtbaren "Kärtchen" nur SPIEGELND
+ * begleitet - ein Kärtchen zu verschieben/löschen heißt also immer auch,
+ * das zugehörige Formularfeld zu aktualisieren. Beilagen funktionieren
+ * strukturell anders: ein Tag kann beliebig viele haben, daher gibt es dort
+ * KEIN einzelnes festes Feld pro Tag, sondern ein eigenes verstecktes Feld
+ * PRO zugewiesener Beilage (name="day_side_recipes_<i>[]", siehe
+ * assignSideToZone) - Flask liest diese beim Absenden über
+ * request.form.getlist() als Liste ein (siehe week_generate).
  */
 
 const searchInput = document.getElementById('searchInput');
@@ -30,7 +35,11 @@ const searchItems = document.querySelectorAll('.search-item');
 // der Live-Suche ausgeblendet (siehe Suchfilter unten). Haupt- und
 // Beilagen-Zuweisungen führen getrennte Sets, da beide Pools unabhängig
 // voneinander sind (ein Rezept ist entweder Hauptgericht ODER Beilage,
-// nie beides zugleich - siehe models.py: Recipe.is_side_dish).
+// nie beides zugleich - siehe models.py: Recipe.is_side_dish). Bei
+// Beilagen verhindert das Set weiterhin eine Dublette ÜBER DIE GANZE
+// WOCHE hinweg (dasselbe Rezept nicht zweimal an verschiedenen Tagen) -
+// mehrere VERSCHIEDENE Beilagen am selben Tag sind dagegen ausdrücklich
+// erlaubt, siehe assignSideToZone.
 let assignedRecipeIds = new Set();
 let assignedSideRecipeIds = new Set();
 
@@ -87,10 +96,17 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// 2. Klick auf ein Suchergebnis weist es automatisch dem NÄCHSTEN freien
-// Tag zu (statt selbst per Drag-and-Drop platziert werden zu müssen) -
-// Hauptgerichte suchen sich dabei einen Tag ohne Hauptgericht, Beilagen
-// einen Tag ohne Beilage; beide Slots sind unabhängig voneinander frei/belegt.
+// 2. Klick auf ein Suchergebnis weist es automatisch zu, statt selbst per
+// Drag-and-Drop platziert werden zu müssen. Hauptgerichte suchen sich dabei
+// einen Tag OHNE Hauptgericht (höchstens eines pro Tag möglich). Beilagen
+// dagegen können beliebig viele pro Tag haben - "der nächste freie Tag"
+// ergibt für sie also keinen Sinn; stattdessen bekommt IMMER der Tag mit
+// den bisher WENIGSTEN Beilagen die neue dazu (Gleichstand: der erste in
+// Wochentag-Reihenfolge), damit sich mehrfach angeklickte Beilagen von
+// selbst gleichmäßig über die Woche verteilen, statt alle auf einem Tag zu
+// landen. Ein Feintuning, welche Beilage an welchem konkreten Tag landet,
+// ist danach jederzeit auf der fertigen Plan-Seite per Drag-and-Drop
+// möglich (siehe static/plan.js: moveSideDish).
 searchItems.forEach(item => {
     item.addEventListener('click', function() {
       const recipeId = this.getAttribute('data-id');
@@ -102,16 +118,16 @@ searchItems.forEach(item => {
         // Beilagen dürfen auch auf einen bereits ausgenommenen Tag - eine
         // Beilage blockiert den Tag nicht und ist komplett unabhängig vom
         // Hauptgericht-Ausnahme-Status (siehe models.py: PlanDay).
-        const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone =>
-          zone.querySelector('.side-dish-chip') === null
-        );
-        if (!freeZone) {
-          alert("Es ist kein freier Tag für Beilagen mehr verfügbar!");
-          searchInput.value = '';
-          searchResults.style.display = 'none';
-          return;
-        }
-        assignSideToZone(freeZone, recipeId, recipeName, categoryName);
+        let targetZone = null;
+        let fewestSides = Infinity;
+        document.querySelectorAll('.day-dropzone').forEach(zone => {
+          const count = zone.querySelectorAll('.side-dish-chip').length;
+          if (count < fewestSides) {
+            fewestSides = count;
+            targetZone = zone;
+          }
+        });
+        assignSideToZone(targetZone, recipeId, recipeName, categoryName);
       } else {
         // Hauptgerichte dagegen brauchen einen Tag, der WEDER ausgenommen
         // NOCH bereits belegt ist.
@@ -188,21 +204,30 @@ function removeRecipeFromZone(id, dayIndex) {
     if (dayInput) dayInput.value = '';
 }
 
-// 4b. Pendant zu assignRecipeToZone() für Beilagen: eigener Container
-// (.side-slot-container), eigenes verstecktes Feld, kein Status-Text (der
-// gehört nur zum Hauptgericht-Slot) und kein Drag-and-Drop (Beilagen-Chips
-// sind bewusst nicht ziehbar - nur Hauptgerichte lassen sich zwischen
-// Tagen verschieben).
+// 4b. Pendant zu assignRecipeToZone() für Beilagen - aber ADDITIV statt
+// ersetzend: ein Tag kann beliebig viele Beilagen-Kärtchen gleichzeitig im
+// .side-slot-container haben. Jedes Kärtchen bekommt sein EIGENES
+// verstecktes Formularfeld (statt eines einzelnen geteilten Felds pro Tag
+// wie beim Hauptgericht) - id "side-input-<Rezept-ID>", Name
+// "day_side_recipes_<Tag-Index>[]", damit Flask beim Absenden über
+// request.form.getlist() alle Beilagen-IDs dieses Tages als Liste erhält
+// (siehe week_generate() in routes/plan.py). Kein Status-Text (der gehört
+// nur zum Hauptgericht-Slot) und kein Drag-and-Drop (Beilagen-Kärtchen sind
+// auf DIESER Seite bewusst nicht ziehbar - das Verschieben einzelner
+// Beilagen zwischen Tagen geht erst auf der fertigen Plan-Seite, siehe
+// static/plan.js: moveSideDish).
 function assignSideToZone(zoneElement, id, name, category) {
     const sideContainer = zoneElement.querySelector('.side-slot-container');
     const dayIndex = zoneElement.getAttribute('data-day-index');
     assignedSideRecipeIds.add(id);
 
-    const sideInput = document.getElementById('day-side-recipe-input-' + dayIndex);
-    if (sideInput) sideInput.value = id;
+    // Platzhalter "Keine Beilage" verschwindet, sobald die erste Beilage
+    // dieses Tages hinzukommt.
+    const placeholder = sideContainer.querySelector('.no-side-placeholder');
+    if (placeholder) placeholder.remove();
 
     const chip = document.createElement('div');
-    chip.className = 'p-2 bg-white rounded border side-dish-chip d-flex justify-content-between align-items-center animate-fade-in';
+    chip.className = 'p-2 bg-white rounded border side-dish-chip d-flex justify-content-between align-items-center animate-fade-in mb-1';
     chip.setAttribute('id', 'side-card-' + id);
     chip.setAttribute('data-id', id);
     chip.innerHTML = `
@@ -212,32 +237,50 @@ function assignSideToZone(zoneElement, id, name, category) {
         </div>
         <button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeSideFromZone('${id}', '${dayIndex}')">❌</button>
     `;
-    sideContainer.innerHTML = '';
     sideContainer.appendChild(chip);
+
+    const sideInput = document.createElement('input');
+    sideInput.type = 'hidden';
+    sideInput.name = `day_side_recipes_${dayIndex}[]`;
+    sideInput.value = id;
+    sideInput.setAttribute('id', 'side-input-' + id);
+    zoneElement.appendChild(sideInput);
 }
 
-// 4c. Entfernt eine Beilage wieder - macht assignSideToZone() rückgängig.
+// 4c. Entfernt EINE Beilage wieder (Kärtchen + ihr eigenes verstecktes
+// Feld) - macht assignSideToZone() für genau diese eine Beilage rückgängig,
+// ohne die übrigen Beilagen desselben Tages anzutasten. Zeigt den
+// "Keine Beilage"-Platzhalter wieder an, sobald dadurch keine einzige
+// Beilage mehr an diesem Tag übrig ist.
 function removeSideFromZone(id, dayIndex) {
     assignedSideRecipeIds.delete(id);
+    const chip = document.getElementById('side-card-' + id);
+    if (chip) chip.remove();
+    const sideInput = document.getElementById('side-input-' + id);
+    if (sideInput) sideInput.remove();
+
     const zone = document.getElementById('day-zone-' + dayIndex);
-    if (zone) {
-      zone.querySelector('.side-slot-container').innerHTML = '<span class="text-muted small fst-italic">Keine Beilage</span>';
+    const sideContainer = zone && zone.querySelector('.side-slot-container');
+    if (sideContainer && sideContainer.children.length === 0) {
+        sideContainer.innerHTML = '<span class="text-muted small fst-italic no-side-placeholder">Keine Beilage</span>';
     }
-    const sideInput = document.getElementById('day-side-recipe-input-' + dayIndex);
-    if (sideInput) sideInput.value = '';
 }
 
 // Setzt ALLE 7 Tage auf einmal zurück (Button "Alle leeren") - ruft dafür
 // nicht etwa removeRecipeFromZone()/removeSideFromZone() für jeden Tag auf,
 // sondern setzt Status und Felder direkt selbst zurück, da hier ohnehin
 // jede Zone unabhängig von ihrem aktuellen Inhalt komplett neu aufgesetzt
-// wird (ob dort überhaupt ein Kärtchen steckte, spielt keine Rolle).
+// wird (ob dort überhaupt ein Kärtchen steckte, spielt keine Rolle). Für
+// Beilagen bedeutet das: alle dynamisch angelegten versteckten Felder
+// (name beginnt mit "day_side_recipes_") werden pro Zone entfernt, da es
+// (anders als beim Hauptgericht) kein einzelnes festes Feld gibt, das sich
+// einfach leeren ließe.
 function clearAllDays() {
     assignedRecipeIds.clear();
     assignedSideRecipeIds.clear();
     document.querySelectorAll('.day-dropzone').forEach(zone => {
       zone.querySelector('.recipe-slot-container').innerHTML = '';
-      zone.querySelector('.side-slot-container').innerHTML = '<span class="text-muted small fst-italic">Keine Beilage</span>';
+      zone.querySelector('.side-slot-container').innerHTML = '<span class="text-muted small fst-italic no-side-placeholder">Keine Beilage</span>';
       const statusText = zone.querySelector('.slot-status');
       statusText.textContent = "Automatisch auffüllen";
       statusText.classList.remove('text-dark', 'fw-bold');
@@ -245,8 +288,7 @@ function clearAllDays() {
       const dayIndex = zone.getAttribute('data-day-index');
       const dayInput = document.getElementById('day-recipe-input-' + dayIndex);
       if (dayInput) dayInput.value = '';
-      const sideInput = document.getElementById('day-side-recipe-input-' + dayIndex);
-      if (sideInput) sideInput.value = '';
+      zone.querySelectorAll('input[type="hidden"][name^="day_side_recipes_"]').forEach(input => input.remove());
     });
 }
 

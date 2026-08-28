@@ -4,9 +4,12 @@ Datum hat und WELCHES Rezept an einem Tag landet.
 Drei zusammenhängende Aufgabenbereiche in dieser Datei:
 
 1. Wochen-/Datums-Helfer (monday_of, week_dates_for, parse_iso_date,
-   week_neighbor_exclude_ids): rechnen zwischen "Wochenstart-Datum" und den
-   sieben zugehörigen Kalendertagen um, und ermitteln, welche Rezepte in
-   derselben Kalenderwoche bereits verplant sind.
+   week_neighbor_exclude_ids, week_side_recipe_ids): rechnen zwischen
+   "Wochenstart-Datum" und den sieben zugehörigen Kalendertagen um, und
+   ermitteln, welche Rezepte in derselben Kalenderwoche bereits verplant
+   sind - für Hauptgerichte (ein Wert pro Tag) und Beilagen (beliebig viele
+   pro Tag, siehe models.py: PlanDaySide) getrennt, da sich beide
+   strukturell unterscheiden.
 
 2. Kategorie-Balance (assign_balanced_categories): entscheidet beim
    automatischen Auffüllen einer Woche, welche KATEGORIE (nicht welches
@@ -29,7 +32,7 @@ import random
 from collections import Counter
 from datetime import date, timedelta
 
-from models import Recipe, PlanDay
+from models import db, Recipe, PlanDay, PlanDaySide
 from services.seasons import recipe_available_now
 
 # Deutsche Wochentagsnamen in ISO-Reihenfolge (Montag = Index 0), passend zu
@@ -53,17 +56,19 @@ FAVORITE_WEIGHT = 3
 REPETITION_LOOKBACK_WEEKS = 8
 
 
-def recent_usage_counts(recipe_ids, reference_date, field_name):
+def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
     """Zählt für jede der übergebenen Rezept-IDs, wie oft sie in den
     letzten REPETITION_LOOKBACK_WEEKS Wochen VOR reference_date im
-    Plan-Kalender (PlanDay) verwendet wurde. Gibt ein Dict
-    {Rezept-ID: Anzahl} zurück - Rezepte ohne jede Verwendung in diesem
-    Zeitraum fehlen darin einfach (kein Eintrag mit 0).
+    Plan-Kalender verwendet wurde. Gibt ein Dict {Rezept-ID: Anzahl}
+    zurück - Rezepte ohne jede Verwendung in diesem Zeitraum fehlen darin
+    einfach (kein Eintrag mit 0).
 
-    field_name ist "main_recipe_id" oder "side_recipe_id" (wie bei
-    week_neighbor_exclude_ids weiter oben): Hauptgericht- und
-    Beilagen-Verwendungen werden getrennt gezählt, da beide Pools bei der
-    Auswahl ohnehin nie vermischt werden (siehe choose_recipe).
+    is_side_dish unterscheidet, WELCHE Tabelle abgefragt wird:
+    Hauptgerichte stecken direkt in PlanDay.main_recipe_id (ein Wert pro
+    Tag), Beilagen dagegen in der separaten PlanDaySide-Tabelle (beliebig
+    viele pro Tag, siehe models.py) - beide Pools werden dabei getrennt
+    gezählt, da sie bei der Auswahl ohnehin nie vermischt werden (siehe
+    choose_recipe).
 
     reference_date ist bewusst NICHT date.today(), sondern der Tag, für den
     gerade geplant wird - die Wochenplanung erlaubt auch vergangene oder
@@ -78,11 +83,20 @@ def recent_usage_counts(recipe_ids, reference_date, field_name):
     if not recipe_ids:
         return {}
     since = reference_date - timedelta(weeks=REPETITION_LOOKBACK_WEEKS)
-    column = getattr(PlanDay, field_name)
+
+    if is_side_dish:
+        rows = (
+            db.session.query(PlanDaySide.recipe_id)
+            .join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id)
+            .filter(PlanDay.date >= since, PlanDay.date < reference_date, PlanDaySide.recipe_id.in_(recipe_ids))
+            .all()
+        )
+        return Counter(rid for (rid,) in rows)
+
     rows = PlanDay.query.filter(
-        PlanDay.date >= since, PlanDay.date < reference_date, column.in_(recipe_ids)
+        PlanDay.date >= since, PlanDay.date < reference_date, PlanDay.main_recipe_id.in_(recipe_ids)
     ).all()
-    return Counter(getattr(pd, field_name) for pd in rows)
+    return Counter(pd.main_recipe_id for pd in rows)
 
 
 def weighted_recipe_choice(recipes, usage_counts=None):
@@ -151,16 +165,12 @@ def parse_iso_date(value):
         return None
 
 
-def week_neighbor_exclude_ids(day_date, field_name):
-    """Sammelt die Rezept-IDs aller ANDEREN Tage in derselben Kalenderwoche
-    wie day_date - für die Dubletten-Vermeidung beim (Neu-)Würfeln.
-
-    field_name ist entweder "main_recipe_id" oder "side_recipe_id": je
-    nachdem, ob gerade ein Hauptgericht oder eine Beilage neu gewürfelt
-    wird, sollen die bereits in DIESER Woche verwendeten Rezepte DESSELBEN
-    Typs gemieden werden (ein Hauptgericht darf z.B. ruhig auch als Beilage
-    an einem anderen Tag vorkommen - is_side_dish trennt beide Pools ohnehin
-    schon in choose_recipe()).
+def week_neighbor_exclude_ids(day_date):
+    """Sammelt die Hauptgericht-Rezept-IDs aller ANDEREN Tage in derselben
+    Kalenderwoche wie day_date - für die Dubletten-Vermeidung beim
+    (Neu-)Würfeln eines Hauptgerichts (siehe week_side_recipe_ids weiter
+    unten für das Beilagen-Pendant, das anders arbeitet, weil ein Tag dort
+    mehrere Einträge gleichzeitig haben kann).
 
     day_date selbst wird bewusst AUSGESCHLOSSEN (siehe "if pd.date ==
     day_date: continue") - der Tag, der gerade neu gewürfelt wird, soll
@@ -176,10 +186,36 @@ def week_neighbor_exclude_ids(day_date, field_name):
     for pd in rows:
         if pd.date == day_date:
             continue
-        rid = getattr(pd, field_name)
-        if rid:
-            ids.add(rid)
+        if pd.main_recipe_id:
+            ids.add(pd.main_recipe_id)
     return ids
+
+
+def week_side_recipe_ids(day_date):
+    """Sammelt die Rezept-IDs ALLER Beilagen, die bereits irgendwo in der
+    Kalenderwoche verwendet werden, die day_date enthält - über alle 7 Tage
+    hinweg, OHNE einen Tag oder eine einzelne Beilage auszunehmen.
+
+    Anders als week_neighbor_exclude_ids() (die den betrachteten Tag selbst
+    bewusst ausschließt, damit ein Reroll sein eigenes aktuelles Rezept
+    nicht als "belegt an sich selbst" zählt) braucht es hier keine solche
+    Ausnahme: da ein Tag mehrere Beilagen gleichzeitig haben kann, würde ein
+    Reroll EINER Beilage sonst versehentlich eine andere, an DEMSELBEN Tag
+    bereits vorhandene Beilage duplizieren können - die Beilagen desselben
+    Tages müssen also mit ausgeschlossen bleiben. Die gerade neu zu
+    würfelnde Beilage selbst ist ohnehin bereits Teil dieser Menge (sie ist
+    ja schon zugewiesen) - genau das verhindert automatisch, dass ein
+    Reroll dasselbe Rezept erneut liefert, ganz ohne eigenen Sonderfall.
+    """
+    start = monday_of(day_date)
+    dates = week_dates_for(start)
+    rows = (
+        db.session.query(PlanDaySide.recipe_id)
+        .join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id)
+        .filter(PlanDay.date.in_(dates))
+        .all()
+    )
+    return {rid for (rid,) in rows}
 
 
 # --- KATEGORIE-BALANCE & REZEPT-AUSWAHL ---
@@ -325,8 +361,7 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
 
     usage_counts = {}
     if reference_date is not None:
-        field_name = 'side_recipe_id' if is_side_dish else 'main_recipe_id'
-        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, field_name)
+        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, is_side_dish)
 
     if prefer_season:
         seasonal_candidates = [r for r in candidates if recipe_available_now(r)]

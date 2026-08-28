@@ -1,13 +1,14 @@
 """SQLAlchemy-Datenmodelle der Speiseplan-App.
 
-Sechs Tabellen mit folgenden Beziehungen:
+Sieben Tabellen mit folgenden Beziehungen:
 
     Category 1---n Recipe 1---n Ingredient
                       |  1
                       |  n
                 RecipeSeason
 
-    Recipe 1---n PlanDay (einmal als main_recipe, einmal als side_recipe)
+    Recipe 1---n PlanDay (als main_recipe)
+    Recipe 1---n PlanDaySide n---1 PlanDay
 
     ExtraShoppingItem (eigenständig, nur über week_start lose an eine
                         Kalenderwoche gebunden - kein Fremdschlüssel)
@@ -15,8 +16,11 @@ Sechs Tabellen mit folgenden Beziehungen:
 Rezepte (Recipe) sind die zentrale Entität: sie gehören zu genau einer
 Kategorie, tragen ihre eigenen Zutaten sowie optional mehrere
 Verfügbarkeitszeiträume (RecipeSeason). Der Wochenplan-Kalender (PlanDay)
-verweist pro Kalendertag auf höchstens ein Haupt- und ein Zusatzgericht.
-ExtraShoppingItem ergänzt die aus den Rezept-Zutaten abgeleitete
+verweist pro Kalendertag auf höchstens ein Hauptgericht, aber über
+PlanDaySide auf BELIEBIG VIELE Zusatzgerichte (Beilagen) - anders als das
+Hauptgericht (eine einzelne Fremdschlüssel-Spalte main_recipe_id direkt auf
+PlanDay) ist das deshalb eine eigene 1:n-Tabelle statt einer einzelnen
+Spalte. ExtraShoppingItem ergänzt die aus den Rezept-Zutaten abgeleitete
 Einkaufsliste um manuell hinzugefügte Posten (z.B. Hygieneartikel), die zu
 keinem Rezept gehören.
 """
@@ -146,14 +150,16 @@ class PlanDay(db.Model):
     Plan erstellt" - die Wochenansicht zeigt in dem Fall den
     "Neuen Wochenplan erstellen"-Button statt Tageskarten (has_any_data in
     routes/plan.py: week_view). Sobald eine Woche einmal erstellt wurde,
-    bekommen alle 7 Tage eine Zeile, auch wenn main_recipe_id/side_recipe_id
-    dabei leer bleiben (z.B. bei einem ausgenommenen Tag).
+    bekommen alle 7 Tage eine Zeile, auch wenn main_recipe_id leer bleibt
+    und keine einzige PlanDaySide existiert (z.B. bei einem ausgenommenen
+    Tag ohne Beilagen).
 
-    main_recipe_id und side_recipe_id sind bewusst getrennte, jeweils
-    optionale Fremdschlüssel: ein Tag kann nur ein Hauptgericht haben, nur
-    eine Beilage, beides, oder (falls "excluded") auch nur eine Beilage
-    ohne Hauptgericht - excluded schließt nur das Hauptgericht von der
-    automatischen Planung aus, niemals die Beilage.
+    main_recipe_id ist ein optionaler Fremdschlüssel für GENAU EIN
+    Hauptgericht; die (beliebig vielen) Beilagen hängen dagegen über die
+    separate PlanDaySide-Tabelle an dieser Zeile (siehe unten). Ein Tag kann
+    also nur ein Hauptgericht haben, aber null bis N Beilagen, unabhängig
+    davon - excluded schließt nur das Hauptgericht von der automatischen
+    Planung aus, niemals die Beilagen.
     """
     id = db.Column(db.Integer, primary_key=True)
     # unique+index: pro Kalendertag darf es höchstens eine Zeile geben, und
@@ -162,13 +168,34 @@ class PlanDay(db.Model):
     excluded = db.Column(db.Boolean, default=False, nullable=False)
     servings = db.Column(db.Integer, nullable=False, default=2)
     main_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
-    side_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
 
-    # Zwei separate Relationships auf dieselbe Recipe-Tabelle - foreign_keys
-    # muss hier jeweils explizit angegeben werden, da SQLAlchemy sonst nicht
-    # eindeutig zuordnen kann, welche der beiden FK-Spalten gemeint ist.
     main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
-    side_recipe = db.relationship('Recipe', foreign_keys=[side_recipe_id])
+    # cascade="all, delete-orphan": wird ein PlanDay gelöscht (kommt in der
+    # aktuellen App nicht vor, aber zur Sicherheit), verschwinden auch seine
+    # Beilagen-Zeilen mit, statt als Datenleichen zurückzubleiben.
+    # order_by sorgt für eine stabile, chronologische Reihenfolge beim
+    # Anzeigen (zuletzt hinzugefügte Beilage erscheint zuletzt).
+    sides = db.relationship('PlanDaySide', cascade="all, delete-orphan", order_by='PlanDaySide.id')
+
+
+class PlanDaySide(db.Model):
+    """Eine einzelne Beilage, die einem Kalendertag zugeordnet ist. Ein
+    PlanDay kann beliebig viele davon haben (siehe PlanDay.sides) - anders
+    als das Hauptgericht (eine einzelne Spalte direkt auf PlanDay) ist das
+    hier bewusst eine eigene 1:n-Tabelle, damit die Anzahl der Beilagen pro
+    Tag nicht auf einen festen Wert begrenzt ist.
+
+    Kein unique-Constraint auf (plan_day_id, recipe_id): serverseitig wird
+    zwar durchgängig verhindert, dieselbe Beilage zweimal in derselben
+    Woche zu vergeben (siehe services/planning.py:
+    week_side_recipe_ids/choose_recipe), das ist aber eine weiche,
+    anwendungsseitige Regel und keine Datenbank-Integritätsbedingung.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    plan_day_id = db.Column(db.Integer, db.ForeignKey('plan_day.id'), nullable=False)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
+
+    recipe = db.relationship('Recipe')
 
 
 class ExtraShoppingItem(db.Model):

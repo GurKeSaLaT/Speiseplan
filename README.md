@@ -17,12 +17,17 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
   Zutatenliste anlegen, bearbeiten und löschen.
 - **Wochenplanung per Drag-and-Drop** – Gerichte aus der Live-Suche auf
   einzelne Wochentage ziehen oder klicken, Tage per Drag-and-Drop
-  komplett tauschen (auch auf der fertigen Plan-Seite), einzelne Tage
-  von der Planung ausnehmen.
+  komplett tauschen (auch auf der fertigen Plan-Seite, Beilagen wandern
+  dabei mit), einzelne Tage von der Planung ausnehmen. Auf der fertigen
+  Plan-Seite lässt sich jedes Hauptgericht und jede Beilage per ✏️-Button
+  auch manuell aus allen Rezepten auswählen statt nur zu würfeln.
 - **Zusatzgerichte/Beilagen** – Rezepte lassen sich als Beilage markieren.
   Sie belegen keinen eigenen Tages-Slot, sondern werden zusätzlich zum
   Hauptgericht hinzugefügt – auch an Tagen ohne Hauptgericht – entweder
-  fest vor dem Erstellen des Plans oder nachträglich per Würfel-Button.
+  fest vor dem Erstellen des Plans oder nachträglich per Würfel-/
+  Auswahl-Button. Ein Tag kann beliebig viele Beilagen gleichzeitig haben;
+  jede einzelne lässt sich unabhängig neu würfeln, ersetzen, entfernen oder
+  per Drag-and-Drop auf einen anderen Tag verschieben.
 - **Automatisches, balanciertes Auffüllen** – Tage ohne feste Zuweisung
   werden zufällig, aber möglichst gleichmäßig über alle Kategorien verteilt
   aufgefüllt, ohne dieselbe Kategorie an zwei aufeinanderfolgenden Tagen zu

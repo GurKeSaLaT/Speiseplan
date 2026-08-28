@@ -198,12 +198,12 @@ def delete_recipe(id):
     RecipeSeason-Zeilen werden durch die cascade="all, delete-orphan"-
     Konfiguration in models.py automatisch mitgelöscht.
 
-    Bewusst KEINE Prüfung, ob das Rezept noch in einem PlanDay (dem
-    Wochenplan-Kalender) referenziert wird: main_recipe_id/side_recipe_id
-    in PlanDay sind nullable und ohne ON DELETE-Constraint, ein gelöschtes
-    Rezept hinterlässt dort einfach eine "hängende" ID. Das ist ein
-    bekanntes, in Kauf genommenes Verhalten (siehe IDEAS.md) - für die
-    kleine, persönliche Nutzung dieser App bislang nicht relevant genug,
+    Bewusst KEINE Prüfung, ob das Rezept noch im Wochenplan-Kalender
+    referenziert wird: PlanDay.main_recipe_id und PlanDaySide.recipe_id sind
+    beide nullable/ohne ON DELETE-Constraint, ein gelöschtes Rezept
+    hinterlässt dort einfach eine "hängende" ID. Das ist ein bekanntes, in
+    Kauf genommenes Verhalten (siehe IDEAS.md) - für die kleine,
+    persönliche Nutzung dieser App bislang nicht relevant genug,
     um dafür extra eine Lösch-Sperre oder Kaskade einzubauen.
     """
     recipe = Recipe.query.get_or_404(id)

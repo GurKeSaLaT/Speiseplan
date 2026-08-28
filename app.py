@@ -17,7 +17,7 @@ from sqlalchemy import text
 from flask import Flask
 from flask_wtf import CSRFProtect
 
-from models import db, Category, RecipeSeason
+from models import db, Category, RecipeSeason, PlanDaySide
 from services.seasons import SEASON_PRESETS
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
 from routes.plan import plan_bp
@@ -144,6 +144,49 @@ def init_db():
                 ))
         db.session.commit()
         db.session.execute(text("ALTER TABLE recipe DROP COLUMN season"))
+        db.session.commit()
+
+    # Beliebig viele Beilagen pro Tag statt genau einer: frühere Versionen
+    # hatten eine einzelne side_recipe_id-Spalte direkt auf PlanDay; das
+    # wurde durch die separate PlanDaySide-Tabelle ersetzt (siehe models.py).
+    # Die neue Tabelle existiert bereits durch db.create_all() oben - hier
+    # wird nur noch der vorhandene Einzelwert (falls gesetzt) einmalig in
+    # eine PlanDaySide-Zeile übertragen, dann die alte Spalte entfernt.
+    existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
+    if 'side_recipe_id' in existing_plan_day_columns:
+        old_sides = db.session.execute(
+            text("SELECT id, side_recipe_id FROM plan_day WHERE side_recipe_id IS NOT NULL")
+        ).fetchall()
+        for plan_day_id, side_recipe_id in old_sides:
+            db.session.add(PlanDaySide(plan_day_id=plan_day_id, recipe_id=side_recipe_id))
+        db.session.commit()
+
+        # SQLite verweigert ein direktes ALTER TABLE ... DROP COLUMN für
+        # side_recipe_id ("unknown column ... in foreign key definition"),
+        # weil die Spalte Teil einer FOREIGN-KEY-Definition der Tabelle
+        # selbst ist - eine bekannte SQLite-Einschränkung, anders als bei
+        # der season-Migration oben (dort war die Spalte kein Fremdschlüssel).
+        # Stattdessen wird die Tabelle nach dem von der SQLite-Doku
+        # empfohlenen Muster neu aufgebaut: Kopie ohne die Spalte anlegen,
+        # Daten (inkl. IDs, damit die soeben angelegten PlanDaySide-Zeilen
+        # weiter auf die richtigen Tage zeigen) umkopieren, alte Tabelle
+        # durch die neue ersetzen.
+        db.session.execute(text("""
+            CREATE TABLE plan_day_new (
+                id INTEGER NOT NULL PRIMARY KEY,
+                date DATE NOT NULL UNIQUE,
+                excluded BOOLEAN NOT NULL,
+                servings INTEGER NOT NULL,
+                main_recipe_id INTEGER,
+                FOREIGN KEY(main_recipe_id) REFERENCES recipe (id)
+            )
+        """))
+        db.session.execute(text("""
+            INSERT INTO plan_day_new (id, date, excluded, servings, main_recipe_id)
+            SELECT id, date, excluded, servings, main_recipe_id FROM plan_day
+        """))
+        db.session.execute(text("DROP TABLE plan_day"))
+        db.session.execute(text("ALTER TABLE plan_day_new RENAME TO plan_day"))
         db.session.commit()
 
     # Erststart mit komplett leerer Datenbank: ein sinnvoller Grundstock an

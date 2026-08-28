@@ -5,14 +5,17 @@
    noch kein einziger PlanDay in der Datenbank existiert) oder den
    vollständigen 7-Tage-Plan samt Einkaufsliste.
 
-   Der initiale Render-Zustand kommt komplett server-seitig aus plan/
-   side_plan/servings_list (Jinja-Schleife über range(7)); JEDE danach
-   folgende Interaktion (würfeln, tauschen, Beilage, Personenzahl, manuelle
-   Einkaufslisten-Artikel) läuft über static/plan.js und window.PLAN_DATA
-   (siehe ganz unten) - dieses JSON-Objekt enthält dieselben Daten nochmal
-   in maschinenlesbarer Form (inkl. extraItems, den manuell hinzugefügten
-   Einkaufslisten-Posten dieser Woche), damit plan.js nicht bei jeder
-   Änderung das DOM neu parsen muss. #}
+   Anders als früher wird der Karteninhalt NICHT mehr server-seitig per
+   Jinja vorgerendert - Jinja liefert hier nur noch die 7 leeren
+   Karten-Hüllen (mit Datum/Drag-Handlern), static/plan.js füllt sie beim
+   Laden der Seite aus window.PLAN_DATA (siehe ganz unten). Das ist bewusst
+   so gewählt, seit Tage mehrere Beilagen und eine manuelle Auswahlbox
+   haben können: die (inzwischen recht umfangreiche) Karten-Markup-Logik
+   existiert dadurch nur noch an EINER Stelle (refreshDayCard in plan.js)
+   statt einmal in Jinja und einmal in JavaScript, die sonst leicht
+   auseinanderlaufen könnten. JEDE Interaktion (würfeln, manuell auswählen,
+   tauschen, Beilagen hinzufügen/entfernen/verschieben, Personenzahl,
+   manuelle Einkaufslisten-Artikel) läuft über dieselbe Rendering-Funktion. #}
 {% extends 'base.html' %}
 {% block content %}
 
@@ -81,74 +84,27 @@
                 <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">🗓️ Dein Wochenplan</h4>
                 <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-light fw-bold">✏️ Woche neu erstellen</a>
             </div>
-            <p class="text-muted small px-3 pt-3 mb-0">Ziehe eine Tageskarte per <strong>Drag-and-Drop</strong> auf eine andere, um beide Tage komplett zu tauschen.</p>
+            <p class="text-muted small px-3 pt-3 mb-0">Ziehe eine Tageskarte per <strong>Drag-and-Drop</strong> auf eine andere, um beide Tage komplett zu tauschen (Beilagen kommen dabei mit). Ziehe eine einzelne Beilage auf eine andere Tageskarte, um nur SIE zu verschieben. ✏️ öffnet eine Suche zur manuellen Auswahl.</p>
             <div class="list-group list-group-flush" id="wochenplanContainer">
+                {# Der Karteninhalt wird bewusst NICHT hier server-seitig
+                   gerendert, sondern beim Laden der Seite einmal per JS für
+                   alle 7 Tage aufgebaut (siehe static/plan.js:
+                   refreshDayCard, aufgerufen in DOMContentLoaded) - exakt
+                   dieselbe Funktion, die auch jede spätere Änderung
+                   übernimmt. So kann die (inzwischen recht umfangreiche)
+                   Karten-Markup-Logik für Mehrfach-Beilagen und die
+                   manuelle Auswahlbox nur an EINER Stelle gepflegt werden,
+                   statt einmal in Jinja und einmal in JavaScript. #}
                 {% for i in range(7) %}
                 <div class="list-group-item p-3 recipe-day-card{% if week_dates[i] == today %} today-card{% endif %}"
                      id="day-card-{{ i }}"
                      data-day-index="{{ i }}"
                      data-date="{{ week_dates[i].isoformat() }}"
-                     data-recipe-id="{{ plan[i].id if plan[i] else '' }}"
-                     data-category-id="{{ plan[i].category_id if plan[i] else '' }}"
-                     data-side-recipe-id="{{ side_plan[i].id if side_plan[i] else '' }}"
                      draggable="true"
-                     ondragstart="daySwapDragStart(event)"
-                     ondragover="daySwapAllowDrop(event)"
+                     ondragstart="dayCardDragStart(event)"
+                     ondragover="dayCardAllowDrop(event)"
                      ondragleave="event.currentTarget.classList.remove('drag-over')"
-                     ondrop="daySwapDrop(event)">
-
-                    <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
-                        <label class="small text-muted mb-0" for="servings-{{ i }}">👥 Personen</label>
-                        <input type="number" id="servings-{{ i }}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="{{ servings_list[i] }}" onchange="updateDayServings({{ i }}, this.value)">
-                    </div>
-
-                    {% if plan[i] %}
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}{% if week_dates[i] == today %} <span class="badge bg-warning text-dark">Heute</span>{% endif %}</h5>
-                            <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">{{ plan[i].name }}</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">{{ plan[i].category.name }}</span>
-                            <!-- Button übergibt den Index i als reine Zahl -->
-                            <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay({{ i }})">🎲</button>
-                        </div>
-                    </div>
-
-                    <div class="text-muted small font-monospace bg-light p-2 rounded">
-                        📊 <span class="recipe-kcal">{{ plan[i].calories }}</span> kcal |
-                        E: <span class="recipe-protein">{{ plan[i].protein }}</span>g |
-                        K: <span class="recipe-carbs">{{ plan[i].carbs }}</span>g |
-                        F: <span class="recipe-fat">{{ plan[i].fat }}</span>g
-                    </div>
-                    {% else %}
-                    <div class="text-center text-muted">
-                        <h5 class="fw-bold mb-1">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}{% if week_dates[i] == today %} <span class="badge bg-warning text-dark">Heute</span>{% endif %}</h5>
-                        {% if i in excluded_days %}
-                        <span>🚫 Von der Planung ausgenommen</span>
-                        {% else %}
-                        <span>Kein passendes Rezept verfügbar</span>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-
-                    <div class="side-dish-row mt-2 pt-2 border-top" id="side-row-{{ i }}">
-                        {% if side_plan[i] %}
-                        <div class="d-flex justify-content-between align-items-center side-dish-card">
-                            <div>
-                                <span class="fw-bold text-dark side-dish-name">🥗 {{ side_plan[i].name }}</span>
-                                <span class="badge badge-category side-dish-category ms-1">{{ side_plan[i].category.name }}</span>
-                                <span class="text-muted small side-dish-kcal">({{ side_plan[i].calories }} kcal)</span>
-                            </div>
-                            <div class="d-flex align-items-center gap-1">
-                                <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Beilage neu würfeln" onclick="rerollSideDay({{ i }})">🎲</button>
-                                <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Beilage entfernen" onclick="removeSideDish({{ i }})">❌</button>
-                            </div>
-                        </div>
-                        {% else %}
-                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay({{ i }})">🥗 Beilage würfeln</button>
-                        {% endif %}
-                    </div>
+                     ondrop="dayCardDrop(event)">
                 </div>
                 {% endfor %}
             </div>
@@ -220,6 +176,21 @@
 }
 .recipe-day-card.today-card {
     border-left: 4px solid var(--primary-food) !important;
+}
+/* Einzelne Beilagen-Zeilen sind zusätzlich für sich ziehbar (siehe
+   static/plan.js: sideDragStart/moveSideDish) - eigener Grab-Cursor, damit
+   erkennbar ist, dass sie unabhängig von der ganzen Tageskarte verschoben
+   werden können. Buttons/Eingabefelder innerhalb bekommen ihren normalen
+   Cursor zurück, sonst würde der geerbte "grab"-Cursor überall im
+   Kartenbereich (auch über Klick-Elementen) angezeigt. */
+.side-dish-card {
+    cursor: grab;
+}
+.side-dish-card:active {
+    cursor: grabbing;
+}
+.recipe-day-card button, .recipe-day-card input, .recipe-day-card select {
+    cursor: default;
 }
 </style>
 

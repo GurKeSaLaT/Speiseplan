@@ -1,20 +1,23 @@
 /**
  * plan.js - Client-seitige Logik der Wochenplan-Ansicht (templates/plan.html).
  *
- * Verantwortlich für alles, was auf der Plan-Seite ohne Neuladen der Seite
- * passiert: einzelne Tage neu würfeln (Haupt- und Beilagengericht), zwei
- * Tage per Drag-and-Drop komplett tauschen, die Personenzahl pro Tag ändern,
- * manuelle Einkaufslisten-Artikel hinzufügen/entfernen, sowie die daraus
- * abgeleiteten Übersichten (Wochen-Nährwerte, nach Supermarkt-Kategorie
- * gruppierte Einkaufsliste) live neu berechnen, ohne dafür die Seite neu
- * laden zu müssen.
+ * Verantwortlich für ALLES auf der Plan-Seite, inklusive dem erstmaligen
+ * Aufbau der 7 Tageskarten (siehe DOMContentLoaded ganz unten in diesem
+ * Abschnitt - anders als früher liefert Jinja nur noch leere Karten-Hüllen):
+ * Hauptgericht würfeln ODER manuell auswählen, Beilagen hinzufügen
+ * (gewürfelt oder manuell) in beliebiger Anzahl pro Tag, einzelne Beilagen
+ * neu würfeln/manuell ersetzen/entfernen, zwei Tageskarten komplett
+ * tauschen (Beilagen wandern dabei mit), eine einzelne Beilage per
+ * Drag-and-Drop auf einen ANDEREN Tag verschieben, die Personenzahl pro Tag
+ * ändern, manuelle Einkaufslisten-Artikel hinzufügen/entfernen, sowie die
+ * daraus abgeleiteten Übersichten (Wochen-Nährwerte, nach Supermarkt-
+ * Kategorie gruppierte Einkaufsliste) live neu berechnen - alles ohne die
+ * Seite neu zu laden.
  *
- * Jede Aktion, die den Plan verändert (würfeln, tauschen, Personenzahl,
- * Beilage entfernen, Artikel hinzufügen/entfernen), schickt zuerst einen
- * fetch()-Request an den Server (siehe routes/plan.py), der die Änderung
- * in der Datenbank persistiert -
- * erst wenn die Antwort erfolgreich war, wird auch der lokale JavaScript-
- * Speicher und das DOM aktualisiert. Ein Fehlschlag (z.B. "keine
+ * Jede Aktion, die den Plan verändert, schickt zuerst einen fetch()-Request
+ * an den Server (siehe routes/plan.py), der die Änderung in der Datenbank
+ * persistiert - erst wenn die Antwort erfolgreich war, wird auch der lokale
+ * JavaScript-Speicher und das DOM aktualisiert. Ein Fehlschlag (z.B. "keine
  * Alternative verfügbar") führt NICHT zu einer optimistischen, dann wieder
  * zurückgerollten UI-Änderung, sondern zu einem alert() und sonst nichts -
  * der bisherige Zustand bleibt unverändert sichtbar.
@@ -32,6 +35,13 @@
 // den bestehenden Datums-Indizes).
 const dayLabels = window.PLAN_DATA.dayLabels;
 const dayDates = window.PLAN_DATA.weekDates;
+
+// ALLE Rezepte (unabhängig vom aktuellen Plan) in schlanker Form
+// ({id, name, category_name, is_side_dish}) - Grundlage für die manuelle
+// Rezeptauswahl-Suche (siehe buildManualSelectHtml/wireManualSelectBox
+// weiter unten). Ändert sich nach dem Laden der Seite nicht mehr; ein neu
+// angelegtes Rezept taucht dort erst nach einem Neuladen auf.
+const allRecipes = window.PLAN_DATA.allRecipes || [];
 
 // Ob ein Tag bewusst von der automatischen Planung ausgenommen wurde
 // (Checkbox auf der Erstellen-Seite). Wird beim Tage-Tausch mitgetauscht,
@@ -52,7 +62,13 @@ let dayServings = window.PLAN_DATA.servingsList;
 // damit diese Berechnungen ohne Seiten-Reload konsistent bleiben.
 let weeklyPlanRecipes = window.PLAN_DATA.plan;
 
-// Zusatzgerichte/Beilagen, unabhängig vom Hauptgericht (Index = Wochentag, null = keine Beilage)
+// Zusatzgerichte/Beilagen (Index = Wochentag, Wert = LISTE von
+// Rezept-Objekten - ein Tag kann beliebig viele Beilagen gleichzeitig
+// haben, siehe models.py: PlanDaySide). Jedes Beilagen-Objekt hat
+// zusätzlich zu den normalen Rezeptfeldern ein side_id-Feld: die ID der
+// PlanDaySide-Zeile selbst (NICHT des Rezepts), über die eine einzelne
+// Beilage gezielt neu gewürfelt/ersetzt/entfernt/verschoben wird - siehe
+// rerollOneSide/setOneSide/removeOneSide/moveSideDish weiter unten.
 let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 
 // Manuell zur Einkaufsliste dieser Woche hinzugefügte Artikel, die zu keinem
@@ -64,11 +80,19 @@ let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 // Ganzes, keinem bestimmten Tag.
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
-// Beim ersten Laden der Seite die Einkaufsliste (und darüber auch die
-// Wochen-Nährwertübersicht, siehe rebuildShoppingList) einmal aus den
-// bereits vom Server mitgelieferten Daten aufbauen - ab dann übernehmen die
-// einzelnen Aktionen unten das Neu-Berechnen bei jeder Änderung.
+// Beim ersten Laden der Seite alle 7 Tageskarten (siehe renderDayCardBody
+// weiter unten - Jinja liefert in plan.html nur noch leere Karten-Hüllen)
+// sowie die Einkaufsliste (und darüber auch die Wochen-Nährwertübersicht,
+// siehe rebuildShoppingList) aus den bereits vom Server mitgelieferten
+// Daten aufbauen - ab dann übernehmen die einzelnen Aktionen unten das
+// Neu-Berechnen bei jeder Änderung. refreshDayCard/rebuildShoppingList
+// brechen selbst früh ab, wenn die jeweiligen Container gar nicht im DOM
+// existieren (z.B. weil diese Woche noch gar keinen Plan hat) - dieser
+// Aufruf ist daher auch in dem Fall gefahrlos.
 document.addEventListener('DOMContentLoaded', () => {
+    for (let i = 0; i < 7; i++) {
+        refreshDayCard(i);
+    }
     rebuildShoppingList();
 });
 
@@ -134,63 +158,94 @@ function rerollSingleDay(dayIndex) {
 }
 
 /**
- * Erzeugt das HTML für die Beilagen-Zeile einer Tageskarte. Zwei
- * Zustände: ist bereits eine Beilage zugewiesen, wird sie mit
- * Neu-würfeln- und Entfernen-Button dargestellt; ist keine zugewiesen,
- * erscheint stattdessen nur ein "Beilage würfeln"-Button über die volle
- * Breite. Wird sowohl beim initialen Rendern (renderDayCardBody) als auch
- * nach jedem erfolgreichen Beilagen-Reroll/-Entfernen erneut aufgerufen,
- * um exakt dasselbe Markup ohne Duplikation zu erzeugen.
+ * Baut die <option>-freie Trefferliste für die manuelle Rezeptauswahl-Box:
+ * eine kleine "Suchen..."-Eingabe + Live-Ergebnisliste (analog zur
+ * Rezeptsuche auf create_week.html, aber als wiederverwendbare Komponente
+ * für beliebig viele Stellen auf DIESER Seite - Hauptgericht UND jede
+ * einzelne Beilage bekommen jeweils ihre eigene). isSide filtert
+ * allRecipes auf Beilagen (true) oder Hauptgerichte (false).
  */
-function renderSideRow(dayIndex, recipe) {
-    if (recipe) {
-        return `
-            <div class="d-flex justify-content-between align-items-center side-dish-card">
-                <div>
-                    <span class="fw-bold text-dark side-dish-name">🥗 ${recipe.name}</span>
-                    <span class="badge badge-category side-dish-category ms-1">${recipe.category_name}</span>
-                    <span class="text-muted small side-dish-kcal">(${recipe.calories} kcal)</span>
-                </div>
-                <div class="d-flex align-items-center gap-1">
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Beilage neu würfeln" onclick="rerollSideDay(${dayIndex})">🎲</button>
-                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Beilage entfernen" onclick="removeSideDish(${dayIndex})">❌</button>
-                </div>
-            </div>
-        `;
-    }
-    return `<button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay(${dayIndex})">🥗 Beilage würfeln</button>`;
+function buildManualSelectHtml(isSide) {
+    return `
+        <div class="manual-select-box">
+            <input type="text" class="form-control form-control-sm manual-select-input mb-1" placeholder="${isSide ? 'Beilage' : 'Rezept'} suchen..." autocomplete="off">
+            <div class="list-group manual-select-results shadow-sm" style="max-height: 180px; overflow-y: auto; display: none;"></div>
+            <button type="button" class="btn btn-sm btn-link p-0 mt-1 manual-select-cancel">Abbrechen</button>
+        </div>
+    `;
 }
 
 /**
- * Baut den kompletten Innenbereich einer Tageskarte auf: Personenzahl-Zeile,
- * Hauptgericht-Block (oder Platzhaltertext, falls kein Rezept zugewiesen
- * ist bzw. der Tag ausgenommen wurde) und Beilagen-Zeile. Liest dabei
- * ausschließlich aus dem aktuellen JavaScript-Speicher (weeklyPlanRecipes/
- * weeklySideRecipes/dayServings/dayExcluded), nicht aus dem DOM - wird
- * nach einem Tage-Tausch für beide beteiligten Tage komplett neu
- * aufgerufen, statt einzelne DOM-Knoten gezielt zu aktualisieren, weil
- * sich beim Tausch potenziell jedes Feld ändert.
+ * Verdrahtet eine per buildManualSelectHtml() erzeugte Box: filtert
+ * allRecipes bei jedem Tastendruck nach Name/Kategorie (übereinstimmend
+ * mit is_side_dish === isSide), rendert Treffer als klickbare Zeilen und
+ * ruft bei einem Klick onSelect(recipeId) auf. Der "Abbrechen"-Button ruft
+ * stattdessen onCancel() auf (typischerweise: die Box wieder gegen die
+ * vorherige Anzeige tauschen). container muss bereits das Markup aus
+ * buildManualSelectHtml() enthalten.
  */
-function renderDayCardBody(dayIndex) {
-    const servingsHtml = `
-        <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
-            <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Personen</label>
-            <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
-        </div>
-    `;
+function wireManualSelectBox(container, isSide, onSelect, onCancel) {
+    const input = container.querySelector('.manual-select-input');
+    const results = container.querySelector('.manual-select-results');
+    const cancelBtn = container.querySelector('.manual-select-cancel');
 
+    input.addEventListener('input', () => {
+        const query = input.value.toLowerCase().trim();
+        results.innerHTML = '';
+        if (!query) {
+            results.style.display = 'none';
+            return;
+        }
+        const matches = allRecipes.filter(r =>
+            r.is_side_dish === isSide &&
+            (r.name.toLowerCase().includes(query) || r.category_name.toLowerCase().includes(query))
+        ).slice(0, 20);
+
+        matches.forEach(r => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center py-1 px-2';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'fw-bold text-dark small';
+            nameSpan.textContent = r.name;
+            const catBadge = document.createElement('span');
+            catBadge.className = 'badge badge-category';
+            catBadge.textContent = r.category_name;
+            item.appendChild(nameSpan);
+            item.appendChild(catBadge);
+            item.addEventListener('click', () => onSelect(r.id));
+            results.appendChild(item);
+        });
+        results.style.display = matches.length ? 'block' : 'none';
+    });
+
+    cancelBtn.addEventListener('click', onCancel);
+    input.focus();
+}
+
+/**
+ * Baut den Hauptgericht-Anzeigebereich einer Tageskarte auf: entweder das
+ * zugewiesene Rezept mit 🎲 (neu würfeln) + ✏️ (manuell auswählen), oder
+ * einen Platzhaltertext (ausgenommen bzw. kein passendes Rezept gefunden)
+ * mit einem eigenständigen "Rezept auswählen"-Button - die manuelle
+ * Auswahl bleibt so auch dann erreichbar, wenn die automatische Planung
+ * an diesem Tag nichts gefunden hat oder der Tag ausgenommen wurde (die
+ * Auswahl hebt eine Ausnahme automatisch wieder auf, siehe
+ * routes/plan.py: set_main_day).
+ */
+function renderMainDisplay(dayIndex) {
     const recipe = weeklyPlanRecipes[dayIndex];
-    let mainHtml;
     if (recipe) {
-        mainHtml = `
+        return `
             <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
                     <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayLabels[dayIndex]}</h5>
                     <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${recipe.name}</span>
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-1">
                     <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${recipe.category_name}</span>
                     <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay(${dayIndex})">🎲</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Anderes Rezept auswählen" onclick="openMainManualSelect(${dayIndex})">✏️</button>
                 </div>
             </div>
             <div class="text-muted small font-monospace bg-light p-2 rounded">
@@ -200,24 +255,265 @@ function renderDayCardBody(dayIndex) {
                 F: <span class="recipe-fat">${recipe.fat}</span>g
             </div>
         `;
-    } else {
-        // Zwei mögliche Gründe für ein leeres Hauptgericht: der Tag wurde
-        // bewusst ausgenommen (Checkbox), oder die automatische Planung hat
-        // schlicht kein passendes Rezept mehr gefunden (z.B. Kategorie
-        // erschöpft) - beide Fälle bekommen einen eigenen, unterscheidbaren
-        // Hinweistext statt einer nichtssagend leeren Karte.
-        const placeholderText = dayExcluded[dayIndex] ? '🚫 Von der Planung ausgenommen' : 'Kein passendes Rezept verfügbar';
-        mainHtml = `
-            <div class="text-center text-muted">
-                <h5 class="fw-bold mb-1">${dayLabels[dayIndex]}</h5>
-                <span>${placeholderText}</span>
+    }
+    // Zwei mögliche Gründe für ein leeres Hauptgericht: der Tag wurde
+    // bewusst ausgenommen (Checkbox), oder die automatische Planung hat
+    // schlicht kein passendes Rezept mehr gefunden (z.B. Kategorie
+    // erschöpft) - beide Fälle bekommen einen eigenen, unterscheidbaren
+    // Hinweistext statt einer nichtssagend leeren Karte.
+    const placeholderText = dayExcluded[dayIndex] ? '🚫 Von der Planung ausgenommen' : 'Kein passendes Rezept verfügbar';
+    return `
+        <div class="text-center text-muted">
+            <h5 class="fw-bold mb-1">${dayLabels[dayIndex]}</h5>
+            <span>${placeholderText}</span>
+            <div class="mt-1">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openMainManualSelect(${dayIndex})">✏️ Rezept auswählen</button>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Öffnet die manuelle Rezeptauswahl-Box anstelle der aktuellen
+ * Hauptgericht-Anzeige (main-dish-display-<dayIndex>, siehe
+ * renderDayCardBody). previousHtml wird gemerkt, um bei "Abbrechen" exakt
+ * den vorherigen Zustand wiederherzustellen, ohne extra einen
+ * Server-Roundtrip zu brauchen.
+ */
+function openMainManualSelect(dayIndex) {
+    const area = document.getElementById(`main-dish-display-${dayIndex}`);
+    if (!area) return;
+    const previousHtml = area.innerHTML;
+    area.innerHTML = buildManualSelectHtml(false);
+    wireManualSelectBox(
+        area, false,
+        (recipeId) => setMainRecipe(dayIndex, recipeId),
+        () => { area.innerHTML = previousHtml; }
+    );
+}
+
+/**
+ * Setzt das Hauptgericht eines Tages auf ein vom Nutzer manuell gewähltes
+ * Rezept (ruft serverseitig set_main_day() auf - KEINE der
+ * Balance-/Nachbarschafts-/Wiederholungs-Regeln von rerollSingleDay gilt
+ * hier, siehe dortigen Docstring in routes/plan.py). Setzt dayExcluded
+ * lokal ebenfalls zurück, da eine manuelle Zuweisung serverseitig
+ * automatisch die Ausnahme aufhebt.
+ */
+function setMainRecipe(dayIndex, recipeId) {
+    postWithCsrf(`/day/${dayDates[dayIndex]}/set-main`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipe_id: recipeId }),
+    })
+    .then(response => {
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Auswahl fehlgeschlagen.'); });
+        return response.json();
+    })
+    .then(newRecipe => {
+        weeklyPlanRecipes[dayIndex] = newRecipe;
+        dayExcluded[dayIndex] = false;
+        refreshDayCard(dayIndex);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+/**
+ * Baut den kompletten Beilagen-Bereich einer Tageskarte auf: eine Zeile
+ * pro aktuell zugewiesener Beilage (jeweils mit eigenem Drag-Handle für
+ * moveSideDish sowie 🎲/✏️/❌-Buttons für genau DIESEN Slot) plus eine
+ * abschließende "Beilage hinzufügen"-Zeile (🎲 würfelt eine neue zufällige
+ * Beilage dazu, ✏️ öffnet die manuelle Auswahl für einen NEUEN Slot). Jede
+ * Zeile bekommt eine eigene id (side-item-<dayIndex>-<sideId> bzw.
+ * side-add-row-<dayIndex>), über die openSideManualSelect() gezielt genau
+ * diese eine Zeile durch die Auswahlbox ersetzen kann.
+ */
+function renderSidesSection(dayIndex) {
+    const sides = weeklySideRecipes[dayIndex] || [];
+    let html = '';
+    sides.forEach(side => {
+        html += `
+            <div class="d-flex justify-content-between align-items-center side-dish-card mb-1"
+                 id="side-item-${dayIndex}-${side.side_id}"
+                 draggable="true"
+                 ondragstart="sideDragStart(event, ${dayIndex}, ${side.side_id})">
+                <div>
+                    <span class="fw-bold text-dark side-dish-name">🥗 ${side.name}</span>
+                    <span class="badge badge-category side-dish-category ms-1">${side.category_name}</span>
+                    <span class="text-muted small side-dish-kcal">(${side.calories} kcal)</span>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Diese Beilage neu würfeln" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Andere Beilage auswählen" onclick="openSideManualSelect(${dayIndex}, ${side.side_id})">✏️</button>
+                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Beilage entfernen" onclick="removeOneSide(${dayIndex}, ${side.side_id})">❌</button>
+                </div>
             </div>
         `;
-    }
+    });
+    html += `
+        <div id="side-add-row-${dayIndex}" class="d-flex gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" onclick="addRandomSide(${dayIndex})">🎲 Beilage würfeln</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Beilage auswählen" onclick="openSideManualSelect(${dayIndex}, null)">✏️</button>
+        </div>
+    `;
+    return html;
+}
 
-    const sideHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSideRow(dayIndex, weeklySideRecipes[dayIndex])}</div>`;
+/** Rendert nur den Beilagen-Bereich einer Tageskarte neu (side-row-<dayIndex>), ohne Personenzeile/Hauptgericht anzutasten. */
+function refreshSidesSection(dayIndex) {
+    const container = document.getElementById(`side-row-${dayIndex}`);
+    if (container) container.innerHTML = renderSidesSection(dayIndex);
+}
 
-    return servingsHtml + mainHtml + sideHtml;
+/**
+ * Öffnet die manuelle Beilagenauswahl-Box: entweder ANSTELLE einer
+ * bestehenden Beilagen-Zeile (sideId gesetzt - ersetzt genau diesen Slot,
+ * siehe setOneSide) oder ANSTELLE der "Hinzufügen"-Zeile (sideId null -
+ * legt einen NEUEN Slot an, siehe addSide). Beide Fälle nutzen denselben
+ * Mechanismus: die Ziel-Zeile per id finden, ihr aktuelles Markup merken,
+ * gegen die Auswahlbox tauschen. Nach einer erfolgreichen Auswahl rendert
+ * refreshSidesSection() ohnehin den kompletten Bereich neu (siehe
+ * addSide/setOneSide), ein manuelles Wiederherstellen bei Erfolg ist daher
+ * nicht nötig - nur bei "Abbrechen".
+ */
+function openSideManualSelect(dayIndex, sideId) {
+    const container = sideId
+        ? document.getElementById(`side-item-${dayIndex}-${sideId}`)
+        : document.getElementById(`side-add-row-${dayIndex}`);
+    if (!container) return;
+
+    const previousHtml = container.innerHTML;
+    container.innerHTML = buildManualSelectHtml(true);
+    wireManualSelectBox(
+        container, true,
+        (recipeId) => {
+            if (sideId) {
+                setOneSide(dayIndex, sideId, recipeId);
+            } else {
+                addSide(dayIndex, recipeId);
+            }
+        },
+        () => { container.innerHTML = previousHtml; }
+    );
+}
+
+/**
+ * Legt eine NEUE Beilage für einen Tag an (ruft serverseitig add_side()
+ * auf) - zusätzlich zu bereits vorhandenen, ein Tag kann beliebig viele
+ * haben. recipeId ist optional: gesetzt (manuelle Auswahl über ✏️) wird
+ * genau dieses Rezept übernommen, fehlt es (🎲-Button), würfelt der Server
+ * zufällig unter Berücksichtigung von Wochen-Dubletten und der weichen
+ * Wiederholungs-Gewichtung.
+ */
+function addSide(dayIndex, recipeId) {
+    postWithCsrf(`/day/${dayDates[dayIndex]}/side/add`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipe_id: recipeId || null }),
+    })
+    .then(response => {
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine Beilage verfügbar.'); });
+        return response.json();
+    })
+    .then(newSide => {
+        weeklySideRecipes[dayIndex].push(newSide);
+        refreshSidesSection(dayIndex);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+/** Kurzer Alias für den 🎲-Button der "Beilage hinzufügen"-Zeile - würfelt eine neue Beilage ohne manuelle Auswahl. */
+function addRandomSide(dayIndex) {
+    addSide(dayIndex, null);
+}
+
+/**
+ * Würfelt EINE bestehende Beilage neu (ersetzt sie durch ein anderes,
+ * zufällig gewähltes Rezept - im Gegensatz zu addSide, das einen
+ * ZUSÄTZLICHEN Slot anlegt). sideId identifiziert die PlanDaySide-Zeile,
+ * nicht das Rezept.
+ */
+function rerollOneSide(dayIndex, sideId) {
+    postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/reroll`)
+    .then(response => {
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine Alternative verfügbar.'); });
+        return response.json();
+    })
+    .then(newSide => {
+        const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
+        if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
+        refreshSidesSection(dayIndex);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+/** Ersetzt EINE bestehende Beilage durch ein vom Nutzer manuell gewähltes Rezept (das manuelle Pendant zu rerollOneSide). */
+function setOneSide(dayIndex, sideId, recipeId) {
+    postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/set`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipe_id: recipeId }),
+    })
+    .then(response => {
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Auswahl fehlgeschlagen.'); });
+        return response.json();
+    })
+    .then(newSide => {
+        const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
+        if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
+        refreshSidesSection(dayIndex);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+/** Entfernt EINE bestehende Beilage endgültig, ohne die übrigen Beilagen desselben Tages anzutasten. */
+function removeOneSide(dayIndex, sideId) {
+    postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/remove`)
+    .then(response => {
+        if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
+    })
+    .then(() => {
+        weeklySideRecipes[dayIndex] = weeklySideRecipes[dayIndex].filter(s => s.side_id !== sideId);
+        refreshSidesSection(dayIndex);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+/**
+ * Baut den kompletten Innenbereich einer Tageskarte auf: Personenzahl-Zeile,
+ * Hauptgericht-Anzeigebereich (in einem eigenen main-dish-display-<i>-Div,
+ * das openMainManualSelect gezielt ersetzt) und den Beilagen-Bereich
+ * (renderSidesSection). Liest dabei ausschließlich aus dem aktuellen
+ * JavaScript-Speicher (weeklyPlanRecipes/weeklySideRecipes/dayServings/
+ * dayExcluded), nicht aus dem DOM - wird nach einem Tage-Tausch für beide
+ * beteiligten Tage komplett neu aufgerufen, statt einzelne DOM-Knoten
+ * gezielt zu aktualisieren, weil sich beim Tausch potenziell jedes Feld
+ * ändert.
+ */
+function renderDayCardBody(dayIndex) {
+    const servingsHtml = `
+        <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
+            <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Personen</label>
+            <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
+        </div>
+    `;
+
+    const mainDisplayHtml = `<div class="main-dish-display" id="main-dish-display-${dayIndex}">${renderMainDisplay(dayIndex)}</div>`;
+    const sidesHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSidesSection(dayIndex)}</div>`;
+
+    return servingsHtml + mainDisplayHtml + sidesHtml;
 }
 
 /**
@@ -258,51 +554,88 @@ function refreshDayCard(dayIndex) {
     if (!card) return;
 
     const recipe = weeklyPlanRecipes[dayIndex];
-    const sideRecipe = weeklySideRecipes[dayIndex];
     card.setAttribute('data-recipe-id', recipe ? recipe.id : '');
     card.setAttribute('data-category-id', recipe ? recipe.category_id : '');
-    card.setAttribute('data-side-recipe-id', sideRecipe ? sideRecipe.id : '');
     card.innerHTML = renderDayCardBody(dayIndex);
 }
 
-// --- TAGE TAUSCHEN PER DRAG-AND-DROP ---
-// Nutzt die native HTML5-Drag-and-Drop-API. Getauscht werden Hauptgericht,
-// Beilage UND der Ausnahme-Status der beiden Tage komplett miteinander (die
-// Personenzahl bewusst NICHT, siehe Kommentar bei dayServings oben) - der
-// Tausch wird über /day/<datum>/swap/<datum> serverseitig persistiert,
-// bevor die lokale Anzeige aktualisiert wird.
+// --- TAGE TAUSCHEN / BEILAGEN VERSCHIEBEN PER DRAG-AND-DROP ---
+// Nutzt die native HTML5-Drag-and-Drop-API. ZWEI unterschiedliche Dinge
+// lassen sich auf dieser Seite ziehen, beide enden am selben Drop-Handler
+// (dayCardDrop) auf der Tageskarte:
+//
+// 1. Die ganze Tageskarte (draggable="true" auf dem äußeren
+//    .recipe-day-card-Element, siehe plan.html) - tauscht Hauptgericht,
+//    ALLE Beilagen und Ausnahme-Status zweier Tage komplett miteinander
+//    (daySwap). "Wird das Hauptgericht verschoben, kommen die Beilagen mit."
+//
+// 2. Eine einzelne Beilagen-Zeile (draggable="true" auf .side-dish-card,
+//    siehe renderSidesSection) - verschiebt NUR diese eine Beilage auf den
+//    Zieltag, ohne den Rest von Quell- oder Zieltag anzutasten (moveSideDish).
+//
+// Da eine Beilagen-Zeile INNERHALB einer Tageskarte verschachtelt liegt und
+// beide draggable="true" haben, wählt der Browser beim Ziehen automatisch
+// das innerste draggable-Element unter dem Cursor - ein Ziehen ab einer
+// Beilagen-Zeile zieht also nur sie, nicht die ganze Karte, ganz ohne
+// eigene Konfliktbehandlung. Welcher der beiden Fälle vorliegt, steht als
+// JSON-codiertes {type: 'day'|'side', ...}-Objekt im DataTransfer (siehe
+// dayCardDragStart/sideDragStart).
 
-/** Merkt beim Start des Ziehens die HTML-id der Quellkarte im DataTransfer. */
-function daySwapDragStart(event) {
-    event.dataTransfer.setData('text/plain', event.currentTarget.id);
+/** Merkt beim Start des Ziehens einer GANZEN Tageskarte deren Index im DataTransfer. */
+function dayCardDragStart(event) {
+    const dayIndex = parseInt(event.currentTarget.getAttribute('data-day-index'));
+    event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'day', dayIndex: dayIndex }));
+}
+
+/** Merkt beim Start des Ziehens EINER Beilagen-Zeile deren Herkunft (Tag + PlanDaySide-ID) im DataTransfer. stopPropagation verhindert, dass zusätzlich (redundant) auch noch dayCardDragStart der umschließenden Karte feuert. */
+function sideDragStart(event, dayIndex, sideId) {
+    event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'side', dayIndex: dayIndex, sideId: sideId }));
+    event.stopPropagation();
 }
 
 /** Erlaubt das Ablegen auf dieser Karte (sonst ignoriert der Browser drop-Events per Default) und markiert sie optisch. */
-function daySwapAllowDrop(event) {
+function dayCardAllowDrop(event) {
     event.preventDefault();
     event.currentTarget.classList.add('drag-over');
 }
 
 /**
- * Führt den eigentlichen Tausch aus, sobald eine Karte auf einer anderen
- * abgelegt wird: liest zunächst die Quellkarte aus dem DataTransfer, bricht
- * bei fehlender/identischer Quelle ab, ruft dann den Server-Endpunkt auf
- * und tauscht erst nach dessen Bestätigung die drei betroffenen Arrays
- * (weeklyPlanRecipes, weeklySideRecipes, dayExcluded) per
- * Destrukturierungs-Swap, bevor beide Karten neu gerendert werden.
+ * Gemeinsamer Drop-Handler für beide Drag-Arten (siehe Erklärung oben):
+ * liest die JSON-codierte Payload aus dem DataTransfer und leitet je nach
+ * "type" an daySwap() (ganze Karte) oder moveSideDish() (eine Beilage)
+ * weiter. Ungültige/fehlende Payloads (z.B. ein Drag von außerhalb dieser
+ * Seite) werden stillschweigend ignoriert.
  */
-function daySwapDrop(event) {
+function dayCardDrop(event) {
     event.preventDefault();
     const targetCard = event.currentTarget;
     targetCard.classList.remove('drag-over');
 
-    const sourceId = event.dataTransfer.getData('text/plain');
-    if (!sourceId || sourceId === targetCard.id) return;
-    const sourceCard = document.getElementById(sourceId);
-    if (!sourceCard) return;
+    const raw = event.dataTransfer.getData('text/plain');
+    if (!raw) return;
+    let payload;
+    try {
+        payload = JSON.parse(raw);
+    } catch (e) {
+        return;
+    }
 
-    const i = parseInt(sourceCard.getAttribute('data-day-index'));
-    const j = parseInt(targetCard.getAttribute('data-day-index'));
+    const targetDayIndex = parseInt(targetCard.getAttribute('data-day-index'));
+
+    if (payload.type === 'side') {
+        moveSideDish(payload.dayIndex, payload.sideId, targetDayIndex);
+    } else if (payload.type === 'day') {
+        daySwap(payload.dayIndex, targetDayIndex);
+    }
+}
+
+/**
+ * Tauscht zwei ganze Tageskarten komplett miteinander (ruft serverseitig
+ * swap_days() auf) und tauscht erst nach dessen Bestätigung die drei
+ * betroffenen Arrays (weeklyPlanRecipes, weeklySideRecipes, dayExcluded)
+ * per Destrukturierungs-Swap, bevor beide Karten neu gerendert werden.
+ */
+function daySwap(i, j) {
     if (i === j) return;
 
     postWithCsrf(`/day/${dayDates[i]}/swap/${dayDates[j]}`)
@@ -325,50 +658,26 @@ function daySwapDrop(event) {
 }
 
 /**
- * Würfelt die Beilage eines Tages neu (unabhängig vom Hauptgericht -
- * funktioniert auch, wenn noch gar keine Beilage zugewiesen war, ruft dann
- * serverseitig effektiv eine erstmalige Zuweisung auf). Aktualisiert bei
- * Erfolg nur die Beilagen-Zeile dieses Tages (renderSideRow), nicht die
- * ganze Karte.
+ * Verschiebt EINE einzelne Beilage von sourceDayIndex zu targetDayIndex
+ * (ruft serverseitig move_one_side() auf) - ein einseitiges Verschieben,
+ * kein Tausch: der Zieltag behält alles, was er bereits hatte, und bekommt
+ * die Beilage zusätzlich. Aktualisiert nach Erfolg beide betroffenen
+ * Beilagen-Bereiche (nicht die ganze Karte, das Hauptgericht bleibt ja
+ * unangetastet).
  */
-function rerollSideDay(dayIndex) {
-    const dayCard = document.getElementById(`day-card-${dayIndex}`);
-    const sideRow = document.getElementById(`side-row-${dayIndex}`);
-    if (!dayCard || !sideRow) return;
+function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
+    if (sourceDayIndex === targetDayIndex) return;
 
-    postWithCsrf(`/day/${dayDates[dayIndex]}/reroll-side`)
+    postWithCsrf(`/day/${dayDates[sourceDayIndex]}/side/${sideId}/move/${dayDates[targetDayIndex]}`)
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine weitere Beilage verfügbar.'); });
+        if (!response.ok) throw new Error('Verschieben fehlgeschlagen.');
         return response.json();
     })
-    .then(newRecipe => {
-        dayCard.setAttribute('data-side-recipe-id', newRecipe.id);
-        sideRow.innerHTML = renderSideRow(dayIndex, newRecipe);
-        weeklySideRecipes[dayIndex] = newRecipe;
-        rebuildShoppingList();
-    })
-    .catch(err => {
-        alert('Hinweis: ' + err.message);
-    });
-}
-
-/**
- * Entfernt eine bereits zugewiesene Beilage von einem Tag wieder komplett
- * (im Gegensatz zu rerollSideDay, das durch eine ANDERE Beilage ersetzt).
- * Nach Erfolg zeigt die Beilagen-Zeile wieder nur den "Beilage würfeln"-
- * Button (siehe renderSideRow mit recipe=null).
- */
-function removeSideDish(dayIndex) {
-    const dayCard = document.getElementById(`day-card-${dayIndex}`);
-    const sideRow = document.getElementById(`side-row-${dayIndex}`);
-    if (!dayCard || !sideRow) return;
-
-    postWithCsrf(`/day/${dayDates[dayIndex]}/remove-side`)
-    .then(response => {
-        if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
-        dayCard.setAttribute('data-side-recipe-id', '');
-        sideRow.innerHTML = renderSideRow(dayIndex, null);
-        weeklySideRecipes[dayIndex] = null;
+    .then(movedSide => {
+        weeklySideRecipes[sourceDayIndex] = weeklySideRecipes[sourceDayIndex].filter(s => s.side_id !== sideId);
+        weeklySideRecipes[targetDayIndex].push(movedSide);
+        refreshSidesSection(sourceDayIndex);
+        refreshSidesSection(targetDayIndex);
         rebuildShoppingList();
     })
     .catch(err => {
@@ -395,7 +704,7 @@ function rebuildWeeklyNutritionSummary() {
 
     for (let i = 0; i < 7; i++) {
         let dayHasSomething = false;
-        [weeklyPlanRecipes[i], weeklySideRecipes[i]].forEach(recipe => {
+        [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach(recipe => {
             if (recipe) {
                 totals.calories += recipe.calories || 0;
                 totals.protein += recipe.protein || 0;
@@ -468,7 +777,7 @@ function rebuildShoppingList() {
     // (Verhältnis zur Portionsangabe des jeweiligen Rezepts) - Nährwerte bleiben davon
     // unberührt, die sind immer pro Portion/Person.
     for (let i = 0; i < 7; i++) {
-        [weeklyPlanRecipes[i], weeklySideRecipes[i]].forEach(recipe => {
+        [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach(recipe => {
             if (recipe && recipe.ingredients) {
                 const factor = recipe.servings ? dayServings[i] / recipe.servings : 1;
                 recipe.ingredients.forEach(ing => {
