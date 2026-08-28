@@ -1,8 +1,9 @@
 {% extends 'base.html' %} {% block content %} <div class="row justify-content-center">
   <div class="col-md-10 col-lg-9">
     <div class="card shadow-sm border-0 mb-4">
-      <div class="card-header-custom p-3">
-        <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wöchentliche Speiseplanung & Zuweisung </h4>
+      <div class="card-header-custom p-3 d-flex justify-content-between align-items-center">
+        <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wochenplan erstellen: {{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }} </h4>
+        <a href="{{ url_for('week_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-light fw-bold">← Zurück</a>
       </div>
       <div class="card-body p-4">
         <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich zusätzlich zum Hauptgericht hinzufügen und funktionieren auch an ausgenommenen Tagen. </p>
@@ -18,7 +19,7 @@
             </button> {% endfor %} </div>
         </div>
         <!-- HAUPTFORMULAR AN FLASK -->
-        <form action="/generate-plan" method="POST" id="planForm">
+        <form action="{{ url_for('week_generate', start_date=start_date.isoformat()) }}" method="POST" id="planForm">
           <!-- 2. BEREICH: DIE 7 WOCHENTAGE AS CONTAINER -->
           <div class="mb-4">
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -28,7 +29,7 @@
             <div class="row g-3"> {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %} {% for i in range(7) %} <div class="col-md-6 col-xl-4">
                 <div class="p-3 bg-light rounded border day-dropzone" id="day-zone-{{ i }}" data-day-index="{{ i }}" ondragover="allowDrop(event)" ondrop="drop(event)">
                   <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-1">
-                    <span class="fw-bold text-success">{{ days[i] }}</span>
+                    <span class="fw-bold text-success">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}</span>
                     <div class="d-flex align-items-center gap-2">
                       <small class="text-muted slot-status" id="status-{{ i }}">Automatisch auffüllen</small>
                       <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem; line-height: 1.4;" id="exclude-btn-{{ i }}" title="Diesen Tag von der Planung ausnehmen" onclick="toggleExcludeDay({{ i }})">🚫</button>

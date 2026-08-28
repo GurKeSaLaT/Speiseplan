@@ -34,6 +34,18 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   Wochensumme und den Ø-Wert pro geplantem Tag für Kalorien/Eiweiß/
   Kohlenhydrate/Fett (über alle Haupt- und Zusatzgerichte), live
   aktualisiert bei jeder Änderung am Plan.
+- **Dauerhafter Plan-Kalender.** Neues `PlanDay`-Modell: ein Datensatz pro
+  echtem Kalendertag (Hauptgericht, Beilage, Ausnahme-Status, Personenzahl),
+  keine flüchtige Anzeige mehr. Die Plan-Seite (`/plan/<Montag-Datum>`) ist
+  jetzt die Hauptseite, mit Wochen-Navigation (vor/zurück, Datumssprung) im
+  Kopf. Wochen ohne Plan zeigen einen "Neuen Wochenplan erstellen"-Button,
+  der zur bisherigen Tageszuweisungs-Seite führt (jetzt `/plan/<Datum>/create`,
+  nur noch darüber erreichbar). Alle Live-Aktionen (würfeln, tauschen,
+  Beilage entfernen, Personenzahl ändern) schreiben direkt in die Datenbank.
+  Legt die Grundlage für spätere Auswertungen (z.B. wie oft welche Kategorie/
+  welches Rezept vorkam), aber noch **ohne** wochenübergreifende
+  Wiederholungssperre oder Rückblicks-/Auswertungsansicht - beides wäre mit
+  den vorhandenen Daten jetzt leicht nachrüstbar.
 
 ## Vorgeschlagen
 
@@ -46,21 +58,10 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
 
 ## Weitere Ideen (von Claude vorgeschlagen)
 
-2. **Dauerhafter Plan-Kalender.** Aktuell wird ein generierter Plan nicht
-   gespeichert - er existiert nur serverseitig gerendert bzw. im Browser,
-   solange die Plan-Seite offen ist. Sinnvoller wäre ein echtes
-   Kalender-Modell (z.B. eine `PlanEntry`-Tabelle: Datum, Rezept-ID,
-   Haupt-/Beilage), das jeden erstellten/geänderten Tag dauerhaft
-   persistiert. Das ist die Grundlage für:
-   - Wiederholungssperre über mehrere Wochen (Gerichte meiden, die erst
-     kürzlich dran waren)
-   - Rückblick auf vergangene Wochen ("Was gab's letzten Mittwoch?")
-   - spätere Auswertungen (z.B. wie oft welche Kategorie/welches Rezept
-     vorkam)
-
-   Größerer Umbau: aktuell ist die Plan-Seite reine Anzeige eines einmalig
-   generierten Ergebnisses ohne DB-Anbindung; müsste auf Speichern pro
-   Tag/Woche umgestellt werden.
+2. **Wiederholungssperre über mehrere Wochen.** Jetzt, wo der Plan-Kalender
+   dauerhaft gespeichert wird, ließe sich beim automatischen Auffüllen/
+   Würfeln zusätzlich vermeiden, ein Rezept zu wählen, das erst vor Kurzem
+   (z.B. in den letzten 2-3 Wochen) schon dran war.
 
 3. **Zutaten-Kategorien für die Einkaufsliste.** Zutaten nach Supermarkt-
    Bereich gruppieren (Gemüse, Milchprodukte, Tiefkühl, ...) statt nur

@@ -53,3 +53,18 @@ class Ingredient(db.Model):
     amount = db.Column(db.Float, nullable=False)
     unit = db.Column(db.String(20), nullable=False)
 
+
+class PlanDay(db.Model):
+    """Der dauerhafte Wochenplan-Kalender: ein Datensatz pro echtem Kalendertag,
+    der jemals geplant wurde (nicht mehr nur ein flüchtiger, serverseitig
+    einmalig gerenderter Zustand)."""
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, unique=True, nullable=False, index=True)
+    excluded = db.Column(db.Boolean, default=False, nullable=False)
+    servings = db.Column(db.Integer, nullable=False, default=2)
+    main_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
+    side_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
+
+    main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
+    side_recipe = db.relationship('Recipe', foreign_keys=[side_recipe_id])
+

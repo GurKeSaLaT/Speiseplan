@@ -1,19 +1,41 @@
 {% extends 'base.html' %}
 {% block content %}
+
+<!-- WOCHEN-NAVIGATION -->
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <a href="{{ url_for('week_view', start_date=prev_start) }}" class="btn btn-outline-secondary">← Vorherige Woche</a>
+        <div class="d-flex align-items-center gap-2">
+            <strong class="fs-5">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</strong>
+            <input type="date" class="form-control form-control-sm" style="width: auto;" value="{{ start_date.isoformat() }}" onchange="if (this.value) location.href = '/plan/' + this.value;" title="Zu einer bestimmten Woche springen">
+        </div>
+        <a href="{{ url_for('week_view', start_date=next_start) }}" class="btn btn-outline-secondary">Nächste Woche →</a>
+    </div>
+</div>
+
+{% if not has_any_data %}
+<!-- WOCHE OHNE PLAN -->
+<div class="card shadow-sm border-0 text-center p-5">
+    <p class="text-muted fs-5 mb-4">Für diese Woche gibt es noch keinen Plan.</p>
+    <a href="{{ url_for('week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-primary-custom btn-lg py-3 shadow mx-auto" style="max-width: 420px;">🎲 Neuen Wochenplan erstellen</a>
+</div>
+{% else %}
 <div class="row">
     <!-- 1. SPALTE: Der interaktive 7-Tage-Speiseplan -->
     <div class="col-lg-7 mb-4">
         <div class="card shadow-sm border-0 mb-4">
-            <div class="card-header-custom p-3">
+            <div class="card-header-custom p-3 d-flex justify-content-between align-items-center">
                 <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">🗓️ Dein Wochenplan</h4>
+                <a href="{{ url_for('week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-light fw-bold">✏️ Woche neu erstellen</a>
             </div>
             <p class="text-muted small px-3 pt-3 mb-0">Ziehe eine Tageskarte per <strong>Drag-and-Drop</strong> auf eine andere, um beide Tage komplett zu tauschen.</p>
             <div class="list-group list-group-flush" id="wochenplanContainer">
                 {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %}
                 {% for i in range(7) %}
-                <div class="list-group-item p-3 recipe-day-card"
+                <div class="list-group-item p-3 recipe-day-card{% if week_dates[i] == today %} today-card{% endif %}"
                      id="day-card-{{ i }}"
                      data-day-index="{{ i }}"
+                     data-date="{{ week_dates[i].isoformat() }}"
                      data-recipe-id="{{ plan[i].id if plan[i] else '' }}"
                      data-category-id="{{ plan[i].category_id if plan[i] else '' }}"
                      data-side-recipe-id="{{ side_plan[i].id if side_plan[i] else '' }}"
@@ -25,13 +47,13 @@
 
                     <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
                         <label class="small text-muted mb-0" for="servings-{{ i }}">👥 Personen</label>
-                        <input type="number" id="servings-{{ i }}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="2" onchange="updateDayServings({{ i }}, this.value)">
+                        <input type="number" id="servings-{{ i }}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="{{ servings_list[i] }}" onchange="updateDayServings({{ i }}, this.value)">
                     </div>
 
                     {% if plan[i] %}
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <div>
-                            <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">{{ days[i] }}</h5>
+                            <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}{% if week_dates[i] == today %} <span class="badge bg-warning text-dark">Heute</span>{% endif %}</h5>
                             <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">{{ plan[i].name }}</span>
                         </div>
                         <div class="d-flex align-items-center gap-2">
@@ -49,7 +71,7 @@
                     </div>
                     {% else %}
                     <div class="text-center text-muted">
-                        <h5 class="fw-bold mb-1">{{ days[i] }}</h5>
+                        <h5 class="fw-bold mb-1">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}{% if week_dates[i] == today %} <span class="badge bg-warning text-dark">Heute</span>{% endif %}</h5>
                         {% if i in excluded_days %}
                         <span>🚫 Von der Planung ausgenommen</span>
                         {% else %}
@@ -86,8 +108,6 @@
                 <div id="weeklyNutritionSummary"></div>
             </div>
         </div>
-
-        <a href="/" class="btn btn-outline-secondary px-4 py-2" style="border-radius: 0.75rem;"><- Neuer Plan erstellen</a>
     </div>
 
     <!-- 2. SPALTE: Die Einkaufsliste -->
@@ -115,18 +135,22 @@
 .recipe-day-card.drag-over {
     background-color: #E8EFEA;
 }
+.recipe-day-card.today-card {
+    border-left: 4px solid var(--primary-food) !important;
+}
 </style>
 
 <script>
-// Wochentage in fester Reihenfolge (Index = Tag-Index 0-6), für das Neu-Rendern
-// einer Tageskarte nach einem Drag-and-Drop-Tausch
-const dayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+// Datumslabel je Wochentag ("Montag, 15.09."), fürs Neu-Rendern nach einem Tage-Tausch
+const dayLabels = [{% for i in range(7) %}"{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}{% if week_dates[i] == today %} (Heute){% endif %}"{{ ', ' if not loop.last }}{% endfor %}];
+// ISO-Datum je Wochentag (Index 0-6), für die datumsbasierten API-Endpunkte
+const dayDates = [{% for d in week_dates %}"{{ d.isoformat() }}"{{ ', ' if not loop.last }}{% endfor %}];
 // Merkt sich, welche Tage von der Hauptgericht-Planung ausgenommen sind (Index = Wochentag)
 let dayExcluded = [{% for i in range(7) %}{{ 'true' if i in excluded_days else 'false' }}{{ ', ' if not loop.last }}{% endfor %}];
 // Für wie viele Personen an jedem Wochentag eingekauft werden soll (Index = Wochentag,
-// Default 2). Bleibt an den Wochentag gebunden, nicht ans Gericht - wandert beim
-// Tage-Tausch also NICHT mit.
-let dayServings = new Array(7).fill(2);
+// aus der Datenbank vorbefüllt). Bleibt an den Wochentag gebunden, nicht ans Gericht -
+// wandert beim Tage-Tausch also NICHT mit.
+let dayServings = [{% for s in servings_list %}{{ s }}{{ ', ' if not loop.last }}{% endfor %}];
 
 // Initialisiere die Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept)
 let weeklyPlanRecipes = [];
@@ -181,49 +205,14 @@ document.addEventListener('DOMContentLoaded', () => {
     rebuildShoppingList();
 });
 
-// Sammelt die aktuellen Rezept-IDs für alle 7 Tage (null, wenn Tag leer/ausgenommen ist)
-function collectCurrentRecipeIds() {
-    const ids = [];
-    for (let i = 0; i < 7; i++) {
-        const card = document.getElementById(`day-card-${i}`);
-        const raw = card ? card.getAttribute('data-recipe-id') : '';
-        const parsed = parseInt(raw);
-        ids.push(isNaN(parsed) ? null : parsed);
-    }
-    return ids;
-}
-
-// Sammelt die aktuellen Beilagen-IDs für alle 7 Tage (null, wenn Tag ohne Beilage/ausgenommen ist)
-function collectCurrentSideRecipeIds() {
-    const ids = [];
-    for (let i = 0; i < 7; i++) {
-        const card = document.getElementById(`day-card-${i}`);
-        const raw = card ? card.getAttribute('data-side-recipe-id') : '';
-        const parsed = parseInt(raw);
-        ids.push(isNaN(parsed) ? null : parsed);
-    }
-    return ids;
-}
-
-// Funktion zum Neu-Würfeln eines einzelnen Wochentags
+// Funktion zum Neu-Würfeln eines einzelnen Wochentags (persistiert serverseitig)
 function rerollSingleDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     if (!dayCard) return;
 
-    // Sammle die Rezept-IDs aller 7 Tage (an der jeweils korrekten Position, Lücken = null)
-    const currentRecipeIds = collectCurrentRecipeIds();
-
-    // Sende die Anfrage an Flask
-    fetch('/reroll-day', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            current_recipe_ids: currentRecipeIds,
-            day_index: parseInt(dayIndex) // Übergabe als echte Ganzzahl
-        })
-    })
+    fetch(`/day/${dayDates[dayIndex]}/reroll-main`, { method: 'POST' })
     .then(response => {
-        if (!response.ok) throw new Error('Kein alternatives Rezept verfügbar.');
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Kein alternatives Rezept verfügbar.'); });
         return response.json();
     })
     .then(newRecipe => {
@@ -286,7 +275,7 @@ function renderDayCardBody(dayIndex) {
         mainHtml = `
             <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
-                    <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayNames[dayIndex]}</h5>
+                    <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayLabels[dayIndex]}</h5>
                     <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${recipe.name}</span>
                 </div>
                 <div class="d-flex align-items-center gap-2">
@@ -305,7 +294,7 @@ function renderDayCardBody(dayIndex) {
         const placeholderText = dayExcluded[dayIndex] ? '🚫 Von der Planung ausgenommen' : 'Kein passendes Rezept verfügbar';
         mainHtml = `
             <div class="text-center text-muted">
-                <h5 class="fw-bold mb-1">${dayNames[dayIndex]}</h5>
+                <h5 class="fw-bold mb-1">${dayLabels[dayIndex]}</h5>
                 <span>${placeholderText}</span>
             </div>
         `;
@@ -316,11 +305,21 @@ function renderDayCardBody(dayIndex) {
     return servingsHtml + mainHtml + sideHtml;
 }
 
-// Setzt die Personenzahl für einen Wochentag und rechnet die Einkaufsliste neu hoch
+// Setzt die Personenzahl für einen Wochentag (optimistisch sofort übernommen für
+// reaktionsschnelle UI) und speichert sie serverseitig
 function updateDayServings(dayIndex, value) {
     const n = parseInt(value);
-    dayServings[dayIndex] = (isNaN(n) || n < 1) ? 1 : n;
+    const servings = (isNaN(n) || n < 1) ? 1 : n;
+    dayServings[dayIndex] = servings;
     rebuildShoppingList();
+
+    fetch(`/day/${dayDates[dayIndex]}/servings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ servings: servings })
+    }).catch(() => {
+        alert('Hinweis: Personenzahl konnte nicht gespeichert werden.');
+    });
 }
 
 // Aktualisiert Datenattribute und Inhalt einer Tageskarte anhand des aktuellen
@@ -339,7 +338,7 @@ function refreshDayCard(dayIndex) {
 
 // --- TAGE TAUSCHEN PER DRAG-AND-DROP ---
 // Tauscht Hauptgericht, Beilage UND Ausnahme-Status zweier Tage komplett miteinander -
-// rein clientseitig, da alle nötigen Daten bereits im Browser vorliegen.
+// serverseitig persistiert, die Personenzahl bleibt bewusst am Wochentag hängen.
 function daySwapDragStart(event) {
     event.dataTransfer.setData('text/plain', event.currentTarget.id);
 }
@@ -363,30 +362,34 @@ function daySwapDrop(event) {
     const j = parseInt(targetCard.getAttribute('data-day-index'));
     if (i === j) return;
 
-    [weeklyPlanRecipes[i], weeklyPlanRecipes[j]] = [weeklyPlanRecipes[j], weeklyPlanRecipes[i]];
-    [weeklySideRecipes[i], weeklySideRecipes[j]] = [weeklySideRecipes[j], weeklySideRecipes[i]];
-    [dayExcluded[i], dayExcluded[j]] = [dayExcluded[j], dayExcluded[i]];
+    fetch(`/day/${dayDates[i]}/swap/${dayDates[j]}`, { method: 'POST' })
+    .then(response => {
+        if (!response.ok) throw new Error('Tausch fehlgeschlagen.');
+        return response.json();
+    })
+    .then(() => {
+        [weeklyPlanRecipes[i], weeklyPlanRecipes[j]] = [weeklyPlanRecipes[j], weeklyPlanRecipes[i]];
+        [weeklySideRecipes[i], weeklySideRecipes[j]] = [weeklySideRecipes[j], weeklySideRecipes[i]];
+        [dayExcluded[i], dayExcluded[j]] = [dayExcluded[j], dayExcluded[i]];
 
-    refreshDayCard(i);
-    refreshDayCard(j);
+        refreshDayCard(i);
+        refreshDayCard(j);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
 }
 
-// Funktion zum (Neu-)Würfeln einer Beilage für einen einzelnen Wochentag
+// Funktion zum (Neu-)Würfeln einer Beilage für einen einzelnen Wochentag (persistiert serverseitig)
 function rerollSideDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     const sideRow = document.getElementById(`side-row-${dayIndex}`);
     if (!dayCard || !sideRow) return;
 
-    fetch('/reroll-side-day', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            current_side_recipe_ids: collectCurrentSideRecipeIds(),
-            day_index: parseInt(dayIndex)
-        })
-    })
+    fetch(`/day/${dayDates[dayIndex]}/reroll-side`, { method: 'POST' })
     .then(response => {
-        if (!response.ok) throw new Error('Keine weitere Beilage verfügbar.');
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine weitere Beilage verfügbar.'); });
         return response.json();
     })
     .then(newRecipe => {
@@ -400,16 +403,23 @@ function rerollSideDay(dayIndex) {
     });
 }
 
-// Funktion zum Entfernen einer bereits zugewiesenen Beilage (rein clientseitig)
+// Funktion zum Entfernen einer bereits zugewiesenen Beilage (serverseitig persistiert)
 function removeSideDish(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     const sideRow = document.getElementById(`side-row-${dayIndex}`);
     if (!dayCard || !sideRow) return;
 
-    dayCard.setAttribute('data-side-recipe-id', '');
-    sideRow.innerHTML = renderSideRow(dayIndex, null);
-    weeklySideRecipes[dayIndex] = null;
-    rebuildShoppingList();
+    fetch(`/day/${dayDates[dayIndex]}/remove-side`, { method: 'POST' })
+    .then(response => {
+        if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
+        dayCard.setAttribute('data-side-recipe-id', '');
+        sideRow.innerHTML = renderSideRow(dayIndex, null);
+        weeklySideRecipes[dayIndex] = null;
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
 }
 
 // Nährwerte aller Tage (Haupt- + Zusatzgericht) zur Wochenübersicht aufsummieren.
@@ -525,4 +535,5 @@ function rebuildShoppingList() {
     });
 }
 </script>
+{% endif %}
 {% endblock %}

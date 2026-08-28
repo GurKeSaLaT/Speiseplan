@@ -1,11 +1,11 @@
 import os
 import random
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import text
-from flask import Flask, render_template, request, redirect, url_for
-from models import db, Category, Recipe, Ingredient, RecipeSeason
+from flask import Flask, render_template, request, redirect, url_for, abort
+from models import db, Category, Recipe, Ingredient, RecipeSeason, PlanDay
 
 SEASONS = ['Frühling', 'Sommer', 'Herbst', 'Winter']
 # Jahresunabhängige (Monat, Tag)-Zeiträume je Standard-Saison
@@ -111,6 +111,40 @@ def format_recipe_seasons(recipe):
     return labels
 
 
+# --- WOCHEN-KALENDER-HELFER ---
+
+def monday_of(d):
+    return d - timedelta(days=d.weekday())
+
+
+def week_dates_for(start):
+    return [start + timedelta(days=i) for i in range(7)]
+
+
+def parse_iso_date(value):
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def week_neighbor_exclude_ids(day_date, field_name):
+    """Rezept-IDs (main_recipe_id oder side_recipe_id) aller ANDEREN Tage in
+    derselben Kalenderwoche wie day_date - für die Dubletten-Vermeidung beim
+    (Neu-)Würfeln innerhalb einer Woche."""
+    start = monday_of(day_date)
+    dates = week_dates_for(start)
+    rows = PlanDay.query.filter(PlanDay.date.in_(dates)).all()
+    ids = set()
+    for pd in rows:
+        if pd.date == day_date:
+            continue
+        rid = getattr(pd, field_name)
+        if rid:
+            ids.add(rid)
+    return ids
+
+
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'speiseplan.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -174,12 +208,56 @@ def inject_css_version():
     return {'css_version': css_version}
 
 
-# 1. HAUPTSEITE: Reine Essensauswahl
+# 1. HAUPTSEITE: leitet auf die aktuelle Kalenderwoche im dauerhaften Plan-Kalender um
 @app.route('/')
 def index():
+    start = monday_of(date.today())
+    return redirect(url_for('week_view', start_date=start.isoformat()))
+
+
+@app.route('/plan/<start_date>')
+def week_view(start_date):
+    start = parse_iso_date(start_date)
+    if start is None:
+        abort(404)
+    normalized = monday_of(start)
+    if normalized != start:
+        return redirect(url_for('week_view', start_date=normalized.isoformat()))
+
+    dates = week_dates_for(normalized)
+    plan_days_by_date = {pd.date: pd for pd in PlanDay.query.filter(PlanDay.date.in_(dates)).all()}
+    ordered = [plan_days_by_date.get(d) for d in dates]
+    has_any_data = any(ordered)
+
+    plan = [pd.main_recipe if pd else None for pd in ordered]
+    side_plan = [pd.side_recipe if pd else None for pd in ordered]
+    excluded_days = {i for i, pd in enumerate(ordered) if pd and pd.excluded}
+    servings_list = [pd.servings if pd else 2 for pd in ordered]
+
+    return render_template(
+        'plan.html',
+        plan=plan, side_plan=side_plan, excluded_days=excluded_days, servings_list=servings_list,
+        week_dates=dates, start_date=normalized, has_any_data=has_any_data,
+        prev_start=(normalized - timedelta(days=7)).isoformat(),
+        next_start=(normalized + timedelta(days=7)).isoformat(),
+        today=date.today(),
+    )
+
+
+@app.route('/plan/<start_date>/create')
+def week_create_view(start_date):
+    start = parse_iso_date(start_date)
+    if start is None:
+        abort(404)
+    start = monday_of(start)
+
     recipes = Recipe.query.all()
     categories = Category.query.all()
-    return render_template('index.html', recipes=recipes, categories=categories)
+
+    return render_template(
+        'create_week.html', recipes=recipes, categories=categories,
+        week_dates=week_dates_for(start), start_date=start
+    )
 
 
 # --- NEU STRUKTURIERTE VERWALTUNGS-ROUTEN ---
@@ -403,8 +481,14 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     return weighted_recipe_choice(candidates)
 
 
-@app.route('/generate-plan', methods=['POST'])
-def generate_plan():
+@app.route('/plan/<start_date>/generate', methods=['POST'])
+def week_generate(start_date):
+    start = parse_iso_date(start_date)
+    if start is None:
+        abort(404)
+    start = monday_of(start)
+    dates = week_dates_for(start)
+
     all_categories = Category.query.all()
 
     # 1. Formulardaten pro Tag auslesen: feste Zuweisung + Ausnahme-Status
@@ -486,74 +570,157 @@ def generate_plan():
             final_plan[day_index] = chosen
             used_recipe_ids.add(chosen.id)
 
-    return render_template(
-        'plan.html', plan=final_plan, side_plan=final_side_plan, excluded_days=excluded_days
-    )
+    # 6. Dauerhaft speichern: ein PlanDay pro echtem Kalendertag dieser Woche
+    for i in range(7):
+        day_date = dates[i]
+        plan_day = PlanDay.query.filter_by(date=day_date).first()
+        if not plan_day:
+            plan_day = PlanDay(date=day_date, servings=2)
+            db.session.add(plan_day)
+        plan_day.excluded = i in excluded_days
+        plan_day.main_recipe_id = final_plan[i].id if final_plan[i] else None
+        plan_day.side_recipe_id = final_side_plan[i].id if final_side_plan[i] else None
+
+    db.session.commit()
+    return redirect(url_for('week_view', start_date=start.isoformat()))
 
 
-@app.route('/reroll-day', methods=['POST'])
-def reroll_day():
-    data = request.get_json() or {}
-    # current_recipe_ids ist jetzt immer 7 Einträge lang; leere/ausgenommene Tage sind null
-    current_ids_raw = data.get('current_recipe_ids', [])
+@app.route('/day/<day_date>/reroll-main', methods=['POST'])
+def reroll_day(day_date):
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
 
-    day_index_raw = data.get('day_index')
-    day_index = int(day_index_raw) if day_index_raw is not None else 999
+    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    if not plan_day or plan_day.excluded:
+        return {"error": "Dieser Tag ist nicht Teil eines Plans oder von der Hauptgericht-Planung ausgenommen."}, 400
 
-    # Nur echte, gültige IDs für die DB-Abfragen verwenden
-    current_ids = [cid for cid in current_ids_raw if cid]
-
-    other_recipes = Recipe.query.filter(Recipe.id.in_(current_ids)).all()
+    # Andere Hauptgerichte derselben Woche (inkl. des eigenen aktuellen) meiden,
+    # damit kein Rezept doppelt in einer Woche landet bzw. sich wiederholt.
+    exclude_ids = week_neighbor_exclude_ids(target_date, 'main_recipe_id')
+    if plan_day.main_recipe_id:
+        exclude_ids.add(plan_day.main_recipe_id)
 
     all_categories = Category.query.all()
     all_cat_ids = [c.id for c in all_categories]
 
+    other_recipes = Recipe.query.filter(Recipe.id.in_(exclude_ids)).all()
     other_cat_counts = {cid: 0 for cid in all_cat_ids}
     for r in other_recipes:
         other_cat_counts[r.category_id] = other_cat_counts.get(r.category_id, 0) + 1
 
-    target_card_recipe_id = current_ids_raw[day_index] if day_index < len(current_ids_raw) else None
-    if target_card_recipe_id:
-        old_recipe = Recipe.query.get(target_card_recipe_id)
-        if old_recipe and other_cat_counts.get(old_recipe.category_id, 0) > 0:
-            other_cat_counts[old_recipe.category_id] -= 1
-
     # Kategorien der direkten Nachbartage meiden (nach Möglichkeit - siehe unten),
     # damit ein Reroll nicht zwei aufeinanderfolgende Tage in dieselbe Kategorie legt.
-    neighbor_ids = [
-        current_ids_raw[n] for n in (day_index - 1, day_index + 1)
-        if 0 <= n < len(current_ids_raw) and current_ids_raw[n]
-    ]
+    # Echte Kalendertage: funktioniert auch über Wochengrenzen hinweg (z.B. So->Mo).
+    neighbor_ids = []
+    for neighbor_date in (target_date - timedelta(days=1), target_date + timedelta(days=1)):
+        neighbor_day = PlanDay.query.filter_by(date=neighbor_date).first()
+        if neighbor_day and neighbor_day.main_recipe_id:
+            neighbor_ids.append(neighbor_day.main_recipe_id)
     neighbor_categories = {r.category_id for r in Recipe.query.filter(Recipe.id.in_(neighbor_ids)).all()}
 
     sorted_target_categories = sorted(
         all_cat_ids, key=lambda cid: (cid in neighbor_categories, other_cat_counts[cid])
     )
 
+    chosen = None
     for best_cat_id in sorted_target_categories:
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=current_ids, category_id=best_cat_id)
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids, category_id=best_cat_id)
         if chosen:
-            return jsonify_recipe(chosen)
+            break
+    if not chosen:
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids)
 
-    chosen = choose_recipe(is_side_dish=False, exclude_ids=current_ids)
-    if chosen:
-        return jsonify_recipe(chosen)
+    if not chosen:
+        return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
 
-    return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
+    plan_day.main_recipe_id = chosen.id
+    db.session.commit()
+    return jsonify_recipe(chosen)
 
 
-@app.route('/reroll-side-day', methods=['POST'])
-def reroll_side_day():
+@app.route('/day/<day_date>/reroll-side', methods=['POST'])
+def reroll_side_day(day_date):
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    if not plan_day:
+        plan_day = PlanDay(date=target_date, servings=2)
+        db.session.add(plan_day)
+
+    exclude_ids = week_neighbor_exclude_ids(target_date, 'side_recipe_id')
+    if plan_day.side_recipe_id:
+        exclude_ids.add(plan_day.side_recipe_id)
+
+    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids)
+    if not chosen:
+        return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
+
+    plan_day.side_recipe_id = chosen.id
+    db.session.commit()
+    return jsonify_recipe(chosen)
+
+
+@app.route('/day/<day_date>/remove-side', methods=['POST'])
+def remove_side_day(day_date):
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    if plan_day:
+        plan_day.side_recipe_id = None
+        db.session.commit()
+    return {"ok": True}
+
+
+@app.route('/day/<day_date>/servings', methods=['POST'])
+def set_day_servings(day_date):
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
     data = request.get_json() or {}
-    # current_side_recipe_ids ist immer 7 Einträge lang; Tage ohne Beilage sind null
-    current_ids_raw = data.get('current_side_recipe_ids', [])
-    current_ids = [cid for cid in current_ids_raw if cid]
+    try:
+        servings = max(1, int(data.get('servings', 2)))
+    except (TypeError, ValueError):
+        servings = 2
 
-    chosen = choose_recipe(is_side_dish=True, exclude_ids=current_ids)
-    if chosen:
-        return jsonify_recipe(chosen)
+    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    if not plan_day:
+        plan_day = PlanDay(date=target_date)
+        db.session.add(plan_day)
+    plan_day.servings = servings
+    db.session.commit()
+    return {"ok": True, "servings": servings}
 
-    return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
+
+@app.route('/day/<date_a>/swap/<date_b>', methods=['POST'])
+def swap_days(date_a, date_b):
+    parsed_a = parse_iso_date(date_a)
+    parsed_b = parse_iso_date(date_b)
+    if parsed_a is None or parsed_b is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day_a = PlanDay.query.filter_by(date=parsed_a).first()
+    plan_day_b = PlanDay.query.filter_by(date=parsed_b).first()
+    if not plan_day_a:
+        plan_day_a = PlanDay(date=parsed_a, servings=2)
+        db.session.add(plan_day_a)
+    if not plan_day_b:
+        plan_day_b = PlanDay(date=parsed_b, servings=2)
+        db.session.add(plan_day_b)
+
+    # Hauptgericht, Beilage und Ausnahme-Status tauschen. Die Personenzahl bleibt
+    # bewusst am Kalendertag haengen, nicht am Gericht - wird NICHT mitgetauscht.
+    plan_day_a.main_recipe_id, plan_day_b.main_recipe_id = plan_day_b.main_recipe_id, plan_day_a.main_recipe_id
+    plan_day_a.side_recipe_id, plan_day_b.side_recipe_id = plan_day_b.side_recipe_id, plan_day_a.side_recipe_id
+    plan_day_a.excluded, plan_day_b.excluded = plan_day_b.excluded, plan_day_a.excluded
+
+    db.session.commit()
+    return {"ok": True}
 
 
 def jsonify_recipe(recipe):

@@ -30,7 +30,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto mb-2 mb-md-0 gap-2 mt-2 mt-md-0">
                     <li class="nav-item">
-                        <a class="nav-link px-3 {% if request.path == '/' %}active-custom{% endif %}" href="/">📅 Wochenplaner</a>
+                        <a class="nav-link px-3 {% if request.path == '/' or request.path.startswith('/plan') %}active-custom{% endif %}" href="/">📅 Wochenplaner</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link px-3 {% if request.path.startswith('/manage') %}active-custom{% endif %}" href="/manage">⚙️ Verwaltung</a>
