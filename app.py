@@ -1,10 +1,24 @@
 import os
 import random
 from collections import Counter
+from datetime import date
 
 from sqlalchemy import text
 from flask import Flask, render_template, request, redirect, url_for
 from models import db, Category, Recipe, Ingredient
+
+SEASONS = ['Frühling', 'Sommer', 'Herbst', 'Winter']
+_SEASON_BY_MONTH = {
+    12: 'Winter', 1: 'Winter', 2: 'Winter',
+    3: 'Frühling', 4: 'Frühling', 5: 'Frühling',
+    6: 'Sommer', 7: 'Sommer', 8: 'Sommer',
+    9: 'Herbst', 10: 'Herbst', 11: 'Herbst',
+}
+
+
+def current_season():
+    return _SEASON_BY_MONTH[date.today().month]
+
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'speiseplan.db')
@@ -17,10 +31,13 @@ db.init_app(app)
 def init_db():
     db.create_all()
 
-    # Migration: bestehende Datenbanken hatten noch keine is_side_dish-Spalte
+    # Migration: bestehende Datenbanken hatten noch keine is_side_dish-/season-Spalte
     existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}
     if 'is_side_dish' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_side_dish BOOLEAN NOT NULL DEFAULT 0"))
+        db.session.commit()
+    if 'season' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN season VARCHAR(20)"))
         db.session.commit()
 
     if not Category.query.first():
@@ -68,7 +85,7 @@ def recipe_create_view():
     existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
-    return render_template('recipe_create.html', categories=categories, ingredient_list=ingredient_list)
+    return render_template('recipe_create.html', categories=categories, ingredient_list=ingredient_list, seasons=SEASONS)
 
 
 @app.route('/manage/recipe/edit-list')
@@ -79,7 +96,7 @@ def recipe_edit_list_view():
     existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
-    return render_template('recipe_edit_list.html', recipes=recipes, categories=categories, ingredient_list=ingredient_list)
+    return render_template('recipe_edit_list.html', recipes=recipes, categories=categories, ingredient_list=ingredient_list, seasons=SEASONS)
 
 
 @app.route('/manage/categories')
@@ -99,11 +116,12 @@ def add_recipe():
     carbs = float(request.form.get('carbs') or 0)
     fat = float(request.form.get('fat') or 0)
     is_side_dish = request.form.get('is_side_dish') == '1'
+    season = request.form.get('season') or None
 
     new_recipe = Recipe(
         name=name, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat,
-        is_side_dish=is_side_dish
+        is_side_dish=is_side_dish, season=season
     )
     db.session.add(new_recipe)
     db.session.flush()
@@ -134,6 +152,7 @@ def edit_recipe(id):
     recipe.carbs = float(request.form.get('carbs') or 0)
     recipe.fat = float(request.form.get('fat') or 0)
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
+    recipe.season = request.form.get('season') or None
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
 
@@ -184,28 +203,69 @@ def delete_category(id):
 
 # --- PLANUNGS-LOGIK ---
 
-def get_balanced_category_slots(all_categories, n=7, preexisting_counts=None):
-    """Hilfsfunktion zur Berechnung einer möglichst gleichmäßigen Kategorie-Verteilung für n Tage.
-    Bereits fest belegte Tage (preexisting_counts) fließen in die Balance mit ein,
-    ohne dass sich die Länge des Ergebnisses (== n) dadurch ändert."""
+def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexisting_counts=None):
+    """Weist jedem aufzufüllenden Tag (days_to_fill, Tag-Indizes 0-6) eine Kategorie zu:
+    möglichst gleichmäßig über die Woche balanciert, aber nach Möglichkeit nie dieselbe
+    Kategorie wie der direkte Vorgänger- oder Nachfolgetag (bereits fest belegte Tage
+    zählen dabei als bekannter Nachbar). Ist das nicht vermeidbar (z.B. nur eine
+    Kategorie insgesamt vorhanden), wird die Nachbarschaftsregel zugunsten der Balance
+    aufgeweicht statt einen Tag unbefüllt zu lassen."""
     cat_ids = [c.id for c in all_categories]
-    if not cat_ids or n <= 0:
-        return []
+    if not cat_ids:
+        return {}
 
     counts = Counter(preexisting_counts or {})
     for cid in cat_ids:
         counts.setdefault(cid, 0)
 
-    slots = []
-    while len(slots) < n:
-        min_count = min(counts[cid] for cid in cat_ids)
-        candidates = [cid for cid in cat_ids if counts[cid] == min_count]
-        choice = random.choice(candidates)
-        slots.append(choice)
-        counts[choice] += 1
+    known_category_by_day = {
+        i: final_plan[i].category_id for i in range(7) if final_plan[i] is not None
+    }
 
-    random.shuffle(slots)
-    return slots
+    assigned = {}
+    for day_index in days_to_fill:
+        neighbor_cats = {
+            known_category_by_day[n] for n in (day_index - 1, day_index + 1)
+            if 0 <= n <= 6 and n in known_category_by_day
+        }
+
+        def sort_key(cid):
+            return (cid in neighbor_cats, counts[cid])
+
+        best_key = min(sort_key(cid) for cid in cat_ids)
+        candidates = [cid for cid in cat_ids if sort_key(cid) == best_key]
+        choice = random.choice(candidates)
+
+        assigned[day_index] = choice
+        counts[choice] += 1
+        known_category_by_day[day_index] = choice
+
+    return assigned
+
+
+def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True):
+    """Wählt zufällig ein passendes, noch nicht verwendetes Rezept aus. Bevorzugt
+    (falls prefer_season) Rezepte der aktuellen Saison oder ohne Saison-Zuordnung,
+    weicht aber auf jede Saison aus, wenn dafür keine Kandidaten existieren - eine
+    Saison-Zuordnung schränkt die automatische Auswahl also nie komplett ein."""
+    base_query = Recipe.query.filter(
+        Recipe.is_side_dish.is_(is_side_dish),
+        ~Recipe.id.in_(exclude_ids)
+    )
+    if category_id is not None:
+        base_query = base_query.filter(Recipe.category_id == category_id)
+
+    if prefer_season:
+        seasonal_candidates = base_query.filter(
+            db.or_(Recipe.season.is_(None), Recipe.season == current_season())
+        ).all()
+        if seasonal_candidates:
+            return random.choice(seasonal_candidates)
+
+    candidates = base_query.all()
+    if candidates:
+        return random.choice(candidates)
+    return None
 
 
 @app.route('/generate-plan', methods=['POST'])
@@ -220,10 +280,14 @@ def generate_plan():
     for i in range(7):
         if request.form.get(f'day_excluded_{i}') == '1':
             excluded_days.add(i)
-            continue
-        rid = (request.form.get(f'day_recipe_{i}') or '').strip()
-        if rid:
-            day_recipe_ids[i] = rid
+        else:
+            rid = (request.form.get(f'day_recipe_{i}') or '').strip()
+            if rid:
+                day_recipe_ids[i] = rid
+
+        # Beilagen werden unabhängig vom Ausnahme-Status eines Tages gelesen:
+        # auch ein von der Hauptgericht-Planung ausgenommener Tag darf eine
+        # fest zugewiesene Beilage haben.
         side_rid = (request.form.get(f'day_side_recipe_{i}') or '').strip()
         if side_rid:
             day_side_recipe_ids[i] = side_rid
@@ -261,37 +325,27 @@ def generate_plan():
     #    (weder ausgenommen, noch bereits fest belegt)
     days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
 
-    # 4. Balancierte Kategorie-Slots für die verbleibenden Tage berechnen.
-    #    Bereits fest zugewiesene Tage fließen als Vorbelastung in die Balance ein,
-    #    damit die Anzahl der Slots exakt der Anzahl der aufzufüllenden Tage entspricht.
+    # 4. Kategorie je aufzufüllendem Tag bestimmen: möglichst gleichmäßig über die
+    #    Woche balanciert und nach Möglichkeit nicht dieselbe Kategorie wie der
+    #    direkte Vorgänger-/Nachfolgetag. Bereits fest zugewiesene Tage fließen als
+    #    Vorbelastung in die Balance und als bekannte Nachbarn mit ein.
     preexisting_counts = Counter(
         final_plan[day_index].category_id
         for day_index in day_recipe_ids
         if final_plan[day_index] is not None
     )
-    target_category_ids = get_balanced_category_slots(
-        all_categories, n=len(days_to_fill), preexisting_counts=preexisting_counts
+    category_by_day = assign_balanced_categories(
+        all_categories, days_to_fill, final_plan, preexisting_counts=preexisting_counts
     )
 
-    # 5. Restliche Tage nacheinander mit passenden, noch nicht verwendeten Hauptgerichten auffüllen
-    #    (Zusatzgerichte/Beilagen sind hiervon ausgeschlossen)
-    for day_index, needed_cat_id in zip(days_to_fill, target_category_ids):
-        cat_recipes = Recipe.query.filter(
-            Recipe.category_id == needed_cat_id,
-            Recipe.is_side_dish.is_(False),
-            ~Recipe.id.in_(used_recipe_ids)
-        ).all()
-
-        chosen = None
-        if cat_recipes:
-            chosen = random.choice(cat_recipes)
-        else:
-            fallback_recipes = Recipe.query.filter(
-                Recipe.is_side_dish.is_(False),
-                ~Recipe.id.in_(used_recipe_ids)
-            ).all()
-            if fallback_recipes:
-                chosen = random.choice(fallback_recipes)
+    # 5. Restliche Tage mit passenden, noch nicht verwendeten Hauptgerichten auffüllen
+    #    (Zusatzgerichte/Beilagen sind hiervon ausgeschlossen). Bevorzugt Rezepte der
+    #    aktuellen Saison, weicht aber auf jede Kategorie/Saison aus statt einen Tag
+    #    leer zu lassen.
+    for day_index, needed_cat_id in category_by_day.items():
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids, category_id=needed_cat_id)
+        if not chosen:
+            chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids)
 
         if chosen:
             final_plan[day_index] = chosen
@@ -329,24 +383,26 @@ def reroll_day():
         if old_recipe and other_cat_counts.get(old_recipe.category_id, 0) > 0:
             other_cat_counts[old_recipe.category_id] -= 1
 
-    sorted_target_categories = sorted(all_cat_ids, key=lambda cid: other_cat_counts[cid])
+    # Kategorien der direkten Nachbartage meiden (nach Möglichkeit - siehe unten),
+    # damit ein Reroll nicht zwei aufeinanderfolgende Tage in dieselbe Kategorie legt.
+    neighbor_ids = [
+        current_ids_raw[n] for n in (day_index - 1, day_index + 1)
+        if 0 <= n < len(current_ids_raw) and current_ids_raw[n]
+    ]
+    neighbor_categories = {r.category_id for r in Recipe.query.filter(Recipe.id.in_(neighbor_ids)).all()}
+
+    sorted_target_categories = sorted(
+        all_cat_ids, key=lambda cid: (cid in neighbor_categories, other_cat_counts[cid])
+    )
 
     for best_cat_id in sorted_target_categories:
-        chosen_recipe = Recipe.query.filter(
-            Recipe.category_id == best_cat_id,
-            Recipe.is_side_dish.is_(False),
-            ~Recipe.id.in_(current_ids)
-        ).all()
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=current_ids, category_id=best_cat_id)
+        if chosen:
+            return jsonify_recipe(chosen)
 
-        if chosen_recipe:
-            return jsonify_recipe(random.choice(chosen_recipe))
-
-    fallback_recipes = Recipe.query.filter(
-        Recipe.is_side_dish.is_(False),
-        ~Recipe.id.in_(current_ids)
-    ).all()
-    if fallback_recipes:
-        return jsonify_recipe(random.choice(fallback_recipes))
+    chosen = choose_recipe(is_side_dish=False, exclude_ids=current_ids)
+    if chosen:
+        return jsonify_recipe(chosen)
 
     return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
 
@@ -358,13 +414,9 @@ def reroll_side_day():
     current_ids_raw = data.get('current_side_recipe_ids', [])
     current_ids = [cid for cid in current_ids_raw if cid]
 
-    candidates = Recipe.query.filter(
-        Recipe.is_side_dish.is_(True),
-        ~Recipe.id.in_(current_ids)
-    ).all()
-
-    if candidates:
-        return jsonify_recipe(random.choice(candidates))
+    chosen = choose_recipe(is_side_dish=True, exclude_ids=current_ids)
+    if chosen:
+        return jsonify_recipe(chosen)
 
     return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
 

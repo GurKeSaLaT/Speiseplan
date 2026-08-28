@@ -7,14 +7,21 @@
             <div class="card-header-custom p-3">
                 <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">🗓️ Dein Wochenplan</h4>
             </div>
+            <p class="text-muted small px-3 pt-3 mb-0">Ziehe eine Tageskarte per <strong>Drag-and-Drop</strong> auf eine andere, um beide Tage komplett zu tauschen.</p>
             <div class="list-group list-group-flush" id="wochenplanContainer">
                 {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %}
                 {% for i in range(7) %}
                 <div class="list-group-item p-3 recipe-day-card"
                      id="day-card-{{ i }}"
+                     data-day-index="{{ i }}"
                      data-recipe-id="{{ plan[i].id if plan[i] else '' }}"
                      data-category-id="{{ plan[i].category_id if plan[i] else '' }}"
-                     data-side-recipe-id="{{ side_plan[i].id if side_plan[i] else '' }}">
+                     data-side-recipe-id="{{ side_plan[i].id if side_plan[i] else '' }}"
+                     draggable="true"
+                     ondragstart="daySwapDragStart(event)"
+                     ondragover="daySwapAllowDrop(event)"
+                     ondragleave="event.currentTarget.classList.remove('drag-over')"
+                     ondrop="daySwapDrop(event)">
 
                     {% if plan[i] %}
                     <div class="d-flex justify-content-between align-items-start mb-2">
@@ -46,7 +53,6 @@
                     </div>
                     {% endif %}
 
-                    {% if i not in excluded_days %}
                     <div class="side-dish-row mt-2 pt-2 border-top" id="side-row-{{ i }}">
                         {% if side_plan[i] %}
                         <div class="d-flex justify-content-between align-items-center side-dish-card">
@@ -64,7 +70,6 @@
                         <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay({{ i }})">🥗 Beilage würfeln</button>
                         {% endif %}
                     </div>
-                    {% endif %}
                 </div>
                 {% endfor %}
             </div>
@@ -86,7 +91,26 @@
     </div>
 </div>
 
+<style>
+.recipe-day-card {
+    cursor: grab;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.recipe-day-card:active {
+    cursor: grabbing;
+}
+.recipe-day-card.drag-over {
+    background-color: #E8EFEA;
+}
+</style>
+
 <script>
+// Wochentage in fester Reihenfolge (Index = Tag-Index 0-6), für das Neu-Rendern
+// einer Tageskarte nach einem Drag-and-Drop-Tausch
+const dayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+// Merkt sich, welche Tage von der Hauptgericht-Planung ausgenommen sind (Index = Wochentag)
+let dayExcluded = [{% for i in range(7) %}{{ 'true' if i in excluded_days else 'false' }}{{ ', ' if not loop.last }}{% endfor %}];
+
 // Initialisiere die Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept)
 let weeklyPlanRecipes = [];
 // Zusatzgerichte/Beilagen, unabhängig vom Hauptgericht (Index = Wochentag, null = keine Beilage)
@@ -224,6 +248,93 @@ function renderSideRow(dayIndex, recipe) {
         `;
     }
     return `<button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay(${dayIndex})">🥗 Beilage würfeln</button>`;
+}
+
+// Baut den kompletten Innenbereich einer Tageskarte (Hauptgericht-Block + Beilagen-Zeile)
+// aus dem aktuellen JavaScript-Speicher auf - wird nach einem Tage-Tausch pro Tag neu gerendert
+function renderDayCardBody(dayIndex) {
+    const recipe = weeklyPlanRecipes[dayIndex];
+    let mainHtml;
+    if (recipe) {
+        mainHtml = `
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                    <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayNames[dayIndex]}</h5>
+                    <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${recipe.name}</span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${recipe.category_name}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay(${dayIndex})">🎲</button>
+                </div>
+            </div>
+            <div class="text-muted small font-monospace bg-light p-2 rounded">
+                📊 <span class="recipe-kcal">${recipe.calories}</span> kcal |
+                E: <span class="recipe-protein">${recipe.protein}</span>g |
+                K: <span class="recipe-carbs">${recipe.carbs}</span>g |
+                F: <span class="recipe-fat">${recipe.fat}</span>g
+            </div>
+        `;
+    } else {
+        const placeholderText = dayExcluded[dayIndex] ? '🚫 Von der Planung ausgenommen' : 'Kein passendes Rezept verfügbar';
+        mainHtml = `
+            <div class="text-center text-muted">
+                <h5 class="fw-bold mb-1">${dayNames[dayIndex]}</h5>
+                <span>${placeholderText}</span>
+            </div>
+        `;
+    }
+
+    const sideHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSideRow(dayIndex, weeklySideRecipes[dayIndex])}</div>`;
+
+    return mainHtml + sideHtml;
+}
+
+// Aktualisiert Datenattribute und Inhalt einer Tageskarte anhand des aktuellen
+// JavaScript-Speichers (weeklyPlanRecipes/weeklySideRecipes/dayExcluded)
+function refreshDayCard(dayIndex) {
+    const card = document.getElementById(`day-card-${dayIndex}`);
+    if (!card) return;
+
+    const recipe = weeklyPlanRecipes[dayIndex];
+    const sideRecipe = weeklySideRecipes[dayIndex];
+    card.setAttribute('data-recipe-id', recipe ? recipe.id : '');
+    card.setAttribute('data-category-id', recipe ? recipe.category_id : '');
+    card.setAttribute('data-side-recipe-id', sideRecipe ? sideRecipe.id : '');
+    card.innerHTML = renderDayCardBody(dayIndex);
+}
+
+// --- TAGE TAUSCHEN PER DRAG-AND-DROP ---
+// Tauscht Hauptgericht, Beilage UND Ausnahme-Status zweier Tage komplett miteinander -
+// rein clientseitig, da alle nötigen Daten bereits im Browser vorliegen.
+function daySwapDragStart(event) {
+    event.dataTransfer.setData('text/plain', event.currentTarget.id);
+}
+
+function daySwapAllowDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('drag-over');
+}
+
+function daySwapDrop(event) {
+    event.preventDefault();
+    const targetCard = event.currentTarget;
+    targetCard.classList.remove('drag-over');
+
+    const sourceId = event.dataTransfer.getData('text/plain');
+    if (!sourceId || sourceId === targetCard.id) return;
+    const sourceCard = document.getElementById(sourceId);
+    if (!sourceCard) return;
+
+    const i = parseInt(sourceCard.getAttribute('data-day-index'));
+    const j = parseInt(targetCard.getAttribute('data-day-index'));
+    if (i === j) return;
+
+    [weeklyPlanRecipes[i], weeklyPlanRecipes[j]] = [weeklyPlanRecipes[j], weeklyPlanRecipes[i]];
+    [weeklySideRecipes[i], weeklySideRecipes[j]] = [weeklySideRecipes[j], weeklySideRecipes[i]];
+    [dayExcluded[i], dayExcluded[j]] = [dayExcluded[j], dayExcluded[i]];
+
+    refreshDayCard(i);
+    refreshDayCard(j);
 }
 
 // Funktion zum (Neu-)Würfeln einer Beilage für einen einzelnen Wochentag

@@ -5,7 +5,7 @@
         <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wöchentliche Speiseplanung & Zuweisung </h4>
       </div>
       <div class="card-body p-4">
-        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du einen Tag ganz von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht und lassen sich zusätzlich zum Hauptgericht hinzufügen. </p>
+        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich zusätzlich zum Hauptgericht hinzufügen und funktionieren auch an ausgenommenen Tagen. </p>
         <!-- 1. LIVE-SUCHFELD -->
         <div class="mb-4 position-relative">
           <div class="input-group input-group-lg shadow-sm rounded">
@@ -74,8 +74,7 @@
     opacity: 0.55;
   }
 
-  .day-dropzone.excluded .recipe-slot-container,
-  .day-dropzone.excluded .side-slot-container {
+  .day-dropzone.excluded .recipe-slot-container {
     pointer-events: none;
   }
 
@@ -147,9 +146,10 @@
       const isSide = this.getAttribute('data-is-side') === 'true';
 
       if (isSide) {
-        // Finde die erste Dropzone, die weder ausgenommen ist noch bereits eine Beilage enthält
+        // Finde die erste Dropzone ohne Beilage - auch ausgenommene Tage sind erlaubt,
+        // eine Beilage blockiert den Tag nicht und ist unabhängig vom Hauptgericht
         const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone =>
-          !zone.classList.contains('excluded') && zone.querySelector('.side-dish-chip') === null
+          zone.querySelector('.side-dish-chip') === null
         );
         if (!freeZone) {
           alert("Es ist kein freier Tag für Beilagen mehr verfügbar!");
@@ -300,14 +300,12 @@
       excludeBtn.classList.add('btn-outline-secondary');
       excludeBtn.title = "Diesen Tag von der Planung ausnehmen";
     } else {
-      // Vorher zugewiesenes Hauptgericht und Beilage entfernen, dann Tag ausnehmen
+      // Vorher zugewiesenes Hauptgericht entfernen, dann Tag ausnehmen.
+      // Eine bereits zugewiesene Beilage bleibt bestehen - "ausgenommen" heißt nur,
+      // dass kein Hauptgericht gewürfelt/fest zugewiesen wird.
       const existingCard = zone.querySelector('.draggable-recipe-card');
       if (existingCard) {
         removeRecipeFromZone(existingCard.getAttribute('data-id'), dayIndex);
-      }
-      const existingSideCard = zone.querySelector('.side-dish-chip');
-      if (existingSideCard) {
-        removeSideFromZone(existingSideCard.getAttribute('data-id'), dayIndex);
       }
       zone.classList.add('excluded');
       excludedInput.value = '1';

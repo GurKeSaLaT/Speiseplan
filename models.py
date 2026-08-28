@@ -13,6 +13,8 @@ class Recipe(db.Model):
     name = db.Column(db.String(100), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     is_side_dish = db.Column(db.Boolean, default=False, nullable=False)
+    # None/leer = ganzjährig, sonst einer von SEASONS in app.py (Frühling/Sommer/Herbst/Winter)
+    season = db.Column(db.String(20), nullable=True)
 
     # Nährwerte
     calories = db.Column(db.Integer, default=0)
