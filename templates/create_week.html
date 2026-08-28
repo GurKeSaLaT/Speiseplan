@@ -10,7 +10,7 @@
    Interaktionslogik (Suche, Drag-and-Drop, Ausnehmen-Button) liegt in
    static/create_week.js, nicht in dieser Datei. #}
 {% extends 'base.html' %} {% block content %} <div class="row justify-content-center">
-  <div class="col-md-10 col-lg-9">
+  <div class="col-12 col-md-10 col-lg-9">
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-header-custom p-3 d-flex justify-content-between align-items-center">
         <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wochenplan erstellen: {{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }} </h4>
