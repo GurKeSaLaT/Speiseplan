@@ -10,7 +10,8 @@ class Recipe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
-    
+    is_side_dish = db.Column(db.Boolean, default=False, nullable=False)
+
     # Nährwerte
     calories = db.Column(db.Integer, default=0)
     protein = db.Column(db.Float, default=0.0)

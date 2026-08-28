@@ -5,15 +5,15 @@
         <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wöchentliche Speiseplanung & Zuweisung </h4>
       </div>
       <div class="card-body p-4">
-        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du einen Tag ganz von der Planung ausnehmen. </p>
+        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Gerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du einen Tag ganz von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht und lassen sich zusätzlich zum Hauptgericht hinzufügen. </p>
         <!-- 1. LIVE-SUCHFELD -->
         <div class="mb-4 position-relative">
           <div class="input-group input-group-lg shadow-sm rounded">
             <span class="input-group-text bg-white border-end-0">🔍</span>
             <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Gericht oder Kategorie eingeben..." autocomplete="off">
           </div>
-          <div id="searchResults" class="list-group shadow position-absolute w-100 mt-1" style="z-index: 1050; max-height: 250px; overflow-y: auto; display: none;"> {% for recipe in recipes %} <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center search-item" style="display: none;" data-id="{{ recipe.id }}" data-name="{{ recipe.name }}" data-category="{{ recipe.category.name }}">
-              <span class="fw-bold text-dark">{{ recipe.name }}</span>
+          <div id="searchResults" class="list-group shadow position-absolute w-100 mt-1" style="z-index: 1050; max-height: 250px; overflow-y: auto; display: none;"> {% for recipe in recipes %} <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center search-item" style="display: none;" data-id="{{ recipe.id }}" data-name="{{ recipe.name }}" data-category="{{ recipe.category.name }}" data-is-side="{{ 'true' if recipe.is_side_dish else 'false' }}">
+              <span class="fw-bold text-dark">{{ recipe.name }}{% if recipe.is_side_dish %} 🥗{% endif %}</span>
               <span class="badge badge-category">{{ recipe.category.name }}</span>
             </button> {% endfor %} </div>
         </div>
@@ -38,8 +38,13 @@
                   <div class="recipe-slot-container" style="min-height: 54px;">
                     <!-- Wird per JS dynamisch befüllt -->
                   </div>
+                  <!-- Container für das zugewiesene Zusatzgericht/Beilage (unabhängig vom Hauptgericht) -->
+                  <div class="side-slot-container mt-2 pt-2 border-top" id="side-slot-{{ i }}">
+                    <span class="text-muted small fst-italic">Keine Beilage</span>
+                  </div>
                   <!-- Persistente, tag-gebundene Formularfelder (unabhängig vom Kärtchen) -->
                   <input type="hidden" name="day_recipe_{{ i }}" id="day-recipe-input-{{ i }}" value="">
+                  <input type="hidden" name="day_side_recipe_{{ i }}" id="day-side-recipe-input-{{ i }}" value="">
                   <input type="hidden" name="day_excluded_{{ i }}" id="day-excluded-input-{{ i }}" value="0">
                 </div>
               </div> {% endfor %} </div>
@@ -69,7 +74,8 @@
     opacity: 0.55;
   }
 
-  .day-dropzone.excluded .recipe-slot-container {
+  .day-dropzone.excluded .recipe-slot-container,
+  .day-dropzone.excluded .side-slot-container {
     pointer-events: none;
   }
 
@@ -89,8 +95,10 @@
   const searchInput = document.getElementById('searchInput');
   const searchResults = document.getElementById('searchResults');
   const searchItems = document.querySelectorAll('.search-item');
-  // Speichert die IDs der aktuell verplanten Gerichte, um Duplikate zu verhindern
+  // Speichert die IDs der aktuell verplanten Hauptgerichte, um Duplikate zu verhindern
   let assignedRecipeIds = new Set();
+  // Speichert die IDs der aktuell verplanten Zusatzgerichte/Beilagen, um Duplikate zu verhindern
+  let assignedSideRecipeIds = new Set();
   // Speichert, welche Tage (Index 0-6) von der Planung ausgenommen sind
   let excludedDays = new Set();
 
@@ -108,8 +116,9 @@
         const recipeId = item.getAttribute('data-id');
         const recipeName = item.getAttribute('data-name').toLowerCase();
         const categoryName = item.getAttribute('data-category').toLowerCase();
+        const isSide = item.getAttribute('data-is-side') === 'true';
 
-        if (assignedRecipeIds.has(recipeId)) {
+        if (isSide ? assignedSideRecipeIds.has(recipeId) : assignedRecipeIds.has(recipeId)) {
             item.style.setProperty('display', 'none', 'important');
             return;
         }
@@ -129,22 +138,39 @@
     }
   });
   // 2. Klick auf Suchergebnis -> In den nächsten freien Tag werfen
+  //    Hauptgerichte belegen den Tages-Slot, Beilagen den unabhängigen Beilagen-Slot
   searchItems.forEach(item => {
     item.addEventListener('click', function() {
       const recipeId = this.getAttribute('data-id');
       const recipeName = this.getAttribute('data-name');
       const categoryName = this.getAttribute('data-category');
-      // Finde die erste Dropzone, die weder ausgenommen ist noch bereits ein Rezept enthält
-      const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone =>
-        !zone.classList.contains('excluded') && zone.querySelector('.draggable-recipe-card') === null
-      );
-      if (!freeZone) {
-        alert("Es ist kein freier Tag mehr verfügbar!");
-        searchInput.value = '';
-        searchResults.style.display = 'none';
-        return;
+      const isSide = this.getAttribute('data-is-side') === 'true';
+
+      if (isSide) {
+        // Finde die erste Dropzone, die weder ausgenommen ist noch bereits eine Beilage enthält
+        const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone =>
+          !zone.classList.contains('excluded') && zone.querySelector('.side-dish-chip') === null
+        );
+        if (!freeZone) {
+          alert("Es ist kein freier Tag für Beilagen mehr verfügbar!");
+          searchInput.value = '';
+          searchResults.style.display = 'none';
+          return;
+        }
+        assignSideToZone(freeZone, recipeId, recipeName, categoryName);
+      } else {
+        // Finde die erste Dropzone, die weder ausgenommen ist noch bereits ein Hauptgericht enthält
+        const freeZone = Array.from(document.querySelectorAll('.day-dropzone')).find(zone =>
+          !zone.classList.contains('excluded') && zone.querySelector('.draggable-recipe-card') === null
+        );
+        if (!freeZone) {
+          alert("Es ist kein freier Tag mehr verfügbar!");
+          searchInput.value = '';
+          searchResults.style.display = 'none';
+          return;
+        }
+        assignRecipeToZone(freeZone, recipeId, recipeName, categoryName);
       }
-      assignRecipeToZone(freeZone, recipeId, recipeName, categoryName);
       searchInput.value = '';
       searchResults.style.display = 'none';
       searchInput.focus();
@@ -199,10 +225,47 @@
     if (dayInput) dayInput.value = '';
   }
 
+  // 4b. Funktion: Zusatzgericht/Beilage in eine bestimmte Zone setzen (blockiert den Tag nicht)
+  function assignSideToZone(zoneElement, id, name, category) {
+    const sideContainer = zoneElement.querySelector('.side-slot-container');
+    const dayIndex = zoneElement.getAttribute('data-day-index');
+    assignedSideRecipeIds.add(id);
+
+    const sideInput = document.getElementById('day-side-recipe-input-' + dayIndex);
+    if (sideInput) sideInput.value = id;
+
+    const chip = document.createElement('div');
+    chip.className = 'p-2 bg-white rounded border side-dish-chip d-flex justify-content-between align-items-center animate-fade-in';
+    chip.setAttribute('id', 'side-card-' + id);
+    chip.setAttribute('data-id', id);
+    chip.innerHTML = `
+        <div style="max-width: 85%;">
+            <strong class="text-dark small d-block text-truncate">🥗 ${name}</strong>
+            <span class="badge badge-category" style="font-size: 0.7rem;">${category}</span>
+        </div>
+        <button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeSideFromZone('${id}', '${dayIndex}')">❌</button>
+    `;
+    sideContainer.innerHTML = '';
+    sideContainer.appendChild(chip);
+  }
+
+  // 4c. Funktion: Zusatzgericht/Beilage von einem Wochentag entfernen
+  function removeSideFromZone(id, dayIndex) {
+    assignedSideRecipeIds.delete(id);
+    const zone = document.getElementById('day-zone-' + dayIndex);
+    if (zone) {
+      zone.querySelector('.side-slot-container').innerHTML = '<span class="text-muted small fst-italic">Keine Beilage</span>';
+    }
+    const sideInput = document.getElementById('day-side-recipe-input-' + dayIndex);
+    if (sideInput) sideInput.value = '';
+  }
+
   function clearAllDays() {
     assignedRecipeIds.clear();
+    assignedSideRecipeIds.clear();
     document.querySelectorAll('.day-dropzone').forEach(zone => {
       zone.querySelector('.recipe-slot-container').innerHTML = '';
+      zone.querySelector('.side-slot-container').innerHTML = '<span class="text-muted small fst-italic">Keine Beilage</span>';
       const statusText = zone.querySelector('.slot-status');
       statusText.textContent = "Automatisch auffüllen";
       statusText.classList.remove('text-dark', 'fw-bold');
@@ -210,6 +273,8 @@
       const dayIndex = zone.getAttribute('data-day-index');
       const dayInput = document.getElementById('day-recipe-input-' + dayIndex);
       if (dayInput) dayInput.value = '';
+      const sideInput = document.getElementById('day-side-recipe-input-' + dayIndex);
+      if (sideInput) sideInput.value = '';
     });
   }
 
@@ -235,10 +300,14 @@
       excludeBtn.classList.add('btn-outline-secondary');
       excludeBtn.title = "Diesen Tag von der Planung ausnehmen";
     } else {
-      // Vorher zugewiesenes Rezept entfernen, dann Tag ausnehmen
+      // Vorher zugewiesenes Hauptgericht und Beilage entfernen, dann Tag ausnehmen
       const existingCard = zone.querySelector('.draggable-recipe-card');
       if (existingCard) {
         removeRecipeFromZone(existingCard.getAttribute('data-id'), dayIndex);
+      }
+      const existingSideCard = zone.querySelector('.side-dish-chip');
+      if (existingSideCard) {
+        removeSideFromZone(existingSideCard.getAttribute('data-id'), dayIndex);
       }
       zone.classList.add('excluded');
       excludedInput.value = '1';

@@ -10,12 +10,13 @@
             <div class="list-group list-group-flush" id="wochenplanContainer">
                 {% set days = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'] %}
                 {% for i in range(7) %}
-                {% if plan[i] %}
                 <div class="list-group-item p-3 recipe-day-card"
                      id="day-card-{{ i }}"
-                     data-recipe-id="{{ plan[i].id }}"
-                     data-category-id="{{ plan[i].category_id }}">
+                     data-recipe-id="{{ plan[i].id if plan[i] else '' }}"
+                     data-category-id="{{ plan[i].category_id if plan[i] else '' }}"
+                     data-side-recipe-id="{{ side_plan[i].id if side_plan[i] else '' }}">
 
+                    {% if plan[i] %}
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <div>
                             <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">{{ days[i] }}</h5>
@@ -34,20 +35,37 @@
                         K: <span class="recipe-carbs">{{ plan[i].carbs }}</span>g |
                         F: <span class="recipe-fat">{{ plan[i].fat }}</span>g
                     </div>
-                </div>
-                {% else %}
-                <div class="list-group-item p-3 text-center text-muted"
-                     id="day-card-{{ i }}"
-                     data-recipe-id=""
-                     data-category-id="">
-                    <h5 class="fw-bold mb-1">{{ days[i] }}</h5>
-                    {% if i in excluded_days %}
-                    <span>🚫 Von der Planung ausgenommen</span>
                     {% else %}
-                    <span>Kein passendes Rezept verfügbar</span>
+                    <div class="text-center text-muted">
+                        <h5 class="fw-bold mb-1">{{ days[i] }}</h5>
+                        {% if i in excluded_days %}
+                        <span>🚫 Von der Planung ausgenommen</span>
+                        {% else %}
+                        <span>Kein passendes Rezept verfügbar</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if i not in excluded_days %}
+                    <div class="side-dish-row mt-2 pt-2 border-top" id="side-row-{{ i }}">
+                        {% if side_plan[i] %}
+                        <div class="d-flex justify-content-between align-items-center side-dish-card">
+                            <div>
+                                <span class="fw-bold text-dark side-dish-name">🥗 {{ side_plan[i].name }}</span>
+                                <span class="badge badge-category side-dish-category ms-1">{{ side_plan[i].category.name }}</span>
+                                <span class="text-muted small side-dish-kcal">({{ side_plan[i].calories }} kcal)</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-1">
+                                <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Beilage neu würfeln" onclick="rerollSideDay({{ i }})">🎲</button>
+                                <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Beilage entfernen" onclick="removeSideDish({{ i }})">❌</button>
+                            </div>
+                        </div>
+                        {% else %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay({{ i }})">🥗 Beilage würfeln</button>
+                        {% endif %}
+                    </div>
                     {% endif %}
                 </div>
-                {% endif %}
                 {% endfor %}
             </div>
         </div>
@@ -71,6 +89,8 @@
 <script>
 // Initialisiere die Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept)
 let weeklyPlanRecipes = [];
+// Zusatzgerichte/Beilagen, unabhängig vom Hauptgericht (Index = Wochentag, null = keine Beilage)
+let weeklySideRecipes = [];
 
 {% for i in range(7) %}
 {% if plan[i] %}
@@ -92,6 +112,25 @@ weeklyPlanRecipes.push({
 {% else %}
 weeklyPlanRecipes.push(null);
 {% endif %}
+{% if side_plan[i] %}
+weeklySideRecipes.push({
+    id: parseInt("{{ side_plan[i].id }}"),
+    name: "{{ side_plan[i].name }}",
+    category_id: parseInt("{{ side_plan[i].category_id }}"),
+    category_name: "{{ side_plan[i].category.name }}",
+    calories: parseInt("{{ side_plan[i].calories or 0 }}"),
+    protein: parseFloat("{{ side_plan[i].protein or 0 }}"),
+    carbs: parseFloat("{{ side_plan[i].carbs or 0 }}"),
+    fat: parseFloat("{{ side_plan[i].fat or 0 }}"),
+    ingredients: [
+        {% for ing in side_plan[i].ingredients %}
+        { name: "{{ ing.name.strip().title() }}", amount: parseFloat("{{ ing.amount }}"), unit: "{{ ing.unit }}" },
+        {% endfor %}
+    ]
+});
+{% else %}
+weeklySideRecipes.push(null);
+{% endif %}
 {% endfor %}
 
 // Initiales Rendern beim Laden der Seite
@@ -105,6 +144,18 @@ function collectCurrentRecipeIds() {
     for (let i = 0; i < 7; i++) {
         const card = document.getElementById(`day-card-${i}`);
         const raw = card ? card.getAttribute('data-recipe-id') : '';
+        const parsed = parseInt(raw);
+        ids.push(isNaN(parsed) ? null : parsed);
+    }
+    return ids;
+}
+
+// Sammelt die aktuellen Beilagen-IDs für alle 7 Tage (null, wenn Tag ohne Beilage/ausgenommen ist)
+function collectCurrentSideRecipeIds() {
+    const ids = [];
+    for (let i = 0; i < 7; i++) {
+        const card = document.getElementById(`day-card-${i}`);
+        const raw = card ? card.getAttribute('data-side-recipe-id') : '';
         const parsed = parseInt(raw);
         ids.push(isNaN(parsed) ? null : parsed);
     }
@@ -155,6 +206,67 @@ function rerollSingleDay(dayIndex) {
     });
 }
 
+// Baut den HTML-Inhalt einer Beilagen-Zeile für einen Tag auf (mit oder ohne Beilage)
+function renderSideRow(dayIndex, recipe) {
+    if (recipe) {
+        return `
+            <div class="d-flex justify-content-between align-items-center side-dish-card">
+                <div>
+                    <span class="fw-bold text-dark side-dish-name">🥗 ${recipe.name}</span>
+                    <span class="badge badge-category side-dish-category ms-1">${recipe.category_name}</span>
+                    <span class="text-muted small side-dish-kcal">(${recipe.calories} kcal)</span>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Beilage neu würfeln" onclick="rerollSideDay(${dayIndex})">🎲</button>
+                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Beilage entfernen" onclick="removeSideDish(${dayIndex})">❌</button>
+                </div>
+            </div>
+        `;
+    }
+    return `<button type="button" class="btn btn-sm btn-outline-secondary w-100" onclick="rerollSideDay(${dayIndex})">🥗 Beilage würfeln</button>`;
+}
+
+// Funktion zum (Neu-)Würfeln einer Beilage für einen einzelnen Wochentag
+function rerollSideDay(dayIndex) {
+    const dayCard = document.getElementById(`day-card-${dayIndex}`);
+    const sideRow = document.getElementById(`side-row-${dayIndex}`);
+    if (!dayCard || !sideRow) return;
+
+    fetch('/reroll-side-day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            current_side_recipe_ids: collectCurrentSideRecipeIds(),
+            day_index: parseInt(dayIndex)
+        })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Keine weitere Beilage verfügbar.');
+        return response.json();
+    })
+    .then(newRecipe => {
+        dayCard.setAttribute('data-side-recipe-id', newRecipe.id);
+        sideRow.innerHTML = renderSideRow(dayIndex, newRecipe);
+        weeklySideRecipes[dayIndex] = newRecipe;
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+    });
+}
+
+// Funktion zum Entfernen einer bereits zugewiesenen Beilage (rein clientseitig)
+function removeSideDish(dayIndex) {
+    const dayCard = document.getElementById(`day-card-${dayIndex}`);
+    const sideRow = document.getElementById(`side-row-${dayIndex}`);
+    if (!dayCard || !sideRow) return;
+
+    dayCard.setAttribute('data-side-recipe-id', '');
+    sideRow.innerHTML = renderSideRow(dayIndex, null);
+    weeklySideRecipes[dayIndex] = null;
+    rebuildShoppingList();
+}
+
 // Einkaufsliste zusammenrechnen und darstellen
 function rebuildShoppingList() {
     const container = document.getElementById('shoppingListContainer');
@@ -164,7 +276,7 @@ function rebuildShoppingList() {
     container.innerHTML = '';
     let consolidated = {};
 
-    weeklyPlanRecipes.forEach(recipe => {
+    [...weeklyPlanRecipes, ...weeklySideRecipes].forEach(recipe => {
         if (recipe && recipe.ingredients) {
             recipe.ingredients.forEach(ing => {
                 const key = `${ing.name.trim()}|||${ing.unit.trim()}`;

@@ -1,5 +1,6 @@
 import os
 import random
+from sqlalchemy import text
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from models import db, Category, Recipe, Ingredient
 
@@ -12,6 +13,13 @@ db.init_app(app)
 
 def init_db():
     db.create_all()
+
+    # Migration: bestehende Datenbanken hatten noch keine is_side_dish-Spalte
+    existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}
+    if 'is_side_dish' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_side_dish BOOLEAN NOT NULL DEFAULT 0"))
+        db.session.commit()
+
     if not Category.query.first():
         default_categories = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
         for cat_name in default_categories:
@@ -69,10 +77,12 @@ def add_recipe():
     protein = float(request.form.get('protein') or 0)
     carbs = float(request.form.get('carbs') or 0)
     fat = float(request.form.get('fat') or 0)
+    is_side_dish = request.form.get('is_side_dish') == '1'
 
     new_recipe = Recipe(
         name=name, category_id=category_id,
-        calories=calories, protein=protein, carbs=carbs, fat=fat
+        calories=calories, protein=protein, carbs=carbs, fat=fat,
+        is_side_dish=is_side_dish
     )
     db.session.add(new_recipe)
     db.session.flush()
@@ -101,6 +111,7 @@ def edit_recipe(id):
     recipe.protein = float(request.form.get('protein') or 0)
     recipe.carbs = float(request.form.get('carbs') or 0)
     recipe.fat = float(request.form.get('fat') or 0)
+    recipe.is_side_dish = request.form.get('is_side_dish') == '1'
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
 
@@ -177,7 +188,8 @@ def generate_plan():
 
     # 1. Formulardaten pro Tag auslesen: feste Zuweisung + Ausnahme-Status
     excluded_days = set()
-    day_recipe_ids = {}  # Tag-Index -> Rezept-ID (String)
+    day_recipe_ids = {}  # Tag-Index -> Hauptgericht-Rezept-ID (String)
+    day_side_recipe_ids = {}  # Tag-Index -> Zusatzgericht-Rezept-ID (String)
 
     for i in range(7):
         if request.form.get(f'day_excluded_{i}') == '1':
@@ -186,8 +198,11 @@ def generate_plan():
         rid = (request.form.get(f'day_recipe_{i}') or '').strip()
         if rid:
             day_recipe_ids[i] = rid
+        side_rid = (request.form.get(f'day_side_recipe_{i}') or '').strip()
+        if side_rid:
+            day_side_recipe_ids[i] = side_rid
 
-    # 2. Feste Rezepte anhand ihrer ID nachladen
+    # 2. Feste Hauptgerichte anhand ihrer ID nachladen
     final_plan = [None] * 7
     used_recipe_ids = set()
 
@@ -199,6 +214,22 @@ def generate_plan():
             if recipe:
                 final_plan[day_index] = recipe
                 used_recipe_ids.add(recipe.id)
+
+    # 2b. Feste Zusatzgerichte (Beilagen) anhand ihrer ID nachladen.
+    #     Beilagen werden NIE automatisch gewürfelt - nur was der Nutzer hier
+    #     fest zugewiesen hat, landet im Plan (Nachträgliches Würfeln erfolgt
+    #     erst auf der Plan-Seite über den 🎲-Button).
+    final_side_plan = [None] * 7
+
+    if day_side_recipe_ids:
+        unique_side_ids = list(set(day_side_recipe_ids.values()))
+        side_recipes_by_id = {
+            str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_side_ids)).all()
+        }
+        for day_index, rid in day_side_recipe_ids.items():
+            recipe = side_recipes_by_id.get(rid)
+            if recipe:
+                final_side_plan[day_index] = recipe
 
     # 3. Bestimme, welche Tage noch automatisch aufgefüllt werden müssen
     #    (weder ausgenommen, noch bereits fest belegt)
@@ -217,10 +248,12 @@ def generate_plan():
         all_categories, n=len(days_to_fill), preexisting_counts=preexisting_counts
     )
 
-    # 5. Restliche Tage nacheinander mit passenden, noch nicht verwendeten Rezepten auffüllen
+    # 5. Restliche Tage nacheinander mit passenden, noch nicht verwendeten Hauptgerichten auffüllen
+    #    (Zusatzgerichte/Beilagen sind hiervon ausgeschlossen)
     for day_index, needed_cat_id in zip(days_to_fill, target_category_ids):
         cat_recipes = Recipe.query.filter(
             Recipe.category_id == needed_cat_id,
+            Recipe.is_side_dish == False,
             ~Recipe.id.in_(used_recipe_ids)
         ).all()
 
@@ -228,7 +261,10 @@ def generate_plan():
         if cat_recipes:
             chosen = random.choice(cat_recipes)
         else:
-            fallback_recipes = Recipe.query.filter(~Recipe.id.in_(used_recipe_ids)).all()
+            fallback_recipes = Recipe.query.filter(
+                Recipe.is_side_dish == False,
+                ~Recipe.id.in_(used_recipe_ids)
+            ).all()
             if fallback_recipes:
                 chosen = random.choice(fallback_recipes)
 
@@ -236,7 +272,9 @@ def generate_plan():
             final_plan[day_index] = chosen
             used_recipe_ids.add(chosen.id)
 
-    return render_template('plan.html', plan=final_plan, excluded_days=excluded_days)
+    return render_template(
+        'plan.html', plan=final_plan, side_plan=final_side_plan, excluded_days=excluded_days
+    )
 
 
 @app.route('/reroll-day', methods=['POST'])
@@ -272,17 +310,39 @@ def reroll_day():
     for best_cat_id in sorted_target_categories:
         chosen_recipe = Recipe.query.filter(
             Recipe.category_id == best_cat_id,
+            Recipe.is_side_dish == False,
             ~Recipe.id.in_(current_ids)
         ).all()
 
         if chosen_recipe:
             return jsonify_recipe(random.choice(chosen_recipe))
 
-    fallback_recipes = Recipe.query.filter(~Recipe.id.in_(current_ids)).all()
+    fallback_recipes = Recipe.query.filter(
+        Recipe.is_side_dish == False,
+        ~Recipe.id.in_(current_ids)
+    ).all()
     if fallback_recipes:
         return jsonify_recipe(random.choice(fallback_recipes))
 
     return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
+
+
+@app.route('/reroll-side-day', methods=['POST'])
+def reroll_side_day():
+    data = request.get_json() or {}
+    # current_side_recipe_ids ist immer 7 Einträge lang; Tage ohne Beilage sind null
+    current_ids_raw = data.get('current_side_recipe_ids', [])
+    current_ids = [cid for cid in current_ids_raw if cid]
+
+    candidates = Recipe.query.filter(
+        Recipe.is_side_dish == True,
+        ~Recipe.id.in_(current_ids)
+    ).all()
+
+    if candidates:
+        return jsonify_recipe(random.choice(candidates))
+
+    return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
 
 def jsonify_recipe(recipe):
     # Hilfsfunktion, um Rezeptdaten lesbar für JavaScript bereitzustellen
