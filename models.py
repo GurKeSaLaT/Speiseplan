@@ -13,8 +13,6 @@ class Recipe(db.Model):
     name = db.Column(db.String(100), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     is_side_dish = db.Column(db.Boolean, default=False, nullable=False)
-    # None/leer = ganzjährig, sonst einer von SEASONS in app.py (Frühling/Sommer/Herbst/Winter)
-    season = db.Column(db.String(20), nullable=True)
 
     # Nährwerte
     calories = db.Column(db.Integer, default=0)
@@ -24,6 +22,21 @@ class Recipe(db.Model):
 
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
     ingredients = db.relationship('Ingredient', backref='recipe', cascade="all, delete-orphan")
+    # Keine Einträge = ganzjährig verfügbar. Mit Einträgen: verfügbar, sobald das
+    # heutige Datum (Monat/Tag, jahresunabhängig) in mindestens einen Zeitraum fällt.
+    seasons = db.relationship('RecipeSeason', backref='recipe', cascade="all, delete-orphan")
+
+
+class RecipeSeason(db.Model):
+    """Ein Verfügbarkeitszeitraum eines Rezepts (Monat/Tag, jahresunabhängig).
+    Ein Rezept kann mehrere davon haben (mehrere Standard-Saisons und/oder ein
+    eigener Zeitraum) - siehe SEASON_PRESETS in app.py."""
+    id = db.Column(db.Integer, primary_key=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
+    start_month = db.Column(db.Integer, nullable=False)
+    start_day = db.Column(db.Integer, nullable=False)
+    end_month = db.Column(db.Integer, nullable=False)
+    end_day = db.Column(db.Integer, nullable=False)
 
 
 class Ingredient(db.Model):

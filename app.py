@@ -5,19 +5,100 @@ from datetime import date
 
 from sqlalchemy import text
 from flask import Flask, render_template, request, redirect, url_for
-from models import db, Category, Recipe, Ingredient
+from models import db, Category, Recipe, Ingredient, RecipeSeason
 
 SEASONS = ['Frühling', 'Sommer', 'Herbst', 'Winter']
-_SEASON_BY_MONTH = {
-    12: 'Winter', 1: 'Winter', 2: 'Winter',
-    3: 'Frühling', 4: 'Frühling', 5: 'Frühling',
-    6: 'Sommer', 7: 'Sommer', 8: 'Sommer',
-    9: 'Herbst', 10: 'Herbst', 11: 'Herbst',
+# Jahresunabhängige (Monat, Tag)-Zeiträume je Standard-Saison
+SEASON_PRESETS = {
+    'Frühling': (3, 1, 5, 31),
+    'Sommer': (6, 1, 8, 31),
+    'Herbst': (9, 1, 11, 30),
+    'Winter': (12, 1, 2, 28),
 }
+SEASON_PRESET_BY_RANGE = {v: k for k, v in SEASON_PRESETS.items()}
 
 
-def current_season():
-    return _SEASON_BY_MONTH[date.today().month]
+def _season_range(rs):
+    return (rs.start_month, rs.start_day, rs.end_month, rs.end_day)
+
+
+def date_in_range(month, day, start_month, start_day, end_month, end_day):
+    """Prüft, ob (month, day) in einem jahresunabhängigen Monat/Tag-Zeitraum liegt.
+    Unterstützt über den Jahreswechsel laufende Zeiträume (z.B. Winter: Dez-Feb)."""
+    current = (month, day)
+    start = (start_month, start_day)
+    end = (end_month, end_day)
+    if start <= end:
+        return start <= current <= end
+    return current >= start or current <= end
+
+
+def recipe_available_now(recipe):
+    """Ganzjährig verfügbar, wenn das Rezept keine Zeiträume hinterlegt hat -
+    sonst verfügbar, sobald heute in mindestens einen davon fällt."""
+    if not recipe.seasons:
+        return True
+    today = date.today()
+    return any(date_in_range(today.month, today.day, *_season_range(rs)) for rs in recipe.seasons)
+
+
+def parse_recipe_seasons(form):
+    """Liest die Saison-Auswahl aus dem Formular: mehrere angehakte Standard-
+    Saisons und/oder ein eigener Zeitraum. Gibt eine Liste von
+    (start_month, start_day, end_month, end_day)-Tupeln zurück."""
+    ranges = []
+    for season_name in form.getlist('seasons'):
+        preset = SEASON_PRESETS.get(season_name)
+        if preset:
+            ranges.append(preset)
+
+    custom_start = form.get('season_custom_start')
+    custom_end = form.get('season_custom_end')
+    if custom_start and custom_end:
+        try:
+            start_month, start_day = (int(p) for p in custom_start.split('-')[1:])
+            end_month, end_day = (int(p) for p in custom_end.split('-')[1:])
+            ranges.append((start_month, start_day, end_month, end_day))
+        except (ValueError, IndexError):
+            pass
+
+    return ranges
+
+
+def save_recipe_seasons(recipe_id, form):
+    RecipeSeason.query.filter_by(recipe_id=recipe_id).delete()
+    for start_month, start_day, end_month, end_day in parse_recipe_seasons(form):
+        db.session.add(RecipeSeason(
+            recipe_id=recipe_id,
+            start_month=start_month, start_day=start_day,
+            end_month=end_month, end_day=end_day
+        ))
+
+
+def describe_recipe_seasons(recipe):
+    """Für die Bearbeiten-Ansicht: welche Standard-Saison-Checkboxen sollen
+    angehakt sein, und gibt es einen (ersten) eigenen Zeitraum zum Vorbefüllen?"""
+    selected_presets = set()
+    custom_range = None
+    for rs in recipe.seasons:
+        preset_name = SEASON_PRESET_BY_RANGE.get(_season_range(rs))
+        if preset_name:
+            selected_presets.add(preset_name)
+        elif custom_range is None:
+            custom_range = rs
+    return selected_presets, custom_range
+
+
+def format_recipe_seasons(recipe):
+    """Kurze, menschenlesbare Labels aller Zeiträume eines Rezepts, für die Badge-Anzeige."""
+    labels = []
+    for rs in recipe.seasons:
+        preset_name = SEASON_PRESET_BY_RANGE.get(_season_range(rs))
+        if preset_name:
+            labels.append(preset_name)
+        else:
+            labels.append(f"{rs.start_day}.{rs.start_month}.–{rs.end_day}.{rs.end_month}.")
+    return labels
 
 
 app = Flask(__name__)
@@ -31,13 +112,27 @@ db.init_app(app)
 def init_db():
     db.create_all()
 
-    # Migration: bestehende Datenbanken hatten noch keine is_side_dish-/season-Spalte
+    # Migration: bestehende Datenbanken hatten noch keine is_side_dish-Spalte
     existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}
     if 'is_side_dish' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_side_dish BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
-    if 'season' not in existing_columns:
-        db.session.execute(text("ALTER TABLE recipe ADD COLUMN season VARCHAR(20)"))
+
+    # Migration: die frühere einzelne season-Spalte gibt es nicht mehr (ersetzt durch
+    # die recipe_season-Tabelle, die mehrere Zeiträume pro Rezept erlaubt). Bestehende
+    # Werte einmalig in die neue Tabelle übernehmen, dann die alte Spalte entfernen.
+    if 'season' in existing_columns:
+        old_seasons = db.session.execute(text("SELECT id, season FROM recipe WHERE season IS NOT NULL")).fetchall()
+        for recipe_id, season_name in old_seasons:
+            preset = SEASON_PRESETS.get(season_name)
+            if preset:
+                db.session.add(RecipeSeason(
+                    recipe_id=recipe_id,
+                    start_month=preset[0], start_day=preset[1],
+                    end_month=preset[2], end_day=preset[3]
+                ))
+        db.session.commit()
+        db.session.execute(text("ALTER TABLE recipe DROP COLUMN season"))
         db.session.commit()
 
     if not Category.query.first():
@@ -96,7 +191,24 @@ def recipe_edit_list_view():
     existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
-    return render_template('recipe_edit_list.html', recipes=recipes, categories=categories, ingredient_list=ingredient_list, seasons=SEASONS)
+    # Für jedes Rezept: welche Saison-Checkboxen vorbelegt sein sollen, ein
+    # eigener Zeitraum zum Vorbefüllen der Datumsfelder sowie die Badge-Labels
+    recipe_season_info = {}
+    for recipe in recipes:
+        selected_presets, custom_range = describe_recipe_seasons(recipe)
+        recipe_season_info[recipe.id] = {
+            'selected_presets': selected_presets,
+            # Beliebiges (Schaltjahr-)Jahr, da <input type="date"> volle Daten
+            # verlangt - beim Speichern wird ohnehin nur Monat/Tag ausgewertet
+            'custom_start': f"2000-{custom_range.start_month:02d}-{custom_range.start_day:02d}" if custom_range else '',
+            'custom_end': f"2000-{custom_range.end_month:02d}-{custom_range.end_day:02d}" if custom_range else '',
+            'labels': format_recipe_seasons(recipe),
+        }
+
+    return render_template(
+        'recipe_edit_list.html', recipes=recipes, categories=categories,
+        ingredient_list=ingredient_list, seasons=SEASONS, recipe_season_info=recipe_season_info
+    )
 
 
 @app.route('/manage/categories')
@@ -116,15 +228,16 @@ def add_recipe():
     carbs = float(request.form.get('carbs') or 0)
     fat = float(request.form.get('fat') or 0)
     is_side_dish = request.form.get('is_side_dish') == '1'
-    season = request.form.get('season') or None
 
     new_recipe = Recipe(
         name=name, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat,
-        is_side_dish=is_side_dish, season=season
+        is_side_dish=is_side_dish
     )
     db.session.add(new_recipe)
     db.session.flush()
+
+    save_recipe_seasons(new_recipe.id, request.form)
 
     ing_names = request.form.getlist('ing_name[]')
     ing_amounts = request.form.getlist('ing_amount[]')
@@ -152,7 +265,8 @@ def edit_recipe(id):
     recipe.carbs = float(request.form.get('carbs') or 0)
     recipe.fat = float(request.form.get('fat') or 0)
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
-    recipe.season = request.form.get('season') or None
+
+    save_recipe_seasons(recipe.id, request.form)
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
 
@@ -245,9 +359,10 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
 
 def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True):
     """Wählt zufällig ein passendes, noch nicht verwendetes Rezept aus. Bevorzugt
-    (falls prefer_season) Rezepte der aktuellen Saison oder ohne Saison-Zuordnung,
-    weicht aber auf jede Saison aus, wenn dafür keine Kandidaten existieren - eine
-    Saison-Zuordnung schränkt die automatische Auswahl also nie komplett ein."""
+    (falls prefer_season) gerade jahreszeitlich verfügbare Rezepte (siehe
+    recipe_available_now), weicht aber auf alle aus, wenn dafür keine Kandidaten
+    existieren - eine Saison-Zuordnung schränkt die automatische Auswahl also nie
+    komplett ein."""
     base_query = Recipe.query.filter(
         Recipe.is_side_dish.is_(is_side_dish),
         ~Recipe.id.in_(exclude_ids)
@@ -255,17 +370,16 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     if category_id is not None:
         base_query = base_query.filter(Recipe.category_id == category_id)
 
+    candidates = base_query.all()
+    if not candidates:
+        return None
+
     if prefer_season:
-        seasonal_candidates = base_query.filter(
-            db.or_(Recipe.season.is_(None), Recipe.season == current_season())
-        ).all()
+        seasonal_candidates = [r for r in candidates if recipe_available_now(r)]
         if seasonal_candidates:
             return random.choice(seasonal_candidates)
 
-    candidates = base_query.all()
-    if candidates:
-        return random.choice(candidates)
-    return None
+    return random.choice(candidates)
 
 
 @app.route('/generate-plan', methods=['POST'])
