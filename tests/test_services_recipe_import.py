@@ -154,11 +154,12 @@ def test_parse_ingredient_line_known_unit():
     assert result == {"name": "Mehl", "amount": 500, "unit": "g"}
 
 
-def test_parse_ingredient_line_spelled_out_unit():
+def test_parse_ingredient_line_spelled_out_unit_gets_normalized():
     # brigitte.de/gutekueche.de schreiben Einheiten aus statt sie
-    # abzukürzen (anders als chefkoch.de) - siehe KNOWN_UNITS-Kommentar.
+    # abzukürzen (anders als chefkoch.de) - wird trotzdem auf die
+    # kanonische Form "g" gebracht (siehe services/units.py).
     result = _parse_ingredient_line("250 Gramm Mehl")
-    assert result == {"name": "Mehl", "amount": 250, "unit": "Gramm"}
+    assert result == {"name": "Mehl", "amount": 250, "unit": "g"}
 
 
 def test_parse_ingredient_line_unknown_unit_becomes_part_of_name():
@@ -294,4 +295,4 @@ def test_fetch_recipe_from_url_works_for_non_chefkoch_host(mock_get):
 
     assert result["name"] == "Käsekuchen"
     assert result["servings"] == 12
-    assert result["ingredients"] == [{"name": "Mehl", "amount": 250, "unit": "Gramm"}]
+    assert result["ingredients"] == [{"name": "Mehl", "amount": 250, "unit": "g"}]

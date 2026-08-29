@@ -18,6 +18,12 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
 - **Rezeptverwaltung** – Gerichte mit Kategorie, Nährwerten (Kalorien,
   Eiweiß, Kohlenhydrate, Fett), Personenzahl, einer beliebigen Zutatenliste,
   Link und Zubereitungsanleitung anlegen, bearbeiten und löschen.
+- **Einheiten-Vereinheitlichung** – Zutatenmengen werden beim Eintragen und
+  Importieren automatisch auf eine kanonische Form gebracht (Masse → Gramm,
+  Volumen inkl. TL/EL/Tasse → Milliliter; "1 kg" wird intern zu "1000 g").
+  In der Verwaltung (⚙️ → 📏 Einheiten) lässt sich einstellen, ob Mengen in
+  g/kg bzw. ml/l angezeigt werden - gilt überall dort, wo Mengen zu sehen
+  sind (Rezept-Bearbeiten, Import-Vorschau, Einkaufsliste).
 - **Rezept-Import von neun deutschsprachigen Kochseiten** – chefkoch.de,
   lecker.de, essen-und-trinken.de, EAT SMARTER, Küchengötter,
   gutekueche.de/.at, DasKochrezept, BRIGITTE und Emmikochteinfach. Ein Link
@@ -111,7 +117,7 @@ bleibt dabei unangetastet.
 ```
 app.py                        App-Setup, Blueprint-Registrierung, DB-Migration
 models.py                     SQLAlchemy-Modelle (Category, Recipe, RecipeSeason, Ingredient,
-                               PlanDay, PlanDaySide, ExtraShoppingItem)
+                               PlanDay, PlanDaySide, ExtraShoppingItem, AppSettings)
 routes/
   plan/                       Kalender-Wochenansicht, Plan erstellen, Würfeln/Tauschen/manuelle
                                Auswahl, Beilagen, Einkaufsliste (Blueprint "plan", auf drei
@@ -122,12 +128,15 @@ routes/
   recipes.py                  Rezept-CRUD + Rezept-Import (Blueprint "recipes")
   categories.py                Kategorie-CRUD (Blueprint "categories")
   manage.py                    Verwaltungs-Startseite (Blueprint "manage")
+  settings.py                  Einheiten-Einstellungen (Blueprint "settings")
 services/
   planning.py                  Wochen-/Datums-Helfer, Kategorie-Balance, Rezeptauswahl,
                                 Favoriten-/Wiederholungs-Gewichtung
   seasons.py                   Saison-Zuordnung (Standard-Saisons + eigene Zeiträume)
   shopping.py                  Feste Einkaufslisten-Kategorie-Reihenfolge
   recipe_import.py             Rezept-Import von 9 Kochseiten (schema.org/Recipe-JSON-LD auslesen)
+  units.py                     Einheiten-Normalisierung/-Umrechnung (Masse -> g, Volumen -> ml)
+  settings.py                  Speicherung der Anzeige-Einheiten-Einstellung (AppSettings)
 templates/                    Jinja2-Templates (Plan-Kalender, Wochenplan erstellen, Verwaltung)
 static/
   plan.js                       Plan-Seite: Zustand, Tageskarten, Hauptgericht, Tages-Tausch

@@ -76,6 +76,25 @@ def test_week_view_plan_data_reflects_excluded_and_servings(client, app):
     assert plan_data["plan"][0] is None
 
 
+def test_week_view_extra_items_use_display_unit(client, app):
+    from models import ExtraShoppingItem, db
+    from services.settings import update_display_units
+
+    monday = date(2026, 6, 15)
+    with app.app_context():
+        update_display_units("kg", "ml")
+        db.session.add(ExtraShoppingItem(week_start=monday, name="Mehl", amount=2000, unit="g"))
+        db.session.commit()
+
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    import json
+    import re
+
+    match = re.search(r"window\.PLAN_DATA = (\{.*?\});", resp.get_data(as_text=True), re.S)
+    plan_data = json.loads(match.group(1))
+    assert plan_data["extraItems"] == [{"id": plan_data["extraItems"][0]["id"], "name": "Mehl", "amount": 2, "unit": "kg", "category": None}]
+
+
 # --- week_create_view ---
 
 def test_week_create_view_lists_recipes_with_category_badge(client, make_category, make_recipe):

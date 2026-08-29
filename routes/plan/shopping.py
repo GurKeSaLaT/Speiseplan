@@ -8,6 +8,8 @@ from flask import request
 
 from models import db, ExtraShoppingItem
 from services.planning import monday_of, parse_iso_date
+from services.settings import get_display_units
+from services.units import convert_for_display, normalize_amount_unit
 from routes.plan import plan_bp
 
 
@@ -45,10 +47,21 @@ def add_shopping_item(start_date):
     unit = (data.get('unit') or '').strip() or None
     category = (data.get('category') or '').strip() or None
 
+    # Wie bei Rezept-Zutaten (routes/recipes.py) auf die kanonische Form
+    # bringen, sofern eine Menge angegeben wurde - amount darf hier (anders
+    # als bei Ingredient) None sein ("Klopapier" ganz ohne Mengenangabe),
+    # normalize_amount_unit() käme mit None als Menge nicht klar.
+    if amount is not None and unit is not None:
+        amount, unit = normalize_amount_unit(amount, unit)
+
     item = ExtraShoppingItem(week_start=start, name=name, amount=amount, unit=unit, category=category)
     db.session.add(item)
     db.session.commit()
-    return {"id": item.id, "name": item.name, "amount": item.amount, "unit": item.unit, "category": item.category}
+
+    display_amount, display_unit = (
+        convert_for_display(amount, unit, get_display_units()) if amount is not None else (None, unit)
+    )
+    return {"id": item.id, "name": item.name, "amount": display_amount, "unit": display_unit, "category": item.category}
 
 
 @plan_bp.route('/shopping-item/<int:item_id>/delete', methods=['POST'])

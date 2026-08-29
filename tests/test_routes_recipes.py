@@ -83,6 +83,26 @@ def test_add_recipe_side_dish_and_favorite_flags(client, app, make_category):
         assert recipe.is_favorite is True
 
 
+def test_add_recipe_normalizes_ingredient_units(client, app, make_category):
+    from models import Recipe
+
+    cat_id = make_category("Normalisierung")
+    form = _base_recipe_form(cat_id, **{
+        "ing_name[]": ["Mehl", "Öl", ""],
+        "ing_amount[]": ["1", "2", ""],
+        "ing_unit[]": ["kg", "EL", ""],
+        "ing_category[]": ["", "", ""],
+    })
+
+    client.post("/add-recipe", data=form, follow_redirects=True)
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        by_name = {i.name: (i.amount, i.unit) for i in recipe.ingredients}
+        # "1 kg" -> kanonisch 1000 g, "2 EL" -> kanonisch 30 ml.
+        assert by_name["Mehl"] == (1000, "g")
+        assert by_name["Öl"] == (30, "ml")
+
+
 def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
     from models import Recipe, db
 
@@ -101,6 +121,38 @@ def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
         recipe = db.session.get(Recipe, recipe_id)
         assert recipe.name == "Geändertes Gericht"
         assert [i.name for i in recipe.ingredients] == ["Neu"]
+
+
+def test_edit_recipe_normalizes_ingredient_units(client, app, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Mengenänderung")
+    with app.app_context():
+        cat_id = db.session.get(Recipe, recipe_id).category_id
+
+    form = _base_recipe_form(cat_id, **{
+        "ing_name[]": ["Milch"], "ing_amount[]": ["1"], "ing_unit[]": ["Liter"], "ing_category[]": [""],
+    })
+    client.post(f"/edit-recipe/{recipe_id}", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        assert (recipe.ingredients[0].amount, recipe.ingredients[0].unit) == (1000, "ml")
+
+
+def test_recipe_edit_list_view_shows_ingredients_in_display_unit(client, app, make_recipe):
+    from services.settings import update_display_units
+
+    recipe_id = make_recipe(
+        "Kilo-Anzeige", ingredients=[{"name": "Zucker", "amount": 1500, "unit": "g"}]
+    )
+    with app.app_context():
+        update_display_units("kg", "ml")
+
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert b'value="1.5"' in resp.data
+    assert b'value="kg"' in resp.data
 
 
 def test_edit_recipe_unknown_id_returns_404(client, make_category):
@@ -144,3 +196,23 @@ def test_import_recipe_preview_propagates_import_error(mock_fetch, client):
     resp = client.post("/manage/recipe/import-preview", json={"url": "https://example.com/x"})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "Nicht unterstützt."
+
+
+@patch("routes.recipes.fetch_recipe_from_url")
+def test_import_recipe_preview_converts_ingredients_to_display_unit(mock_fetch, client, app):
+    from services.settings import update_display_units
+
+    with app.app_context():
+        update_display_units("kg", "l")
+
+    mock_fetch.return_value = {
+        "name": "Importiert", "servings": 4,
+        "ingredients": [{"name": "Mehl", "amount": 1000, "unit": "g"}, {"name": "Milch", "amount": 500, "unit": "ml"}],
+    }
+    resp = client.post("/manage/recipe/import-preview", json={"url": "https://chefkoch.de/x"})
+    assert resp.status_code == 200
+    ingredients = resp.get_json()["ingredients"]
+    assert ingredients == [
+        {"name": "Mehl", "amount": 1, "unit": "kg"},
+        {"name": "Milch", "amount": 0.5, "unit": "l"},
+    ]

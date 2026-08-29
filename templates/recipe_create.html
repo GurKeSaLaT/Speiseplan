@@ -106,6 +106,7 @@
                     </div>
 
                     <h5 class="border-bottom pb-2 mb-3 text-success fw-bold">Zutaten (optional)</h5>
+                    <p class="text-muted small mb-2">Einheiten werden automatisch vereinheitlicht (g/kg, ml/l/EL/TL/Tasse) - welche Einheit dabei angezeigt wird, lässt sich unter ⚙️ Verwaltung → 📏 Einheiten einstellen.</p>
 
                     <datalist id="ingredients-datalist">
                         {% for ing_name in ingredient_list %}
@@ -117,7 +118,7 @@
                         <div class="row g-2 mb-2">
                             <div class="col-4"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
                             <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
-                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, Stk)"></div>
+                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, kg, ml, EL, Stk...)"></div>
                             <div class="col-3">
                                 <select name="ing_category[]" class="form-select" title="Einkaufslisten-Kategorie">
                                     <option value="">Sonstiges</option>
@@ -164,7 +165,7 @@ function addIngredientField() {
     div.innerHTML = `
         <div class="col-4"><input type="text" name="ing_name[]" class="form-control" placeholder="Zutat" list="ingredients-datalist" autocomplete="off"></div>
         <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control" placeholder="Menge"></div>
-        <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, Stk)"></div>
+        <div class="col-3"><input type="text" name="ing_unit[]" class="form-control" placeholder="Einheit (g, kg, ml, EL, Stk...)"></div>
         <div class="col-3"><select name="ing_category[]" class="form-select" title="Einkaufslisten-Kategorie">${categoryOptionsHtml()}</select></div>
     `;
     container.appendChild(div);

@@ -26,6 +26,8 @@ from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
+from services.settings import get_display_units
+from services.units import convert_for_display, normalize_amount_unit
 
 recipes_bp = Blueprint('recipes', __name__)
 
@@ -74,6 +76,15 @@ def recipe_edit_list_view():
     ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
     recipe_season_info = {}
+    # Zutatenmengen werden kanonisch (immer g/ml) gespeichert, aber in der
+    # vom Nutzer gewählten Einheit (siehe services/settings.py) im
+    # Bearbeiten-Formular vorbefüllt - Ingredient-ID -> (amount, unit) für
+    # die Formularfelder in recipe_edit_list.html. Ein Speichern OHNE
+    # Änderung liefert über normalize_amount_unit() wieder exakt denselben
+    # kanonischen Wert (siehe services/units.py-Docstring), das Umrechnen
+    # hier ist also verlustfrei umkehrbar.
+    display_units = get_display_units()
+    ingredient_display = {}
     for recipe in recipes:
         selected_presets, custom_range = describe_recipe_seasons(recipe)
         recipe_season_info[recipe.id] = {
@@ -84,10 +95,13 @@ def recipe_edit_list_view():
             # damit das Template selbst keine Formatierungslogik braucht.
             'labels': format_recipe_seasons(recipe),
         }
+        for ing in recipe.ingredients:
+            ingredient_display[ing.id] = convert_for_display(ing.amount, ing.unit, display_units)
 
     return render_template(
         'recipe_edit_list.html', recipes=recipes, categories=categories,
-        ingredient_list=ingredient_list, seasons=SEASONS, recipe_season_info=recipe_season_info
+        ingredient_list=ingredient_list, seasons=SEASONS, recipe_season_info=recipe_season_info,
+        ingredient_display=ingredient_display,
     )
 
 
@@ -145,8 +159,14 @@ def add_recipe():
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            # Menge+Einheit auf die kanonische Form bringen (immer g/ml
+            # innerhalb ihrer Familie, siehe services/units.py) - egal ob
+            # der Nutzer "1kg"/"1 Kilo"/"2 EL" eingetippt oder eine bereits
+            # in der Anzeige-Einheit vorbefüllte Import-/Bearbeiten-Zeile
+            # unverändert übernommen hat.
+            amount, unit = normalize_amount_unit(amount, ing_units[i])
             ingredient = Ingredient(
-                recipe_id=new_recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i], category=category
+                recipe_id=new_recipe.id, name=ing_names[i], amount=amount, unit=unit, category=category
             )
             db.session.add(ingredient)
 
@@ -194,8 +214,15 @@ def edit_recipe(id):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            # Siehe add_recipe() oben - dieselbe Normalisierung auf die
+            # kanonische Form. Da die Formularfelder hier mit der bereits
+            # in der Anzeige-Einheit umgerechneten Menge vorbefüllt wurden
+            # (siehe recipe_edit_list_view: ingredient_display), liefert
+            # ein Speichern ohne Änderung wieder exakt den ursprünglichen
+            # kanonischen Wert zurück.
+            amount, unit = normalize_amount_unit(amount, ing_units[i])
             ingredient = Ingredient(
-                recipe_id=recipe.id, name=ing_names[i], amount=amount, unit=ing_units[i], category=category
+                recipe_id=recipe.id, name=ing_names[i], amount=amount, unit=unit, category=category
             )
             db.session.add(ingredient)
 
@@ -252,4 +279,14 @@ def import_recipe_preview():
     except RecipeImportError as e:
         return {"error": str(e)}, 400
 
+    # fetch_recipe_from_url() liefert Zutatenmengen bereits kanonisch
+    # (g/ml, siehe services/recipe_import.py: _parse_ingredient_line) -
+    # für die Vorschau auf die vom Nutzer gewählte Anzeige-Einheit
+    # umrechnen, damit das vorbefüllte Formular konsistent mit jeder
+    # anderen Mengen-Anzeige in der App ist (siehe services/units.py).
+    display_units = get_display_units()
+    imported['ingredients'] = [
+        {**ing, **dict(zip(('amount', 'unit'), convert_for_display(ing['amount'], ing['unit'], display_units)))}
+        for ing in imported['ingredients']
+    ]
     return imported

@@ -15,6 +15,8 @@ from services.planning import (
     DAY_NAMES_DE, monday_of, week_dates_for, parse_iso_date,
     assign_balanced_categories, choose_recipe, jsonify_recipe, jsonify_side
 )
+from services.settings import get_display_units
+from services.units import convert_for_display
 from routes.plan import plan_bp
 
 
@@ -111,7 +113,14 @@ def week_view(start_date):
         'plan': [jsonify_recipe(r) if r else None for r in plan],
         'sidePlan': [[jsonify_side(s) for s in sides] for sides in side_plan],
         'extraItems': [
-            {"id": it.id, "name": it.name, "amount": it.amount, "unit": it.unit, "category": it.category}
+            {
+                "id": it.id, "name": it.name,
+                **dict(zip(
+                    ("amount", "unit"),
+                    convert_for_display(it.amount, it.unit, get_display_units()) if it.amount is not None else (None, it.unit)
+                )),
+                "category": it.category,
+            }
             for it in extra_items
         ],
         'allRecipes': [

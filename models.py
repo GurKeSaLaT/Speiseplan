@@ -227,3 +227,19 @@ class ExtraShoppingItem(db.Model):
     amount = db.Column(db.Float, nullable=True)
     unit = db.Column(db.String(20), nullable=True)
     category = db.Column(db.String(50), nullable=True)
+
+
+class AppSettings(db.Model):
+    """Globale Anzeige-Einstellungen der App - aktuell nur die bevorzugten
+    Einheiten für Masse (g/kg) und Volumen (ml/l), in denen Zutatenmengen
+    dargestellt werden sollen (siehe services/units.py: convert_for_display,
+    routes/settings.py). Eine einzelne Singleton-Zeile (immer id=1) statt
+    einer generischen Key-Value-Tabelle, da es bislang nur diese zwei
+    Einstellungen gibt - services/settings.py: get_settings() legt sie bei
+    Bedarf lazy mit diesen Defaults an, kein eigener Migrationsschritt in
+    app.py nötig. Ändert NICHT die kanonisch in Ingredient.amount/.unit
+    gespeicherten Werte (immer Gramm/Milliliter), sondern nur, wie sie
+    beim Anzeigen umgerechnet werden."""
+    id = db.Column(db.Integer, primary_key=True)
+    mass_unit = db.Column(db.String(10), nullable=False, default='g')
+    volume_unit = db.Column(db.String(10), nullable=False, default='ml')

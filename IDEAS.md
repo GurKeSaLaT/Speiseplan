@@ -133,15 +133,45 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   `.btn-dark`/`.btn-outline-dark`, `.bg-dark`), die "dark"/"light" als
   reinen, nicht themefähigen Farbnamen verstehen statt sich zusammen mit dem
   Rest der Seite anzupassen.
+- **Einheiten-Vereinheitlichung.** Neues `services/units.py`: fasst
+  unterschiedliche Schreibweisen derselben Einheit zusammen (z.B.
+  "g"/"Gramm"/"gr" oder "kg"/"Kilo"/"Kilogramm") und rechnet Mengen aus
+  zwei Familien mit eindeutiger Basiseinheit - Masse -> Gramm, Volumen
+  (inkl. Küchenmaßen TL/EL/Tasse/cup, feste Näherungswerte 5/15/250 ml) ->
+  Milliliter - beim Speichern IMMER auf diese Basis um ("1 kg" wird zu
+  "1000 g", "2 EL" zu "30 ml"). Greift sowohl beim manuellen Anlegen/
+  Bearbeiten eines Rezepts (`routes/recipes.py`) als auch beim Import
+  (`services/recipe_import.py: _parse_ingredient_line`) sowie einmalig für
+  Bestandsdaten (`renormalize_existing_ingredients()`, läuft idempotent bei
+  jedem App-Start in `app.py: init_db()` - eine bereits kanonische Zeile
+  bleibt unverändert). Nicht umrechenbare, stückbasierte Einheiten (Stk,
+  Bund, Prise, Dose, ...) bleiben unangetastet.
+
+  Neues Singleton-Modell `AppSettings` (`services/settings.py`) speichert,
+  in welcher Einheit je Familie ANGEZEIGT werden soll (g oder kg, ml oder
+  l) - eigene Verwaltungsseite `/manage/units` (Blueprint `settings`,
+  Kachel "📏 Einheiten" auf `/manage`). Die kanonisch gespeicherten Werte
+  bleiben davon unberührt; `convert_for_display()` rechnet NUR für die
+  Anzeige um, an jeder Stelle, an der Zutatenmengen zu sehen sind:
+  `jsonify_recipe()` (Einkaufsliste, Wochenplan-Seite - da die
+  clientseitige Aggregation in `rebuildShoppingList()` gleichnamige
+  Zutaten rein nach "Name+Einheit" gruppiert, ist entscheidend, dass ALLE
+  Vorkommen einer Familie serverseitig konsistent in derselben Einheit
+  ankommen), das Rezept-Bearbeiten-Formular (`recipe_edit_list_view()`)
+  und die Import-Vorschau (`import_recipe_preview()`). Die Umrechnung ist
+  exakt und verlustfrei umkehrbar (Faktor 1000), ein Speichern ohne
+  Änderung eines in Kilogramm angezeigten Werts liefert über
+  `normalize_amount_unit()` wieder exakt denselben kanonischen Gramm-Wert.
 
 ## Vorgeschlagen
 
 1. **Nährwerte aus den Zutaten errechnen.** Statt Kalorien/Eiweiß/Kohlenhydrate/
    Fett manuell pro Rezept einzutragen, direkt aus den hinterlegten Zutaten
    und deren Menge berechnen. Braucht eine Nährwert-Referenz pro Zutat
-   (z.B. Werte je 100g an `Ingredient`/eine eigene Zutaten-Stammdaten-Tabelle)
-   plus Einheiten-Umrechnung (g/ml/Stück), da `Ingredient.unit` aktuell
-   Freitext ist.
+   (z.B. Werte je 100g an `Ingredient`/eine eigene Zutaten-Stammdaten-Tabelle).
+   Die Einheiten-Umrechnung (g/ml) gibt es seit `services/units.py` bereits -
+   nur stückbasierte Einheiten (Stk, Bund, ...) bräuchten für exakte
+   Nährwerte weiterhin eine Zutat-spezifische Gewichtsangabe.
 2. **Rezept-Import auf noch mehr Kochseiten ausweiten.** Der Import
    unterstützt inzwischen 9 Seiten (siehe "Umgesetzt" oben) - weitere
    schema.org/Recipe-kompatible Seiten (z.B. internationale Portale, Blogs)

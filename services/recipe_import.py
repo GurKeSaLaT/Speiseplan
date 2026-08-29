@@ -27,6 +27,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from services.units import known_unit_keys, normalize_amount_unit
+
 # Feste Allowlist statt beliebiger URLs - auch aus Sicherheitsgründen:
 # fetch_recipe_from_url() lässt die App server-seitig eine vom Nutzer
 # eingegebene URL abrufen (ein Server-Side-Request-Forgery-Risiko, wenn
@@ -58,23 +60,15 @@ ALLOWED_HOSTS = {
 REQUEST_HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; SpeiseplanImport/1.0)'}
 REQUEST_TIMEOUT_SECONDS = 10
 
-# Erkannte Mengeneinheiten (klein geschrieben, mit denen der jeweils erste
-# Wortteil nach der erkannten Menge verglichen wird - siehe
-# _parse_ingredient_line). Nicht erschöpfend, deckt aber die auf den in
-# ALLOWED_HOSTS gelisteten Seiten gebräuchlichen Angaben ab; ein unbekanntes
-# Wort landet einfach als Teil des Zutatennamens statt als eigene Einheit -
-# der Import bleibt dadurch immer noch benutzbar, nur die Spalten-Aufteilung
-# ungenauer. Die ausgeschriebenen Varianten (gramm, esslöffel, ...) kamen
-# beim Prüfen von brigitte.de/gutekueche.de dazu, die (anders als
-# chefkoch.de) meist ausschreiben statt abzukürzen.
-KNOWN_UNITS = {
-    'g', 'gramm', 'kg', 'kilogramm', 'mg', 'ml', 'milliliter', 'l', 'liter', 'cl',
-    'el', 'essl', 'esslöffel', 'tl', 'teel', 'teelöffel', 'msp', 'msp.', 'prise', 'prisen',
-    'stk', 'stk.', 'stück', 'stange', 'stangen', 'bund', 'bünde',
-    'dose', 'dosen', 'päckchen', 'zehe', 'zehen', 'scheibe', 'scheiben',
-    'blatt', 'blätter', 'tasse', 'tassen', 'glas', 'gläser', 'würfel',
-    'kugel', 'kugeln', 'packung', 'packungen', 'becher',
-}
+# Erkannte Mengeneinheiten (klein, ohne abschließenden Punkt, mit denen der
+# jeweils erste Wortteil nach der erkannten Menge verglichen wird - siehe
+# _parse_ingredient_line). Kommt aus services/units.py, damit hier
+# dieselbe Liste gilt wie bei der eigentlichen Umrechnung
+# (normalize_amount_unit(), unten in _parse_ingredient_line angewendet) -
+# ein unbekanntes Wort landet einfach als Teil des Zutatennamens statt als
+# eigene Einheit, der Import bleibt dadurch immer noch benutzbar, nur die
+# Spalten-Aufteilung ungenauer.
+KNOWN_UNITS = known_unit_keys()
 
 
 class RecipeImportError(Exception):
@@ -288,6 +282,12 @@ def _parse_ingredient_line(line):
     else:
         unit = ''
         name = rest
+
+    # Erkannte Einheit (Masse/Volumen) sofort auf ihre kanonische Form
+    # bringen ("1 kg" -> amount=1000, unit="g") - siehe services/units.py.
+    # Nicht umrechenbare/unbekannte Einheiten (Stk, Prise, "Zwiebel(n)"
+    # ohne jede Einheit, ...) kommen dabei unverändert zurück.
+    amount, unit = normalize_amount_unit(amount, unit)
 
     return {'name': name.strip(), 'amount': amount, 'unit': unit}
 

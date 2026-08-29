@@ -32,6 +32,38 @@ def test_add_shopping_item_success_normalizes_week_start(client, app):
         assert item.week_start == date(2026, 6, 15)
 
 
+def test_add_shopping_item_normalizes_convertible_unit(client, app):
+    from models import ExtraShoppingItem
+
+    resp = client.post("/plan/2026-06-15/shopping-item/add", json={
+        "name": "Milch", "amount": 1, "unit": "Liter",
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["amount"] == 1000
+    assert data["unit"] == "ml"
+
+    with app.app_context():
+        item = ExtraShoppingItem.query.first()
+        assert item.amount == 1000
+        assert item.unit == "ml"
+
+
+def test_add_shopping_item_response_uses_display_unit(client, app):
+    from services.settings import update_display_units
+
+    with app.app_context():
+        update_display_units("kg", "ml")
+
+    resp = client.post("/plan/2026-06-15/shopping-item/add", json={
+        "name": "Zucker", "amount": 2000, "unit": "g",
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["amount"] == 2
+    assert data["unit"] == "kg"
+
+
 def test_add_shopping_item_amount_and_unit_optional(client, app):
     from models import ExtraShoppingItem
 

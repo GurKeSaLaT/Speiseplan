@@ -273,6 +273,26 @@ def test_jsonify_recipe_normalizes_ingredient_names(app, make_recipe):
         assert data["ingredients"] == [{"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren"}]
 
 
+def test_jsonify_recipe_converts_ingredients_to_display_unit(app, make_recipe):
+    from models import Recipe, db
+    from services.settings import update_display_units
+
+    recipe_id = make_recipe(
+        "Kuchen",
+        ingredients=[
+            {"name": "Mehl", "amount": 1500, "unit": "g", "category": None},
+            {"name": "Milch", "amount": 750, "unit": "ml", "category": None},
+        ],
+    )
+    with app.app_context():
+        update_display_units("kg", "l")
+        recipe = db.session.get(Recipe, recipe_id)
+        data = jsonify_recipe(recipe)
+        by_name = {ing["name"]: (ing["amount"], ing["unit"]) for ing in data["ingredients"]}
+        assert by_name["Mehl"] == (1.5, "kg")
+        assert by_name["Milch"] == (0.75, "l")
+
+
 def test_jsonify_side_adds_side_id(app, make_recipe):
     from models import PlanDay, PlanDaySide, db
 

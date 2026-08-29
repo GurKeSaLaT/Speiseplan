@@ -37,6 +37,8 @@ from datetime import date, timedelta
 
 from models import db, Recipe, PlanDay, PlanDaySide
 from services.seasons import recipe_available_now
+from services.settings import get_display_units
+from services.units import convert_for_display
 
 # Deutsche Wochentagsnamen in ISO-Reihenfolge (Montag = Index 0), passend zu
 # date.weekday(). Wird sowohl für die Berechnung des Wochenstarts als auch
@@ -390,7 +392,16 @@ def jsonify_recipe(recipe):
     unterschiedlich eingetragen wurden. Die Einkaufslisten-Kategorie jeder
     Zutat (siehe services/shopping.py) wird unverändert mitgegeben - sie
     bestimmt dort, in welcher Gruppe/Reihenfolge die Zutat einsortiert wird.
+
+    Mengen/Einheiten werden dabei von der kanonischen Speicherform (immer
+    g/ml, siehe services/units.py) in die vom Nutzer gewählte Anzeige-
+    Einheit umgerechnet (services/settings.py) - IMMER dieselbe Einheit für
+    dieselbe Familie, egal welches Rezept, weshalb die rein clientseitige
+    Aggregation nach "Name+Einheit" in rebuildShoppingList() weiterhin ohne
+    eigene Umrechnung korrekt gleichnamige Zutaten über mehrere Rezepte
+    hinweg zusammenfasst.
     """
+    display_units = get_display_units()
     return {
         "id": recipe.id,
         "name": recipe.name,
@@ -402,7 +413,11 @@ def jsonify_recipe(recipe):
         "carbs": recipe.carbs,
         "fat": recipe.fat,
         "ingredients": [
-            {"name": ing.name.strip().title(), "amount": ing.amount, "unit": ing.unit, "category": ing.category}
+            {
+                "name": ing.name.strip().title(),
+                **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
+                "category": ing.category,
+            }
             for ing in recipe.ingredients
         ]
     }

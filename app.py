@@ -22,10 +22,12 @@ from flask_wtf import CSRFProtect
 from models import db, Category, RecipeSeason, PlanDaySide
 from services.seasons import SEASON_PRESETS
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
+from services.units import renormalize_existing_ingredients
 from routes.plan import plan_bp
 from routes.manage import manage_bp
 from routes.recipes import recipes_bp
 from routes.categories import categories_bp
+from routes.settings import settings_bp
 
 app = Flask(__name__)
 # SQLite-Datei liegt in Flasks Standard-"instance"-Ordner (instance/speiseplan.db),
@@ -92,6 +94,7 @@ app.register_blueprint(plan_bp)
 app.register_blueprint(manage_bp)
 app.register_blueprint(recipes_bp)
 app.register_blueprint(categories_bp)
+app.register_blueprint(settings_bp)
 
 
 def init_db():
@@ -214,6 +217,13 @@ def init_db():
         for cat_name in default_categories:
             db.session.add(Category(name=cat_name))
         db.session.commit()
+
+    # Bestehende Zutaten-Mengen/Einheiten (z.B. "Gramm", "kg", "gr" als
+    # reiner Text aus der Zeit vor der Einheiten-Vereinheitlichung) einmalig
+    # auf die kanonische Form bringen (siehe services/units.py). Wie die
+    # Migrationsschritte oben idempotent: auf einer bereits vollständig
+    # kanonischen Datenbank ändert ein erneuter Aufruf nichts mehr.
+    renormalize_existing_ingredients()
 
 
 # Migration läuft synchron beim Modul-Import, nicht erst beim ersten
