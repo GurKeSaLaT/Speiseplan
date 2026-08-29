@@ -162,6 +162,24 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   exakt und verlustfrei umkehrbar (Faktor 1000), ein Speichern ohne
   Änderung eines in Kilogramm angezeigten Werts liefert über
   `normalize_amount_unit()` wieder exakt denselben kanonischen Gramm-Wert.
+- **Zutaten gleichsetzen.** Neues Modell `IngredientAlias` (`raw_name`
+  eindeutig -> `canonical_name`) + `services/ingredient_aliases.py`:
+  ordnet konkrete Zutatennamen (z.B. "Spaghetti", "Fusilli") einem
+  gemeinsamen Namen zu (z.B. "Nudeln"), NUR für die Einkaufsliste - die
+  Zutatenliste eines einzelnen Rezepts zeigt immer den ursprünglich
+  eingetragenen Namen unverändert. `normalize_ingredient_name()` wird in
+  `jsonify_recipe()` anstelle des bisherigen reinen `.strip().title()`
+  aufgerufen (macht das intern weiterhin, plus Alias-Ersetzung, falls
+  vorhanden) - ein Zutatenname ohne Eintrag bleibt einfach er selbst,
+  keine Gruppierung ist der Standardfall. Eigene Verwaltungsseite
+  `/manage/ingredient-aliases` (Blueprint `settings`, Kachel auf
+  `/manage`): eine Zeile pro aktuell in irgendeinem Rezept verwendetem
+  Zutatennamen mit editierbarem "gilt als"-Feld, alle auf einmal per
+  Formular speicherbar (parallele `raw_name[]`/`canonical_name[]`-Listen,
+  analog zu den Zutatenzeilen der Rezept-Formulare) statt eines
+  Rundtrips pro Zeile - bei potenziell hunderten Zutaten sonst
+  unpraktisch. Ein Feld, das unverändert bleibt (gilt weiterhin nur sich
+  selbst), erzeugt keinen Alias-Datensatz.
 
 ## Vorgeschlagen
 

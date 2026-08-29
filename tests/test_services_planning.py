@@ -293,6 +293,28 @@ def test_jsonify_recipe_converts_ingredients_to_display_unit(app, make_recipe):
         assert by_name["Milch"] == (0.75, "l")
 
 
+def test_jsonify_recipe_applies_ingredient_alias(app, make_recipe):
+    from models import Recipe, db
+    from services.ingredient_aliases import set_alias
+
+    recipe_id = make_recipe("Pasta", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g", "category": None}])
+    with app.app_context():
+        set_alias("Spaghetti", "Nudeln")
+        recipe = db.session.get(Recipe, recipe_id)
+        data = jsonify_recipe(recipe)
+        assert data["ingredients"][0]["name"] == "Nudeln"
+
+
+def test_jsonify_recipe_ingredient_without_alias_keeps_own_name(app, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Reisgericht", ingredients=[{"name": "reis", "amount": 200, "unit": "g", "category": None}])
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        data = jsonify_recipe(recipe)
+        assert data["ingredients"][0]["name"] == "Reis"
+
+
 def test_jsonify_side_adds_side_id(app, make_recipe):
     from models import PlanDay, PlanDaySide, db
 

@@ -37,6 +37,7 @@ from datetime import date, timedelta
 
 from models import db, Recipe, PlanDay, PlanDaySide
 from services.seasons import recipe_available_now
+from services.ingredient_aliases import normalize_ingredient_name
 from services.settings import get_display_units
 from services.units import convert_for_display
 
@@ -384,14 +385,20 @@ def jsonify_recipe(recipe):
     templates/plan.html in das window.PLAN_DATA-JavaScript-Objekt
     eingebettet werden kann.
 
-    Zutatennamen werden dabei mit .strip().title() normalisiert (führende/
+    Zutatennamen werden dabei über normalize_ingredient_name() (services/
+    ingredient_aliases.py) aufbereitet: zunächst .strip().title() (führende/
     nachgestellte Leerzeichen entfernt, erster Buchstabe jedes Worts groß),
     damit z.B. "  nudeln" und "Nudeln" in der clientseitig konsolidierten
-    Einkaufsliste (siehe static/plan-shopping.js: rebuildShoppingList) als derselbe
-    Eintrag erkannt werden, auch wenn sie bei verschiedenen Rezepten leicht
-    unterschiedlich eingetragen wurden. Die Einkaufslisten-Kategorie jeder
-    Zutat (siehe services/shopping.py) wird unverändert mitgegeben - sie
-    bestimmt dort, in welcher Gruppe/Reihenfolge die Zutat einsortiert wird.
+    Einkaufsliste (siehe static/plan-shopping.js: rebuildShoppingList) als
+    derselbe Eintrag erkannt werden, UND zusätzlich durch eine vom Nutzer
+    gepflegte Alias-Zuordnung ersetzt, falls vorhanden (z.B. "Spaghetti" ->
+    "Nudeln", "Olivenöl" -> "Öl") - so werden auch verschiedene konkrete
+    Zutaten, die für den Einkauf dasselbe sind, zu einem Posten
+    zusammengefasst. Das Rezept selbst (Anlegen-/Bearbeiten-Formular) zeigt
+    weiterhin den ursprünglich eingetragenen Namen unverändert. Die
+    Einkaufslisten-Kategorie jeder Zutat (siehe services/shopping.py) wird
+    unverändert mitgegeben - sie bestimmt dort, in welcher Gruppe/
+    Reihenfolge die Zutat einsortiert wird.
 
     Mengen/Einheiten werden dabei von der kanonischen Speicherform (immer
     g/ml, siehe services/units.py) in die vom Nutzer gewählte Anzeige-
@@ -414,7 +421,7 @@ def jsonify_recipe(recipe):
         "fat": recipe.fat,
         "ingredients": [
             {
-                "name": ing.name.strip().title(),
+                "name": normalize_ingredient_name(ing.name),
                 **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
                 "category": ing.category,
             }

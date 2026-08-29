@@ -24,6 +24,10 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
   In der Verwaltung (⚙️ → 📏 Einheiten) lässt sich einstellen, ob Mengen in
   g/kg bzw. ml/l angezeigt werden - gilt überall dort, wo Mengen zu sehen
   sind (Rezept-Bearbeiten, Import-Vorschau, Einkaufsliste).
+- **Zutaten gleichsetzen** – in der Verwaltung (⚙️ → 🔗 Zutaten gleichsetzen)
+  lässt sich festlegen, dass z.B. "Spaghetti" und "Fusilli" auf der
+  Einkaufsliste als "Nudeln" zusammengefasst werden. Betrifft nur die
+  Einkaufsliste - Rezepte zeigen weiterhin ihren eigenen Zutatennamen.
 - **Rezept-Import von neun deutschsprachigen Kochseiten** – chefkoch.de,
   lecker.de, essen-und-trinken.de, EAT SMARTER, Küchengötter,
   gutekueche.de/.at, DasKochrezept, BRIGITTE und Emmikochteinfach. Ein Link
@@ -128,7 +132,7 @@ routes/
   recipes.py                  Rezept-CRUD + Rezept-Import (Blueprint "recipes")
   categories.py                Kategorie-CRUD (Blueprint "categories")
   manage.py                    Verwaltungs-Startseite (Blueprint "manage")
-  settings.py                  Einheiten-Einstellungen (Blueprint "settings")
+  settings.py                  Einheiten- + Zutaten-Gleichsetzung-Einstellungen (Blueprint "settings")
 services/
   planning.py                  Wochen-/Datums-Helfer, Kategorie-Balance, Rezeptauswahl,
                                 Favoriten-/Wiederholungs-Gewichtung
@@ -137,6 +141,7 @@ services/
   recipe_import.py             Rezept-Import von 9 Kochseiten (schema.org/Recipe-JSON-LD auslesen)
   units.py                     Einheiten-Normalisierung/-Umrechnung (Masse -> g, Volumen -> ml)
   settings.py                  Speicherung der Anzeige-Einheiten-Einstellung (AppSettings)
+  ingredient_aliases.py        Zutaten-Gleichsetzung für die Einkaufsliste (IngredientAlias)
 templates/                    Jinja2-Templates (Plan-Kalender, Wochenplan erstellen, Verwaltung)
 static/
   plan.js                       Plan-Seite: Zustand, Tageskarten, Hauptgericht, Tages-Tausch

@@ -1,0 +1,72 @@
+{# Zutaten-Gleichsetzung (/manage/ingredient-aliases): eine Zeile pro
+   aktuell in irgendeinem Rezept verwendetem Zutatennamen, mit einem
+   editierbaren "gilt als"-Feld - siehe routes/settings.py:
+   ingredient_aliases_view()/update_ingredient_aliases() und
+   services/ingredient_aliases.py. Trägt ein Nutzer z.B. bei "Fusilli" den
+   Namen "Nudeln" ein, werden "Fusilli" und jede andere Zutat mit "Nudeln"
+   als gilt-als-Wert auf der Einkaufsliste zu EINEM Posten zusammengefasst
+   - die Zutatenliste eines einzelnen Rezepts zeigt weiterhin "Fusilli". #}
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0 fw-bold">🔗 Zutaten gleichsetzen</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-muted">
+                    Trage bei "Gilt als" einen gemeinsamen Namen ein, um mehrere Zutaten auf der
+                    Einkaufsliste zu einem Posten zusammenzufassen (z.B. "Spaghetti" und "Fusilli" →
+                    "Nudeln", "Olivenöl" und "Sonnenblumenöl" → "Öl"). Ohne Änderung gilt eine Zutat
+                    weiterhin nur sich selbst. Betrifft nur die Einkaufsliste - Rezepte zeigen weiterhin
+                    ihren ursprünglich eingetragenen Zutatennamen.
+                </p>
+
+                {% if rows %}
+                <input type="text" id="ingredientFilter" class="form-control mb-3" placeholder="🔍 Zutat suchen..." autocomplete="off">
+
+                <form action="/update-ingredient-aliases" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2">
+                        <div class="col-6">Zutat</div>
+                        <div class="col-6">Gilt als</div>
+                    </div>
+                    <div id="ingredientRows">
+                        {% for row in rows %}
+                        <div class="row g-2 mb-1 ingredient-alias-row">
+                            <div class="col-6">
+                                <input type="hidden" name="raw_name[]" value="{{ row.raw_name }}">
+                                <input type="text" class="form-control form-control-sm" value="{{ row.raw_name }}" disabled>
+                            </div>
+                            <div class="col-6">
+                                <input type="text" name="canonical_name[]" class="form-control form-control-sm{% if row.canonical_name != row.raw_name %} border-success{% endif %}" value="{{ row.canonical_name }}">
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-dark fw-bold mt-3">Speichern</button>
+                </form>
+                {% else %}
+                <div class="text-center p-5 text-muted">Noch keine Zutaten vorhanden.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Rein clientseitiger Filter (kein Server-Roundtrip nötig) - blendet
+// Zeilen aus, deren Zutatenname nicht auf die Eingabe passt. Bei
+// potenziell hunderten Zutaten sonst unpraktisch, alle auf einmal zu
+// überblicken.
+document.getElementById('ingredientFilter')?.addEventListener('input', function() {
+    const query = this.value.trim().toLowerCase();
+    document.querySelectorAll('.ingredient-alias-row').forEach(row => {
+        const name = row.querySelector('input[name="raw_name[]"]').value.toLowerCase();
+        row.style.display = name.includes(query) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

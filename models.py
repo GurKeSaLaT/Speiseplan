@@ -243,3 +243,29 @@ class AppSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     mass_unit = db.Column(db.String(10), nullable=False, default='g')
     volume_unit = db.Column(db.String(10), nullable=False, default='ml')
+
+
+class IngredientAlias(db.Model):
+    """Ordnet einen konkreten Zutatennamen (z.B. "Spaghetti", "Olivenöl")
+    einem übergeordneten, gemeinsamen Namen zu (z.B. "Nudeln", "Öl") - für
+    die Einkaufsliste, die sonst "Spaghetti" und "Fusilli" als zwei
+    getrennte Posten führen würde, obwohl man dafür meist einfach
+    "Nudeln" einkauft. Siehe services/ingredient_aliases.py:
+    normalize_ingredient_name() und routes/settings.py: die Verwaltungs-
+    Seite, auf der Nutzer diese Zuordnung selbst pflegen können.
+
+    ÄNDERT NICHT den in Ingredient.name gespeicherten/im Rezept
+    angezeigten Namen - ein Rezept zeigt weiterhin "Spaghetti" in seiner
+    eigenen Zutatenliste. Nur beim Aufbau der Einkaufsliste (siehe
+    services/planning.py: jsonify_recipe) wird raw_name durch
+    canonical_name ersetzt, damit sich Posten über mehrere Rezepte hinweg
+    sinnvoll zusammenfassen lassen. Ein Zutatenname ohne Eintrag hier
+    bleibt einfach er selbst (kein Alias = keine Gruppierung nötig).
+
+    raw_name ist bereits in der Form gespeichert, in der jsonify_recipe()
+    nachschlägt (.strip().title(), siehe dort) - Groß-/Kleinschreibung und
+    Leerraum spielen beim Zuordnen daher keine Rolle.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    raw_name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    canonical_name = db.Column(db.String(100), nullable=False)
