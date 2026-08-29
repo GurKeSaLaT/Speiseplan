@@ -323,9 +323,14 @@ if __name__ == '__main__':
     # Lokal ohne gesetzte Variablen bleiben Debug-/Autoreload-Modus an und
     # der Port bei 5000 (kein Root nötig, anders als bei Port 80).
     #
-    # host='0.0.0.0' ist in jedem Fall nötig: mit dem Flask-Standard
-    # ('127.0.0.1') wäre die App selbst innerhalb des Docker-Containers nur
-    # von localhost aus erreichbar, also von außen gar nicht.
+    # host='0.0.0.0' ist im Docker-Deployment nötig: mit dem Flask-
+    # Standard ('127.0.0.1') wäre die App selbst innerhalb des Containers
+    # nur von localhost aus erreichbar, also von außen gar nicht. Für
+    # lokale Testläufe außerhalb von Docker per HOST-Umgebungsvariable
+    # überschreibbar, z.B. HOST=127.0.0.1, damit der lokale Testserver
+    # bewusst NICHT über die LAN-IP der Maschine erreichbar ist, sondern
+    # nur von diesem Rechner selbst.
     debug_mode = os.environ.get('FLASK_DEBUG', '1') == '1'
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=debug_mode)
+    host = os.environ.get('HOST', '0.0.0.0')
+    app.run(host=host, port=port, debug=debug_mode)
