@@ -256,17 +256,49 @@
         renderHint(hintEl, titleCase(event.target.value));
     });
 
+    /** Leert den Alias-/Nährwert-Hinweis JEDER Zutatenzeile außer der
+     * übergebenen - der Hinweis (inkl. des ggf. enthaltenen "Nährwerte
+     * nachtragen"-Kastens) soll immer nur an GENAU EINER Zeile stehen,
+     * nämlich der gerade fokussierten/bearbeiteten, statt an allen
+     * gleichzeitig (das wäre bei einer Zutatenliste mit vielen Zeilen
+     * schnell unübersichtlich). */
+    function clearOtherHints(exceptHintEl) {
+        document.querySelectorAll('.ingredient-alias-hint').forEach(el => {
+            if (el !== exceptHintEl) el.innerHTML = '';
+        });
+    }
+
+    /** Zeigt den Hinweis für das gerade fokussierte Namensfeld (und leert
+     * alle übrigen, siehe oben) - sowohl beim echten Hineinklicken als
+     * auch, wenn ein Klick auf die Alias-Anzeige (.ing-name-display,
+     * siehe wireEditableIngredientNames) das darunterliegende <input>
+     * programmatisch fokussiert. 'focusin' statt 'focus', da Letzteres
+     * nicht bubbelt und sich damit nicht auf document.body delegieren
+     * ließe. Bewusst KEIN Leeren beim Verlassen des Felds (blur/focusout):
+     * die Hinweis-Box enthält selbst anklickbare Buttons ("Alias setzen",
+     * "Nährwerte speichern") - ein Leeren beim Blur würde deren Klick
+     * (blur feuert VOR click) ins Leere laufen lassen. Der Hinweis bleibt
+     * daher stehen, bis eine ANDERE Zutatenzeile fokussiert wird. */
+    document.body.addEventListener('focusin', event => {
+        if (!event.target.matches('input[name="ing_name[]"]')) return;
+        const hintEl = hintContainerFor(event.target);
+        if (!hintEl) return;
+        clearOtherHints(hintEl);
+        renderHint(hintEl, titleCase(event.target.value));
+    });
+
     /** Zeigt bei bereits bestehenden Zutatenzeilen (recipe_edit_list.html)
      * standardmäßig den aufgelösten Alias-Namen (server-seitig als
      * .ing-name-display-<span> vorbefüllt, siehe dort) statt des
      * tatsächlich gespeicherten Namens - erst ein Klick/Tastatur-Aktivieren
      * blendet das eigentliche, editierbare <input> ein (dessen Wert sich
-     * dadurch NIE von selbst ändert). Verlässt man das Feld wieder (blur)
-     * OHNE dass currentTarget noch fokussiert ist, wird wieder der
-     * (ggf. neu aufgelöste) Alias-Name angezeigt. Läuft einmalig beim
-     * Skript-Laden über alle zu diesem Zeitpunkt im DOM stehenden Paare -
-     * die per addEditIngredientField() dynamisch angehängten NEUEN Zeilen
-     * haben bewusst KEIN .ing-name-display (eine noch leere neue Zutat hat
+     * dadurch NIE von selbst ändert; das Fokussieren löst dabei automatisch
+     * obigen focusin-Handler aus, der auch den Hinweis einblendet). Verlässt
+     * man das Feld wieder (blur), wird wieder der (ggf. neu aufgelöste)
+     * Alias-Name angezeigt. Läuft einmalig beim Skript-Laden über alle zu
+     * diesem Zeitpunkt im DOM stehenden Paare - die per
+     * addEditIngredientField() dynamisch angehängten NEUEN Zeilen haben
+     * bewusst KEIN .ing-name-display (eine noch leere neue Zutat hat
      * nichts zum "Auflösen"), brauchen diese Verdrahtung also nicht. */
     function wireEditableIngredientNames() {
         document.querySelectorAll('.ing-name-display').forEach(display => {
@@ -293,19 +325,4 @@
         });
     }
     wireEditableIngredientNames();
-
-    /** Der Alias-/Nährwert-Hinweis (renderHint, siehe oben) erscheint sonst
-     * erst, sobald in ein Namensfeld getippt wird (siehe der
-     * 'input'-Listener oben) - beim Öffnen eines Bearbeiten-Modals mit
-     * bereits ausgefüllten Zutatenzeilen (recipe_edit_list.html) stünde er
-     * dadurch trotz vorhandenem Wert zunächst leer da, inklusive des
-     * "Nährwerte nachtragen"-Kastens, den man dann faktisch nie zu sehen
-     * bekäme. Läuft deshalb einmalig für jedes bereits ausgefüllte
-     * Namensfeld beim Laden nach - identisch zu einem simulierten
-     * 'input'-Ereignis. */
-    document.querySelectorAll('input[name="ing_name[]"]').forEach(input => {
-        if (!input.value.trim()) return;
-        const hintEl = hintContainerFor(input);
-        if (hintEl) renderHint(hintEl, titleCase(input.value));
-    });
 })();
