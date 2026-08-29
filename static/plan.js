@@ -181,6 +181,12 @@ function rerollSingleDay(dayIndex) {
  * routes/plan/day_actions.py: set_main_day).
  */
 function renderMainDisplay(dayIndex) {
+    // Rechts oben neben dem Gericht statt einer eigenen vollbreiten Zeile
+    // (siehe renderServingsHtml() weiter unten für den Grund) - dadurch
+    // beginnen Datum/Gerichtname weiterhin ganz oben links, ohne dass die
+    // Personenzahl stattdessen zwischen Nährwert-Zeile und Beilagen landet.
+    const servingsHtml = renderServingsHtml(dayIndex);
+
     const recipe = weeklyPlanRecipes[dayIndex];
     if (recipe) {
         const cookedClass = dayCooked[dayIndex] ? ' dish-cooked' : '';
@@ -190,10 +196,13 @@ function renderMainDisplay(dayIndex) {
                     <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayLabels[dayIndex]}</h5>
                     <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${recipe.name}</span>
                 </div>
-                <div class="d-flex align-items-center gap-1">
-                    <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${recipe.category_name}</span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay(${dayIndex})">🎲</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Anderes Rezept auswählen" onclick="openMainManualSelect(${dayIndex})">✏️</button>
+                <div class="text-end">
+                    ${servingsHtml}
+                    <div class="d-flex align-items-center gap-1 justify-content-end mt-1">
+                        <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${recipe.category_name}</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Diesen Tag neu würfeln" onclick="rerollSingleDay(${dayIndex})">🎲</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Anderes Rezept auswählen" onclick="openMainManualSelect(${dayIndex})">✏️</button>
+                    </div>
                 </div>
             </div>
             <div class="text-muted small font-monospace bg-light p-2 rounded dish-clickable${cookedClass}" role="button" title="Details anzeigen" onclick="openRecipeDetail(${dayIndex}, null)">
@@ -211,12 +220,26 @@ function renderMainDisplay(dayIndex) {
     // Hinweistext statt einer nichtssagend leeren Karte.
     const placeholderText = dayExcluded[dayIndex] ? '🚫 Von der Planung ausgenommen' : 'Kein passendes Rezept verfügbar';
     return `
+        <div class="d-flex justify-content-end mb-1">${servingsHtml}</div>
         <div class="text-center text-muted">
             <h5 class="fw-bold mb-1">${dayLabels[dayIndex]}</h5>
             <span>${placeholderText}</span>
             <div class="mt-1">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openMainManualSelect(${dayIndex})">✏️ Rezept auswählen</button>
             </div>
+        </div>
+    `;
+}
+
+/** Personenzahl-Eingabefeld für eine Tageskarte - eigene Funktion statt
+ * eines festen HTML-Blocks in renderDayCardBody, da es jetzt in
+ * renderMainDisplay() selbst eingebettet wird (siehe dortiger Kommentar),
+ * für BEIDE Zweige (Rezept vorhanden/Platzhalter) aber identisch aussieht. */
+function renderServingsHtml(dayIndex) {
+    return `
+        <div class="d-flex align-items-center justify-content-end gap-1">
+            <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Personen</label>
+            <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
         </div>
     `;
 }
@@ -270,9 +293,10 @@ function setMainRecipe(dayIndex, recipeId) {
 }
 
 /**
- * Baut den kompletten Innenbereich einer Tageskarte auf: Personenzahl-Zeile,
- * Hauptgericht-Anzeigebereich (in einem eigenen main-dish-display-<i>-Div,
- * das openMainManualSelect gezielt ersetzt) und den Beilagen-Bereich
+ * Baut den kompletten Innenbereich einer Tageskarte auf: Hauptgericht-
+ * Anzeigebereich (in einem eigenen main-dish-display-<i>-Div, das
+ * openMainManualSelect gezielt ersetzt - enthält auch die Personenzahl-
+ * Eingabe, siehe renderMainDisplay) und den Beilagen-Bereich
  * (renderSidesSection, siehe static/plan-sides.js). Liest dabei
  * ausschließlich aus dem aktuellen JavaScript-Speicher (weeklyPlanRecipes/
  * weeklySideRecipes/dayServings/dayExcluded), nicht aus dem DOM - wird
@@ -281,20 +305,15 @@ function setMainRecipe(dayIndex, recipeId) {
  * sich beim Tausch potenziell jedes Feld ändert.
  */
 function renderDayCardBody(dayIndex) {
-    // Datum+Gerichtname sollen oben links in der Karte beginnen (kein
-    // Element mehr davor) - die Personenzahl folgt deshalb erst NACH dem
-    // Hauptgericht-Anzeigebereich, nicht mehr davor.
-    const servingsHtml = `
-        <div class="d-flex justify-content-end align-items-center gap-1 mt-2 mb-2">
-            <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Personen</label>
-            <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
-        </div>
-    `;
-
+    // Die Personenzahl-Eingabe ist Teil von renderMainDisplay() selbst
+    // (oben rechts neben dem Gericht) statt einer eigenen Zeile hier -
+    // Datum/Gerichtname beginnen dadurch ganz oben links in der Karte,
+    // ohne dass die Personenzahl zwischen Nährwert-Zeile und Beilagen
+    // landet (siehe dortiger Kommentar).
     const mainDisplayHtml = `<div class="main-dish-display" id="main-dish-display-${dayIndex}">${renderMainDisplay(dayIndex)}</div>`;
     const sidesHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSidesSection(dayIndex)}</div>`;
 
-    return mainDisplayHtml + servingsHtml + sidesHtml;
+    return mainDisplayHtml + sidesHtml;
 }
 
 /**
