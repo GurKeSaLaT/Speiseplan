@@ -7,6 +7,8 @@ def test_ingredient_aliases_view_lists_known_names(client, make_recipe):
     resp = client.get("/manage/ingredient-aliases")
     assert resp.status_code == 200
     assert b"Spaghetti" in resp.data
+    assert b"fuzzy_search.js" in resp.data
+    assert b"wireFuzzyFilter" in resp.data
 
 
 def test_ingredient_aliases_view_empty_state(client):

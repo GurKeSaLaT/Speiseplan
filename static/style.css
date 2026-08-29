@@ -229,3 +229,18 @@ body {
     .card-body { padding: 1.25rem !important; }
     .navbar-custom { border-radius: 0; }
 }
+
+/* Von den clientseitigen Listen-Filtern verwendet (Rezepte bearbeiten,
+   Kategorien verwalten, Zutaten gleichsetzen - siehe static/fuzzy_search.js),
+   um eine Zeile auszublenden. Bewusst eine EIGENE Klasse statt direkt
+   element.style.display = 'none' zu setzen: gefilterte Zeilen tragen oft
+   auch Bootstraps .d-flex-Utility-Klasse, die mit !important definiert
+   ist (siehe bootstrap.min.css: ".d-flex{display:flex!important}") - ein
+   nicht-!important-Inline-Style dagegen verliert IMMER gegen eine
+   !important-Regel, egal wie spät er gesetzt wird, wodurch die Zeile nie
+   wirklich verschwindet. Diese Regel wird nach bootstrap.min.css geladen
+   (siehe base.html) und gewinnt dadurch bei gleicher !important-Stärke
+   über die Ladereihenfolge. */
+.search-hidden {
+    display: none !important;
+}

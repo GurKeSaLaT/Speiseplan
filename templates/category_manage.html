@@ -45,16 +45,11 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Rein clientseitiger Filter über die Kategorienliste (kein Server-
-// Roundtrip nötig) - blendet Zeilen aus, deren Name nicht auf die
-// Eingabe passt.
-document.getElementById('categoryFilter')?.addEventListener('input', function() {
-    const query = this.value.trim().toLowerCase();
-    document.querySelectorAll('.category-list-row').forEach(row => {
-        row.style.display = row.dataset.name.includes(query) ? '' : 'none';
-    });
-});
+// Rein clientseitiger Fuzzy-Filter über die Kategorienliste (siehe
+// static/fuzzy_search.js) - kein Server-Roundtrip nötig.
+wireFuzzyFilter(document.getElementById('categoryFilter'), '.category-list-row', row => row.dataset.name);
 </script>
 {% endblock %}
 

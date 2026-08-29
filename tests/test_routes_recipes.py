@@ -58,6 +58,13 @@ def test_recipe_edit_list_view_has_search_filter(client, make_recipe):
     assert resp.status_code == 200
     assert b'id="recipeFilter"' in resp.data
     assert b"recipe-list-row" in resp.data
+    # Muss ueber fuzzy_search.js/wireFuzzyFilter laufen, NICHT ueber
+    # element.style.display direkt - siehe static/style.css: .search-hidden-
+    # Kommentar (die Zeilen tragen auch Bootstraps !important .d-flex, das
+    # einen einfachen Inline-Style sonst stillschweigend ueberstimmt).
+    assert b"fuzzy_search.js" in resp.data
+    assert b"wireFuzzyFilter" in resp.data
+    assert b"row.style.display" not in resp.data
 
 
 def test_recipe_edit_list_view_no_search_filter_when_empty(client):

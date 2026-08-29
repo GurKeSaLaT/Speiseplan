@@ -14,6 +14,13 @@ def test_category_manage_view_has_search_filter_when_categories_exist(client, ma
     resp = client.get("/manage/categories")
     assert b'id="categoryFilter"' in resp.data
     assert b"category-list-row" in resp.data
+    # Muss ueber fuzzy_search.js/wireFuzzyFilter laufen, NICHT ueber
+    # element.style.display direkt - siehe static/style.css: .search-hidden-
+    # Kommentar fuer den Grund (Bootstraps .d-flex ist !important und
+    # ueberstimmt einen einfachen Inline-Style sonst stillschweigend).
+    assert b"fuzzy_search.js" in resp.data
+    assert b"wireFuzzyFilter" in resp.data
+    assert b"row.style.display" not in resp.data
 
 
 def test_category_manage_view_no_search_filter_when_empty(client):

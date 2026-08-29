@@ -197,6 +197,7 @@
 {% endfor %}
 
 <script>window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};</script>
+<script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_alias_hint.js') }}"></script>
 <script>
@@ -205,14 +206,9 @@
 // eingebundenen static/ingredient_category_select.js - dieselbe Funktion
 // nutzt auch recipe_create.html, daher hier nicht dupliziert gepflegt.
 
-// Rein clientseitiger Filter über die Rezeptliste (kein Server-Roundtrip
-// nötig) - blendet Zeilen aus, deren Name nicht auf die Eingabe passt.
-document.getElementById('recipeFilter')?.addEventListener('input', function() {
-    const query = this.value.trim().toLowerCase();
-    document.querySelectorAll('.recipe-list-row').forEach(row => {
-        row.style.display = row.dataset.name.includes(query) ? '' : 'none';
-    });
-});
+// Rein clientseitiger Fuzzy-Filter über die Rezeptliste (siehe
+// static/fuzzy_search.js) - kein Server-Roundtrip nötig.
+wireFuzzyFilter(document.getElementById('recipeFilter'), '.recipe-list-row', row => row.dataset.name);
 
 // Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
 // Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
