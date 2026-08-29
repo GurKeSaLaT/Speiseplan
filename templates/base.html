@@ -188,8 +188,37 @@
         var dropdown = bootstrap.Dropdown.getOrCreateInstance(toggle);
 
         if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
-            dropdownLi.addEventListener('mouseenter', function() { dropdown.show(); });
-            dropdownLi.addEventListener('mouseleave', function() { dropdown.hide(); });
+            // Zwischen dem Toggle-Link und dem per Popper absolut
+            // positionierten Menü liegt ein kleiner, von KEINEM Element
+            // abgedeckter Abstand (--bs-dropdown-spacer, standardmäßig
+            // 0.125rem). Bewegt man die Maus langsam vom Link zum Menü,
+            // durchquert der Mauszeiger diesen "toten" Bereich als
+            // eigenen Zwischenschritt -> mouseleave feuert auf dem <li>,
+            // noch bevor der Zeiger das Menü erreicht (bei einer schnellen
+            // Bewegung überspringt der Browser diese Zwischenposition
+            // dagegen oft ganz, daher schließt sich das Menü dann nicht).
+            // Statt sofort zu schließen, wird das Schließen daher leicht
+            // verzögert und bei einem erneuten mouseenter (Zeiger im Menü
+            // angekommen) wieder verworfen - überbrückt den Abstand,
+            // unabhängig von seiner exakten Pixelgröße.
+            var closeTimer = null;
+            function cancelClose() {
+                if (closeTimer !== null) {
+                    clearTimeout(closeTimer);
+                    closeTimer = null;
+                }
+            }
+            dropdownLi.addEventListener('mouseenter', function() {
+                cancelClose();
+                dropdown.show();
+            });
+            dropdownLi.addEventListener('mouseleave', function() {
+                cancelClose();
+                closeTimer = setTimeout(function() {
+                    closeTimer = null;
+                    dropdown.hide();
+                }, 200);
+            });
         }
 
         toggle.addEventListener('click', function(event) {
