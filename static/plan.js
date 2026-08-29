@@ -281,8 +281,11 @@ function setMainRecipe(dayIndex, recipeId) {
  * sich beim Tausch potenziell jedes Feld ändert.
  */
 function renderDayCardBody(dayIndex) {
+    // Datum+Gerichtname sollen oben links in der Karte beginnen (kein
+    // Element mehr davor) - die Personenzahl folgt deshalb erst NACH dem
+    // Hauptgericht-Anzeigebereich, nicht mehr davor.
     const servingsHtml = `
-        <div class="d-flex justify-content-end align-items-center gap-1 mb-2">
+        <div class="d-flex justify-content-end align-items-center gap-1 mt-2 mb-2">
             <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Personen</label>
             <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
         </div>
@@ -291,7 +294,7 @@ function renderDayCardBody(dayIndex) {
     const mainDisplayHtml = `<div class="main-dish-display" id="main-dish-display-${dayIndex}">${renderMainDisplay(dayIndex)}</div>`;
     const sidesHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSidesSection(dayIndex)}</div>`;
 
-    return servingsHtml + mainDisplayHtml + sidesHtml;
+    return mainDisplayHtml + servingsHtml + sidesHtml;
 }
 
 /**

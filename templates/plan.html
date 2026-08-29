@@ -204,26 +204,12 @@
     background-color: var(--highlight-bg);
 }
 /* Deutlich auffälliger als die frühere reine 4px-Linksrandmarkierung:
-   umlaufender Rahmen, sanfte Hintergrundfarbe UND ein "Heute"-Tag oben
-   rechts - fällt beim Überfliegen der Woche sofort ins Auge. */
+   umlaufender Rahmen plus sanfte Hintergrundfarbe - kein zusätzliches
+   "Heute"-Tag mehr (der Wochentag-Titel trägt den Hinweis "(Heute)"
+   bereits als Text, siehe routes/plan/pages.py: day_labels). */
 .recipe-day-card.today-card {
-    position: relative;
     border: 2px solid var(--primary-food) !important;
     background-color: var(--highlight-bg);
-}
-.recipe-day-card.today-card::before {
-    content: "HEUTE";
-    position: absolute;
-    top: 8px;
-    right: 12px;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: #fff;
-    background-color: var(--primary-food);
-    padding: 2px 8px;
-    border-radius: 999px;
-    z-index: 1;
 }
 
 /* Ein Gericht (Hauptgericht oder Beilage) im Wochenplan ist per Klick auf
