@@ -283,8 +283,8 @@
     /** Zeigt den Hinweis für das gerade fokussierte Namensfeld (und leert
      * alle übrigen, siehe oben) - sowohl beim echten Hineinklicken als
      * auch, wenn ein Klick auf die Alias-Anzeige (.ing-name-display,
-     * siehe wireEditableIngredientNames) das darunterliegende <input>
-     * programmatisch fokussiert. 'focusin' statt 'focus', da Letzteres
+     * siehe openIngredientNameField weiter unten) das darunterliegende
+     * <input> programmatisch fokussiert. 'focusin' statt 'focus', da Letzteres
      * nicht bubbelt und sich damit nicht auf document.body delegieren
      * ließe. Bewusst KEIN Leeren beim Verlassen des Felds (blur/focusout):
      * die Hinweis-Box enthält selbst anklickbare Buttons ("Alias setzen",
@@ -304,66 +304,80 @@
      * .ing-name-display-<span> vorbefüllt, siehe dort) statt des
      * tatsächlich gespeicherten Namens - erst ein Klick/Tastatur-Aktivieren
      * blendet das eigentliche, editierbare <input> ein (dessen Wert sich
-     * dadurch NIE von selbst ändert; das Fokussieren löst dabei automatisch
-     * obigen focusin-Handler aus, der auch den Hinweis einblendet).
+     * dadurch NIE von selbst ändert).
      *
-     * Verlässt man das Feld wieder, klappt es wieder auf die Alias-Anzeige
-     * um - nicht nur über das eigene blur-Ereignis (das reicht bei genau
-     * einem offenen Feld, ist aber keine Garantie bei schnellem
-     * Herumklicken), sondern zusätzlich aktiv über revertAllOpenExcept()
-     * bei JEDEM Fokuswechsel irgendwo im selben Rezept-Formular: alle noch
-     * offenen Felder außer einem gerade selbst geöffneten klappen dabei
-     * zuverlässig wieder um.
+     * Komplett über Event-Delegation auf document/document.body (wie der
+     * Rest dieser Datei) statt über einen einmaligen Durchlauf mit
+     * direkten Listenern pro Zeile: recipe_edit_list.html hat leicht 50+
+     * Bearbeiten-Modals mit je mehreren Zutatenzeilen gleichzeitig im DOM
+     * (nur per CSS versteckt) - mehrere hundert direkt angehängte
+     * click/keydown/blur-Listener beim Laden der Seite machten sich als
+     * spürbares Ruckeln bemerkbar, Delegation kommt dagegen mit einer
+     * Handvoll Listenern für die GESAMTE Seite aus.
      *
-     * Läuft einmalig beim Skript-Laden über alle zu diesem Zeitpunkt im
-     * DOM stehenden Paare - die per addEditIngredientField() dynamisch
-     * angehängten NEUEN Zeilen haben bewusst KEIN .ing-name-display (eine
-     * noch leere neue Zutat hat nichts zum "Auflösen"), brauchen diese
-     * Verdrahtung also nicht. */
-    const showDisplayFns = new WeakMap();  // <input> -> Funktion, die es auf die Alias-Anzeige zurückklappt
+     * Zum Schließen (zurück auf die Alias-Anzeige) wird bewusst NICHT auf
+     * das blur-Ereignis des <input> gesetzt: das würde voraussetzen, dass
+     * ein Klick auf ein anderes Element dessen Fokus übernimmt - manche
+     * Browser (v.a. Safari) verschieben den Tastaturfokus bei einem Klick
+     * aber NUR auf echte Formularfelder, nicht auf ein einfaches <span>,
+     * wodurch das bisherige Feld dort nie zuverlässig blurte. Stattdessen
+     * ein waschechter 'click'-Listener auf dem gesamten Dokument, der
+     * JEDES noch offene Feld schließt, dessen Zutatenzeile (.ingredient-
+     * row - bewusst die GANZE Zeile inkl. Alias-/Nährwert-Hinweis, nicht
+     * nur die Namens-Spalte, damit ein Klick auf "Alias setzen"/"Nährwerte
+     * speichern" für dieselbe Zeile es nicht versehentlich mit-schließt)
+     * den Klick NICHT enthält - unabhängig davon, ob der Browser dabei
+     * überhaupt einen Fokuswechsel für nötig hält. Per Tastatur (Tab)
+     * ergänzt der focusin-Listener ganz unten dasselbe zusätzlich
+     * zuverlässig, da Tab in jedem Browser echte Fokus-Ereignisse auslöst. */
+    function ingNameInputFor(display) {
+        const input = display.nextElementSibling;
+        return (input && input.matches('.ing-name-input')) ? input : null;
+    }
+    function ingNameDisplayFor(input) {
+        const display = input.previousElementSibling;
+        return (display && display.matches('.ing-name-display')) ? display : null;
+    }
 
-    function revertAllOpenExcept(exceptInput, scopeEl) {
-        formScopeOf(scopeEl).querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
-            if (openInput === exceptInput) return;
-            const revert = showDisplayFns.get(openInput);
-            if (revert) revert();
+    function revertIngredientNameField(input) {
+        const display = ingNameDisplayFor(input);
+        if (!display) return;
+        display.textContent = ALIASES[titleCase(input.value)] || input.value;
+        display.classList.remove('d-none');
+        input.classList.add('d-none');
+    }
+
+    function revertAllOpenIngredientNames(exceptInput) {
+        document.querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
+            if (openInput !== exceptInput) revertIngredientNameField(openInput);
         });
     }
 
-    function wireEditableIngredientNames() {
-        document.querySelectorAll('.ing-name-display').forEach(display => {
-            const input = display.nextElementSibling;
-            if (!input || !input.matches('.ing-name-input')) return;
-
-            function showDisplay() {
-                display.textContent = ALIASES[titleCase(input.value)] || input.value;
-                display.classList.remove('d-none');
-                input.classList.add('d-none');
-            }
-            function showInput() {
-                revertAllOpenExcept(input, input);
-                display.classList.add('d-none');
-                input.classList.remove('d-none');
-                input.focus();
-                input.select();
-            }
-
-            showDisplayFns.set(input, showDisplay);
-            display.addEventListener('click', showInput);
-            display.addEventListener('keydown', event => {
-                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showInput(); }
-            });
-            input.addEventListener('blur', showDisplay);
-        });
+    function openIngredientNameField(display) {
+        const input = ingNameInputFor(display);
+        if (!input) return;
+        revertAllOpenIngredientNames(input);
+        display.classList.add('d-none');
+        input.classList.remove('d-none');
+        input.focus();
+        input.select();
     }
-    wireEditableIngredientNames();
 
-    // Zusätzliches, robustes Zurückklappen bei JEDEM Fokuswechsel im
-    // Dokument (siehe Kommentar oben) - deckt z.B. Tab-Navigation
-    // zwischen zwei zugleich offenen Feldern ab, bei der man sich auf das
-    // blur-Ereignis allein nicht in jedem Browser rechtzeitig verlassen
-    // kann.
+    document.body.addEventListener('click', event => {
+        const display = event.target.closest('.ing-name-display');
+        if (display) openIngredientNameField(display);
+    });
+    document.body.addEventListener('keydown', event => {
+        if (!event.target.matches('.ing-name-display')) return;
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openIngredientNameField(event.target); }
+    });
+    document.addEventListener('click', event => {
+        document.querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
+            const row = openInput.closest('.ingredient-row');
+            if (row && !row.contains(event.target)) revertIngredientNameField(openInput);
+        });
+    });
     document.body.addEventListener('focusin', event => {
-        revertAllOpenExcept(event.target, event.target);
+        revertAllOpenIngredientNames(event.target.matches('.ing-name-input') ? event.target : null);
     });
 })();
