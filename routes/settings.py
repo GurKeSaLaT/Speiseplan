@@ -19,7 +19,9 @@ statt eines eigenen Pakets, da beide Bereiche klein sind):
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from services.ingredient_aliases import get_all_aliases, list_known_ingredient_names, set_alias
+from services.ingredient_aliases import (
+    get_all_aliases, list_known_ingredient_names, normalize_ingredient_name, normalize_name, set_alias,
+)
 from services.settings import get_settings, update_display_units
 from services.units import DISPLAY_UNIT_CHOICES, MASS, VOLUME
 
@@ -79,3 +81,30 @@ def update_ingredient_aliases():
     for raw_name, canonical_name in zip(raw_names, canonical_names):
         set_alias(raw_name, canonical_name)
     return redirect(url_for('settings.ingredient_aliases_view'))
+
+
+@settings_bp.route('/api/ingredient-alias/set', methods=['POST'])
+def api_set_ingredient_alias():
+    """AJAX-Gegenstück zu update_ingredient_aliases() oben: setzt GENAU
+    EINEN Alias sofort beim Eintragen einer Zutat in recipe_create.html/
+    recipe_edit_list.html, ohne die Seite zu verlassen (siehe
+    static/ingredient_alias_hint.js - der "Alias setzen"-Button dort, der
+    beim Fall "weder Alias noch Grundzutat" erscheint).
+
+    Erwartet einen JSON-Body {"raw_name": str, "canonical_name": str}.
+    Gibt die NORMALISIERTEN Werte zurück, damit das Frontend seine lokale
+    Kopie von window.INGREDIENT_ALIASES konsistent mit dem
+    Nachschlage-Schlüssel aktualisieren kann, den auch der Server
+    verwendet (siehe services/ingredient_aliases.py: normalize_name)."""
+    data = request.get_json() or {}
+    raw_name = (data.get('raw_name') or '').strip()
+    canonical_name = (data.get('canonical_name') or '').strip()
+    if not raw_name or not canonical_name:
+        return {"error": "Name und Alias dürfen nicht leer sein."}, 400
+
+    set_alias(raw_name, canonical_name)
+    return {
+        "ok": True,
+        "raw_name": normalize_name(raw_name),
+        "canonical_name": normalize_ingredient_name(raw_name),
+    }

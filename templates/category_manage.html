@@ -24,9 +24,12 @@
                 </form>
 
                 <h5 class="fw-bold mb-3 text-muted">Aktuelle Kategorien:</h5>
+                {% if categories %}
+                <input type="text" id="categoryFilter" class="form-control mb-3" placeholder="🔍 Kategorie suchen..." autocomplete="off">
+                {% endif %}
                 <div class="list-group shadow-sm rounded border">
                     {% for cat in categories %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center py-3">
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-3 category-list-row" data-name="{{ cat.name|lower }}">
                         <span class="fs-5">{{ cat.name }}</span>
                         <form action="/delete-category/{{ cat.id }}" method="POST" class="m-0">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -41,5 +44,17 @@
         </div>
     </div>
 </div>
+
+<script>
+// Rein clientseitiger Filter über die Kategorienliste (kein Server-
+// Roundtrip nötig) - blendet Zeilen aus, deren Name nicht auf die
+// Eingabe passt.
+document.getElementById('categoryFilter')?.addEventListener('input', function() {
+    const query = this.value.trim().toLowerCase();
+    document.querySelectorAll('.category-list-row').forEach(row => {
+        row.style.display = row.dataset.name.includes(query) ? '' : 'none';
+    });
+});
+</script>
 {% endblock %}
 

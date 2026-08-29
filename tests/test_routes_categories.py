@@ -9,6 +9,18 @@ def test_category_manage_view_lists_categories(client, make_category):
     assert b"Fleisch" in resp.data
 
 
+def test_category_manage_view_has_search_filter_when_categories_exist(client, make_category):
+    make_category("Fleisch")
+    resp = client.get("/manage/categories")
+    assert b'id="categoryFilter"' in resp.data
+    assert b"category-list-row" in resp.data
+
+
+def test_category_manage_view_no_search_filter_when_empty(client):
+    resp = client.get("/manage/categories")
+    assert b'id="categoryFilter"' not in resp.data
+
+
 def test_add_category_creates_new_category(client, app):
     from models import Category
 

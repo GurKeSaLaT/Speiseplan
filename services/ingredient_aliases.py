@@ -14,10 +14,12 @@ unverändert von jeder hier gepflegten Zuordnung.
 from models import Ingredient, IngredientAlias, db
 
 
-def _normalize_key(raw_name):
+def normalize_name(raw_name):
     """Dieselbe Normalisierung wie jsonify_recipe() für Zutatennamen
     (.strip().title()) - Groß-/Kleinschreibung und Leerraum sollen beim
-    Nachschlagen/Anlegen eines Alias keine Rolle spielen."""
+    Nachschlagen/Anlegen eines Alias keine Rolle spielen. Öffentlich (kein
+    führender Unterstrich mehr), da routes/settings.py sie auch für die
+    AJAX-Antwort von api_set_ingredient_alias() braucht."""
     return (raw_name or '').strip().title()
 
 
@@ -27,7 +29,7 @@ def normalize_ingredient_name(raw_name):
     einen Alias-Eintrag hat, sonst raw_name selbst (normalisiert) - ein
     unbekannter Zutatenname bleibt also einfach er selbst, keine
     Gruppierung ist der Standardfall."""
-    key = _normalize_key(raw_name)
+    key = normalize_name(raw_name)
     alias = IngredientAlias.query.filter_by(raw_name=key).first()
     return alias.canonical_name if alias else key
 
@@ -38,7 +40,7 @@ def list_known_ingredient_names():
     Verwaltungs-Seite, die JEDEN bekannten Namen als Zeile zeigt, auch
     ohne bestehenden Alias (siehe routes/settings.py: ingredient_aliases_view)."""
     names = db.session.query(Ingredient.name).distinct().all()
-    return sorted({_normalize_key(n[0]) for n in names if n[0] and n[0].strip()})
+    return sorted({normalize_name(n[0]) for n in names if n[0] and n[0].strip()})
 
 
 def get_all_aliases():
@@ -51,8 +53,8 @@ def set_alias(raw_name, canonical_name):
     (nach Normalisierung) identisch mit raw_name, wird ein eventuell
     bestehender Alias stattdessen GELÖSCHT - "sich selbst zugeordnet" ist
     gleichbedeutend mit "kein Alias", das spart unnötige Zeilen."""
-    key = _normalize_key(raw_name)
-    canonical = _normalize_key(canonical_name)
+    key = normalize_name(raw_name)
+    canonical = normalize_name(canonical_name)
     if not key:
         return
     if canonical == key:
@@ -70,6 +72,6 @@ def set_alias(raw_name, canonical_name):
 def delete_alias(raw_name):
     """Entfernt eine Zuordnung wieder (der Zutatenname gruppiert sich
     danach nur noch mit sich selbst) - kein Fehler, falls keine existiert."""
-    key = _normalize_key(raw_name)
+    key = normalize_name(raw_name)
     IngredientAlias.query.filter_by(raw_name=key).delete()
     db.session.commit()

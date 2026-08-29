@@ -33,6 +33,38 @@ def test_recipe_create_view_lists_categories_and_ingredients(client, make_catego
     assert b"Tomaten" in resp.data
 
 
+def test_recipe_create_view_embeds_ingredient_aliases_for_hint_js(client, app):
+    from services.ingredient_aliases import set_alias
+
+    with app.app_context():
+        set_alias("Olivenöl", "Öl")
+
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b"window.INGREDIENT_ALIASES" in resp.data
+    # tojson escaped Umlaute als \uXXXX statt roher UTF-8-Bytes (gültiges,
+    # vom Browser korrekt interpretiertes JS) - hier also auf die
+    # escapte Form prüfen, nicht auf die rohen Zeichen.
+    assert b"Oliven\\u00f6l" in resp.data
+    assert b'id="canonical-names-datalist"' in resp.data
+    # Die Datalist rendert denselben Namen dagegen als normalen HTML-Text
+    # (kein JSON), dort also die unescapte Form erwarten.
+    assert "Öl".encode("utf-8") in resp.data
+
+
+def test_recipe_edit_list_view_has_search_filter(client, make_recipe):
+    make_recipe("Suchbares Gericht")
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert b'id="recipeFilter"' in resp.data
+    assert b"recipe-list-row" in resp.data
+
+
+def test_recipe_edit_list_view_no_search_filter_when_empty(client):
+    resp = client.get("/manage/recipe/edit-list")
+    assert b'id="recipeFilter"' not in resp.data
+
+
 def test_recipe_edit_list_view_shows_season_badges(client, app, make_recipe):
     from models import RecipeSeason, db
     from services.seasons import SEASON_PRESETS

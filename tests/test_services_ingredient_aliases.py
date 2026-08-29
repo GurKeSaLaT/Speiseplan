@@ -6,8 +6,15 @@ from services.ingredient_aliases import (
     get_all_aliases,
     list_known_ingredient_names,
     normalize_ingredient_name,
+    normalize_name,
     set_alias,
 )
+
+
+def test_normalize_name_strips_and_title_cases():
+    assert normalize_name("  spaghetti ") == "Spaghetti"
+    assert normalize_name("") == ""
+    assert normalize_name(None) == ""
 
 
 def test_normalize_ingredient_name_without_alias_returns_normalized_self(app):

@@ -20,6 +20,7 @@ from flask import Flask
 from flask_wtf import CSRFProtect
 
 from models import db, Category, RecipeSeason, PlanDaySide
+from services.ingredient_aliases import get_all_aliases
 from services.seasons import SEASON_PRESETS
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
 from services.units import renormalize_existing_ingredients
@@ -296,6 +297,18 @@ def inject_shopping_categories():
     base.html, von der clientseitigen Sortierung/Gruppierung der
     Einkaufsliste (static/plan.js)."""
     return {'shopping_categories': SHOPPING_CATEGORIES, 'shopping_uncategorized': UNCATEGORIZED}
+
+
+@app.context_processor
+def inject_ingredient_aliases():
+    """Stellt allen Templates die gepflegten Zutaten-Alias-Zuordnungen zur
+    Verfügung (siehe services/ingredient_aliases.py) - genutzt wird das
+    aktuell nur von recipe_create.html/recipe_edit_list.html
+    (window.INGREDIENT_ALIASES, siehe static/ingredient_alias_hint.js),
+    global als Context Processor aber genauso einfach wie
+    inject_shopping_categories() oben gehalten statt die Abfrage in jeder
+    einzelnen Route zu wiederholen."""
+    return {'ingredient_aliases': get_all_aliases()}
 
 
 if __name__ == '__main__':

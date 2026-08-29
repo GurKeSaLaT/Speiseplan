@@ -54,3 +54,42 @@ def test_ingredient_aliases_view_prefills_existing_alias(client, app, make_recip
 
     resp = client.get("/manage/ingredient-aliases")
     assert b'value="Nudeln"' in resp.data
+
+
+# --- AJAX-Endpunkt für die Rezept-Formulare (api_set_ingredient_alias) ---
+
+def test_api_set_ingredient_alias_creates_mapping(client, app):
+    from services.ingredient_aliases import normalize_ingredient_name
+
+    resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Olivenöl", "canonical_name": "Öl"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data == {"ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl"}
+
+    with app.app_context():
+        assert normalize_ingredient_name("Olivenöl") == "Öl"
+
+
+def test_api_set_ingredient_alias_normalizes_input(client, app):
+    from services.ingredient_aliases import normalize_ingredient_name
+
+    resp = client.post("/api/ingredient-alias/set", json={"raw_name": "  fusilli  ", "canonical_name": "nudeln"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data == {"ok": True, "raw_name": "Fusilli", "canonical_name": "Nudeln"}
+    with app.app_context():
+        assert normalize_ingredient_name("Fusilli") == "Nudeln"
+
+
+def test_api_set_ingredient_alias_requires_both_fields(client):
+    resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Reis"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()
+
+    resp2 = client.post("/api/ingredient-alias/set", json={"canonical_name": "Reis"})
+    assert resp2.status_code == 400
+
+
+def test_api_set_ingredient_alias_rejects_empty_body(client):
+    resp = client.post("/api/ingredient-alias/set", json={})
+    assert resp.status_code == 400
