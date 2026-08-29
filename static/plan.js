@@ -534,7 +534,7 @@ function openRecipeDetail(dayIndex, sideId) {
 
     document.getElementById('recipeDetailTitle').textContent = (recipe.is_favorite ? '⭐ ' : '') + recipe.name;
     document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit/${recipe.id}`;
-    document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(recipe);
+    document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(recipe, dayServings[dayIndex]);
 
     const checkbox = document.getElementById('recipeDetailCookedCheckbox');
     checkbox.checked = cooked;
@@ -547,11 +547,22 @@ function openRecipeDetail(dayIndex, sideId) {
  * Nährwerte, Zutatenliste, ggf. Anleitung/Quelle) aus einem
  * Rezept-Objekt - bewusst eine andere, kompaktere Darstellung als das
  * Anlegen-/Bearbeiten-Formular, die alles auf einen Blick zeigt statt
- * einzelner Formularfelder. */
-function renderRecipeDetailBody(recipe) {
+ * einzelner Formularfelder.
+ *
+ * targetServings ist die für DIESEN Tag eingestellte Personenzahl
+ * (dayServings[dayIndex], siehe openRecipeDetail) - die Zutatenmengen
+ * werden auf sie hochgerechnet (statt wie vorher die für recipe.servings
+ * ausgelegte Grundmenge unverändert zu zeigen), exakt nach demselben
+ * Verhältnis, das auch die Einkaufsliste verwendet (siehe
+ * static/plan-shopping.js: rebuildShoppingList - roundedAmount() von dort
+ * wird hier für dieselbe, an- statt abgeschnittene Rundung
+ * wiederverwendet). Nährwerte bleiben davon bewusst unberührt: die gelten
+ * immer PRO PORTION, unabhängig von der geplanten Personenzahl. */
+function renderRecipeDetailBody(recipe, targetServings) {
+    const factor = recipe.servings ? targetServings / recipe.servings : 1;
     const ingredientsHtml = recipe.ingredients.length
         ? `<ul class="mb-0 ps-3">${recipe.ingredients.map(ing =>
-            `<li>${escapeHtml(ing.amount)} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}</li>`
+            `<li>${escapeHtml(roundedAmount({ amount: ing.amount * factor }))} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}</li>`
           ).join('')}</ul>`
         : '<span class="text-muted">Keine Zutaten hinterlegt.</span>';
 
@@ -566,10 +577,10 @@ function renderRecipeDetailBody(recipe) {
     return `
         <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
             <span class="badge badge-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
-            <span class="text-muted small">👥 ${recipe.servings} Personen</span>
+            <span class="text-muted small">👥 ${targetServings} Personen</span>
         </div>
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-3">
-            📊 ${recipe.calories} kcal | E: ${recipe.protein}g | K: ${recipe.carbs}g | F: ${recipe.fat}g
+            📊 ${recipe.calories} kcal | E: ${recipe.protein}g | K: ${recipe.carbs}g | F: ${recipe.fat}g <span class="text-muted">(pro Portion)</span>
         </div>
         <h6 class="fw-bold text-dark mb-1">🛒 Zutaten</h6>
         ${ingredientsHtml}
