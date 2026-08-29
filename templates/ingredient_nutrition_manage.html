@@ -1,0 +1,85 @@
+{# Nährwert-Verwaltung (/manage/ingredient-nutrition): eine Zeile pro
+   Alias-Zielname (services/nutrition.py: list_alias_canonical_names() -
+   z.B. "Nudeln", "Öl", NICHT jede einzelne unaliasierte Zutat wie
+   "Spaghetti") mit editierbaren Nährwert-Feldern - siehe
+   routes/settings.py: ingredient_nutrition_view()/
+   update_ingredient_nutrition(). Rezept-Nährwerte werden daraus
+   automatisch berechnet (services/nutrition.py: compute_recipe_nutrition,
+   aufgerufen aus routes/recipes.py: add_recipe()/edit_recipe()), sofern
+   ein Rezept nicht auf "manuell überschreiben" gestellt ist.
+
+   Unaliasierte Einzelzutaten tauchen hier bewusst NICHT auf - für die
+   gibt es stattdessen den Inline-Hinweis direkt beim Zutat-Eintragen
+   (siehe static/ingredient_alias_hint.js). #}
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-10">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0 fw-bold">🍎 Nährwerte</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-muted">
+                    Nährwerte je Grundzutat (z.B. "Nudeln", "Öl") - gilt automatisch für alle
+                    gleichgesetzten Schreibweisen (z.B. "Spaghetti", "Fusilli"). Rezept-Nährwerte
+                    werden daraus automatisch berechnet, solange ein Rezept nicht auf "manuell
+                    überschreiben" gestellt ist. Zeilen mit <span class="text-muted">grauer</span>
+                    Schrift haben noch keinen eigenen Eintrag - die Referenzeinheit wurde anhand der
+                    tatsächlich verwendeten Zutatenmengen geraten, lässt sich aber jederzeit anpassen.
+                </p>
+
+                {% if rows %}
+                <input type="text" id="nutritionFilter" class="form-control mb-3" placeholder="🔍 Zutat suchen..." autocomplete="off">
+
+                <form action="/update-ingredient-nutrition" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2 d-none d-md-flex">
+                        <div class="col-md-3">Zutat</div>
+                        <div class="col-md-2">Je Menge</div>
+                        <div class="col-md-2">Kcal</div>
+                        <div style="flex: 0 0 auto; width: 12.5%;">Eiweiß (g)</div>
+                        <div style="flex: 0 0 auto; width: 12.5%;">Kohlh. (g)</div>
+                        <div class="col-md-2">Fett (g)</div>
+                    </div>
+                    <div id="nutritionRows">
+                        {% for row in rows %}
+                        <div class="row g-2 mb-2 align-items-center nutrition-row">
+                            <div class="col-12 col-md-3">
+                                <input type="hidden" name="canonical_name[]" value="{{ row.canonical_name }}">
+                                <input type="text" class="form-control form-control-sm{% if not row.has_entry %} text-muted{% endif %}" value="{{ row.canonical_name }}" disabled>
+                            </div>
+                            <div class="col-6 col-md-2">
+                                <div class="input-group input-group-sm">
+                                    <input type="number" step="0.1" name="reference_amount[]" class="form-control form-control-sm" value="{{ row.reference_amount }}" title="Referenzmenge">
+                                    <input type="text" name="reference_unit[]" class="form-control form-control-sm" value="{{ row.reference_unit }}" style="max-width: 4.5rem;" title="Referenzeinheit">
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-2"><input type="number" name="calories[]" class="form-control form-control-sm" value="{{ row.calories }}" placeholder="Kcal"></div>
+                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="protein[]" class="form-control form-control-sm" value="{{ row.protein }}" placeholder="Eiweiß"></div>
+                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm" value="{{ row.carbs }}" placeholder="Kohlh."></div>
+                            <div class="col-4 col-md-2"><input type="number" step="0.1" name="fat[]" class="form-control form-control-sm" value="{{ row.fat }}" placeholder="Fett"></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="submit" class="btn btn-dark fw-bold mt-3">Speichern</button>
+                </form>
+                {% else %}
+                <div class="text-center p-5 text-muted">Noch keine gleichgesetzten Zutaten vorhanden.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
+<script>
+// Rein clientseitiger Fuzzy-Filter (siehe static/fuzzy_search.js) - kein
+// Server-Roundtrip nötig.
+wireFuzzyFilter(
+    document.getElementById('nutritionFilter'), '.nutrition-row',
+    row => row.querySelector('input[name="canonical_name[]"]').value
+);
+</script>
+{% endblock %}

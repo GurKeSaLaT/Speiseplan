@@ -73,10 +73,24 @@ class Recipe(db.Model):
 
     # Nährwerte, jeweils pro Portion (nicht für das gesamte Rezept/alle
     # servings zusammen). Alle vier Felder sind optional und defaulten auf 0.
+    #
+    # Werden standardmäßig NICHT mehr von Hand gepflegt, sondern beim
+    # Speichern automatisch aus den Zutaten berechnet (siehe
+    # services/nutrition.py: compute_recipe_nutrition(), aufgerufen aus
+    # routes/recipes.py: add_recipe()/edit_recipe()) - die Summe der
+    # Zutaten-Nährwerte (services/nutrition.py: IngredientNutrition) wird
+    # dabei durch servings geteilt, da Ingredient.amount für die GANZE
+    # Portionsanzahl gilt, diese Felder hier aber PRO Portion. Bleiben
+    # trotzdem direkt beschreibbare Spalten (nicht rein berechnet/nicht
+    # gespeichert): nutrition_override=True erlaubt weiterhin eine manuell
+    # eingetragene, nie automatisch überschriebene Angabe - z.B. wenn für
+    # ein Fertigprodukt nur der Nährwert auf der Packung bekannt ist, nicht
+    # aber der einzelner Zutaten.
     calories = db.Column(db.Integer, default=0)
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
+    nutrition_override = db.Column(db.Boolean, default=False, nullable=False)
 
     # Herkunfts-Link (z.B. die chefkoch.de-Seite, von der importiert wurde,
     # oder ein von Hand eingetragener Link zu einem Rezept anderswo) und die
@@ -269,3 +283,31 @@ class IngredientAlias(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     raw_name = db.Column(db.String(100), unique=True, nullable=False, index=True)
     canonical_name = db.Column(db.String(100), nullable=False)
+
+
+class IngredientNutrition(db.Model):
+    """Nährwert-Referenz für eine kanonische Zutat (denselben Namen, den
+    auch IngredientAlias/normalize_ingredient_name() liefert - für eine
+    alias-gruppierte Zutat wie "Nudeln" also EIN gemeinsamer Eintrag statt
+    einem pro Schreibweise wie "Spaghetti"/"Fusilli"). Siehe
+    services/nutrition.py: compute_recipe_nutrition() nutzt das, um die
+    Rezept-Nährwerte (Recipe.calories/.protein/.carbs/.fat) automatisch
+    aus den eingetragenen Zutaten zu berechnen, statt sie von Hand pflegen
+    zu müssen (siehe Recipe.nutrition_override für den Opt-out).
+
+    Werte gelten je reference_amount/reference_unit (z.B. 100/"g" oder
+    1/"Stk") - beides bewusst frei statt fest auf "je 100g", da nicht
+    jede Zutat sinnvoll in Gramm/Milliliter bemessen wird (z.B. Eier
+    typischerweise in "Stk"). Ein Zutatenname ohne Eintrag hier ODER mit
+    abweichender Einheit zur tatsächlichen Ingredient-Zeile eines Rezepts
+    (z.B. Referenz in "g" hinterlegt, aber in diesem Rezept in "Stk"
+    verwendet) trägt beim Berechnen einfach 0 bei - kein Fehler, nur eine
+    unvollständige Angabe, die sich jederzeit nachtragen lässt."""
+    id = db.Column(db.Integer, primary_key=True)
+    canonical_name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    reference_amount = db.Column(db.Float, nullable=False, default=100)
+    reference_unit = db.Column(db.String(20), nullable=False, default='g')
+    calories = db.Column(db.Integer, default=0)
+    protein = db.Column(db.Float, default=0.0)
+    carbs = db.Column(db.Float, default=0.0)
+    fat = db.Column(db.Float, default=0.0)

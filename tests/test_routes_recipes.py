@@ -6,9 +6,15 @@ from services.recipe_import import RecipeImportError
 
 
 def _base_recipe_form(category_id, **overrides):
+    # nutrition_override="1" hält bestehende Tests, die feste
+    # calories/protein/carbs/fat-Werte erwarten, unabhängig von der
+    # automatischen Berechnung aus den Zutaten (siehe
+    # services/nutrition.py: compute_recipe_nutrition) - eigene Tests
+    # für die Berechnung selbst setzen das Häkchen bewusst NICHT.
     form = {
         "name": "Neues Gericht",
         "category_id": str(category_id),
+        "nutrition_override": "1",
         "calories": "400",
         "protein": "20",
         "carbs": "30",
@@ -255,3 +261,147 @@ def test_import_recipe_preview_converts_ingredients_to_display_unit(mock_fetch, 
         {"name": "Mehl", "amount": 1, "unit": "kg"},
         {"name": "Milch", "amount": 0.5, "unit": "l"},
     ]
+
+
+# --- Automatische Nährwert-Berechnung aus den Zutaten (services/nutrition.py) ---
+
+def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_category):
+    from models import Recipe
+    from services.nutrition import set_nutrition
+
+    cat_id = make_category("Berechnet")
+    with app.app_context():
+        # 350 kcal/100g Mehl.
+        set_nutrition("Mehl", reference_amount=100, reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
+
+    form = _base_recipe_form(cat_id, servings="2", **{
+        "nutrition_override": "",
+        "ing_name[]": ["Mehl", ""],
+        "ing_amount[]": ["200", ""],
+        "ing_unit[]": ["g", ""],
+        "ing_category[]": ["", ""],
+    })
+    client.post("/add-recipe", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.nutrition_override is False
+        # 200g Mehl @350kcal/100g = 700 kcal insgesamt, geteilt durch 2
+        # Portionen = 350 kcal/Portion (siehe Docstring von
+        # compute_recipe_nutrition: Ingredient.amount gilt für den ganzen
+        # Rezept-Batch, Recipe.calories je Portion).
+        assert recipe.calories == 350
+        assert recipe.protein == 10.0
+        assert recipe.carbs == 70.0
+        assert recipe.fat == 1.0
+
+
+def test_add_recipe_without_nutrition_data_computes_zero(client, app, make_category):
+    from models import Recipe
+
+    cat_id = make_category("Ohne Nährwerte")
+    form = _base_recipe_form(cat_id, **{"nutrition_override": ""})
+    client.post("/add-recipe", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        # "Nudeln" hat in dieser isolierten Testdatenbank keinen
+        # IngredientNutrition-Eintrag - compute_recipe_nutrition()
+        # überspringt die Zutat statt zu raten oder zu fehlern.
+        assert recipe.calories == 0
+        assert recipe.protein == 0.0
+
+
+def test_add_recipe_override_ignores_computed_nutrition(client, app, make_category):
+    from models import Recipe
+    from services.nutrition import set_nutrition
+
+    cat_id = make_category("Überschrieben")
+    with app.app_context():
+        set_nutrition("Nudeln", reference_amount=100, reference_unit="g", calories=999, protein=1, carbs=1, fat=1)
+
+    # _base_recipe_form() setzt nutrition_override="1" und feste
+    # calories="400" etc. per Default - diese müssen trotz vorhandener
+    # IngredientNutrition-Daten für "Nudeln" unverändert übernommen werden.
+    form = _base_recipe_form(cat_id)
+    client.post("/add-recipe", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.nutrition_override is True
+        assert recipe.calories == 400
+
+
+def test_edit_recipe_recomputes_nutrition_when_ingredients_change(client, app, make_recipe):
+    from models import Recipe, db
+    from services.nutrition import set_nutrition
+
+    recipe_id = make_recipe("Neu berechnen", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
+    with app.app_context():
+        cat_id = db.session.get(Recipe, recipe_id).category_id
+        set_nutrition("Reis", reference_amount=100, reference_unit="g", calories=130, protein=3, carbs=28, fat=0.3)
+
+    form = _base_recipe_form(cat_id, servings="1", **{
+        "nutrition_override": "",
+        "ing_name[]": ["Reis"], "ing_amount[]": ["200"], "ing_unit[]": ["g"], "ing_category[]": [""],
+    })
+    client.post(f"/edit-recipe/{recipe_id}", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        assert recipe.nutrition_override is False
+        # 200g Reis @130kcal/100g = 260 kcal, 1 Portion.
+        assert recipe.calories == 260
+        assert recipe.carbs == 56.0
+
+
+def test_edit_recipe_keeps_manual_nutrition_when_override_set(client, app, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Manuell bleibt")
+    with app.app_context():
+        cat_id = db.session.get(Recipe, recipe_id).category_id
+
+    form = _base_recipe_form(cat_id, **{
+        "nutrition_override": "1", "calories": "777", "protein": "77", "carbs": "7", "fat": "7",
+        "ing_name[]": [""], "ing_amount[]": [""], "ing_unit[]": [""], "ing_category[]": [""],
+    })
+    client.post(f"/edit-recipe/{recipe_id}", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        assert recipe.nutrition_override is True
+        assert recipe.calories == 777
+
+
+def test_recipe_create_view_embeds_ingredient_nutrition_for_hint_js(client, app):
+    from services.nutrition import set_nutrition
+
+    with app.app_context():
+        set_nutrition("Öl", reference_amount=100, reference_unit="ml", calories=884, protein=0, carbs=0, fat=100)
+
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b"window.INGREDIENT_NUTRITION" in resp.data
+    assert b'"calories": 884' in resp.data or b'"calories":884' in resp.data
+
+
+def test_recipe_create_view_nutrition_inputs_disabled_by_default(client):
+    resp = client.get("/manage/recipe/create")
+    assert b'name="nutritionOverride"' not in resp.data  # id, nicht name
+    assert b'id="nutritionOverride"' in resp.data
+    assert b'name="calories" class="form-control" disabled' in resp.data
+
+
+def test_recipe_edit_list_view_prefills_override_checkbox(client, make_recipe):
+    recipe_id = make_recipe("Übersteuert", nutrition_override=True, calories=555)
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert f'id="nutritionOverride{recipe_id}"'.encode() in resp.data
+    assert b'value="555"' in resp.data
+    # Bei bereits gesetztem Override-Häkchen duerfen die Felder NICHT
+    # deaktiviert sein (der Nutzer soll seine manuellen Werte direkt
+    # weiter bearbeiten koennen) - das Checkbox-Input selbst muss "checked"
+    # tragen (Attribut-Reihenfolge im Template ist ein Detail, daher hier
+    # nur auf Vorhandensein prüfen statt exakter Attribut-Reihenfolge).
+    assert b"checked" in resp.data.split(f'id="nutritionOverride{recipe_id}"'.encode())[1][:80]

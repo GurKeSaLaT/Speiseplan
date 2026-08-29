@@ -25,6 +25,7 @@ from models import db, Category, Recipe, Ingredient
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
+from services.nutrition import compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.settings import get_display_units
 from services.units import convert_for_display, normalize_amount_unit
@@ -125,36 +126,33 @@ def add_recipe():
     der einzige der vier optional: ein leerer String wird zu None (siehe
     services/shopping.py: UNCATEGORIZED - None landet in der Einkaufsliste
     in der Sonstiges-Sammelgruppe, ganz ohne extra Sonderfall hier).
+
+    Nährwerte: werden standardmäßig aus den Zutaten berechnet (siehe
+    services/nutrition.py: compute_recipe_nutrition()) statt die
+    Formularfelder ungeprüft zu übernehmen - nur bei gesetztem
+    nutrition_override-Häkchen (im Formular per JS deaktivierte, aber
+    weiterhin abgesendete Felder) gelten die eingetragenen Werte direkt.
+    Die Zutatenzeilen werden dafür VOR dem Anlegen des Recipe-Objekts
+    normalisiert (Menge/Einheit), damit sowohl die Berechnung als auch
+    die späteren Ingredient-Zeilen dieselben, bereits kanonischen Werte
+    verwenden.
     """
     name = request.form.get('name')
     category_id = request.form.get('category_id')
-    calories = int(request.form.get('calories') or 0)
-    protein = float(request.form.get('protein') or 0)
-    carbs = float(request.form.get('carbs') or 0)
-    fat = float(request.form.get('fat') or 0)
     is_side_dish = request.form.get('is_side_dish') == '1'
     is_favorite = request.form.get('is_favorite') == '1'
+    nutrition_override = request.form.get('nutrition_override') == '1'
     # Mindestens 1 Person, auch falls das Formularfeld leer/fehlerhaft ist.
     servings = max(1, int(request.form.get('servings') or 2))
     source_url = (request.form.get('source_url') or '').strip() or None
     instructions = (request.form.get('instructions') or '').strip() or None
-
-    new_recipe = Recipe(
-        name=name, category_id=category_id,
-        calories=calories, protein=protein, carbs=carbs, fat=fat,
-        is_side_dish=is_side_dish, is_favorite=is_favorite, servings=servings,
-        source_url=source_url, instructions=instructions
-    )
-    db.session.add(new_recipe)
-    db.session.flush()
-
-    save_recipe_seasons(new_recipe.id, request.form)
 
     ing_names = request.form.getlist('ing_name[]')
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
     ing_categories = request.form.getlist('ing_category[]')
 
+    normalized_ingredients = []
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
@@ -165,10 +163,32 @@ def add_recipe():
             # in der Anzeige-Einheit vorbefüllte Import-/Bearbeiten-Zeile
             # unverändert übernommen hat.
             amount, unit = normalize_amount_unit(amount, ing_units[i])
-            ingredient = Ingredient(
-                recipe_id=new_recipe.id, name=ing_names[i], amount=amount, unit=unit, category=category
-            )
-            db.session.add(ingredient)
+            normalized_ingredients.append({"name": ing_names[i], "amount": amount, "unit": unit, "category": category})
+
+    if nutrition_override:
+        calories = int(request.form.get('calories') or 0)
+        protein = float(request.form.get('protein') or 0)
+        carbs = float(request.form.get('carbs') or 0)
+        fat = float(request.form.get('fat') or 0)
+    else:
+        computed = compute_recipe_nutrition(normalized_ingredients, servings)
+        calories, protein, carbs, fat = computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
+
+    new_recipe = Recipe(
+        name=name, category_id=category_id,
+        calories=calories, protein=protein, carbs=carbs, fat=fat, nutrition_override=nutrition_override,
+        is_side_dish=is_side_dish, is_favorite=is_favorite, servings=servings,
+        source_url=source_url, instructions=instructions
+    )
+    db.session.add(new_recipe)
+    db.session.flush()
+
+    save_recipe_seasons(new_recipe.id, request.form)
+
+    for ing in normalized_ingredients:
+        db.session.add(Ingredient(
+            recipe_id=new_recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"], category=ing["category"]
+        ))
 
     db.session.commit()
     # Zurück zur "Erstellen"-Unterseite (nicht zur Liste), damit direkt das
@@ -186,17 +206,18 @@ def edit_recipe(id):
     das Formular ohnehin immer ALLE aktuellen Zutaten mitschickt (auch
     unveränderte), verliert dieser Ansatz keine Daten. Ebenso verfährt
     save_recipe_seasons() mit den Saison-Zeiträumen.
+
+    Nährwerte: siehe add_recipe() - werden standardmäßig aus den (neuen)
+    Zutaten neu berechnet statt die Formularfelder zu übernehmen, außer
+    bei gesetztem nutrition_override-Häkchen.
     """
     recipe = Recipe.query.get_or_404(id)
 
     recipe.name = request.form.get('name')
     recipe.category_id = request.form.get('category_id')
-    recipe.calories = int(request.form.get('calories') or 0)
-    recipe.protein = float(request.form.get('protein') or 0)
-    recipe.carbs = float(request.form.get('carbs') or 0)
-    recipe.fat = float(request.form.get('fat') or 0)
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
     recipe.is_favorite = request.form.get('is_favorite') == '1'
+    recipe.nutrition_override = request.form.get('nutrition_override') == '1'
     recipe.servings = max(1, int(request.form.get('servings') or 2))
     recipe.source_url = (request.form.get('source_url') or '').strip() or None
     recipe.instructions = (request.form.get('instructions') or '').strip() or None
@@ -210,6 +231,7 @@ def edit_recipe(id):
     ing_units = request.form.getlist('ing_unit[]')
     ing_categories = request.form.getlist('ing_category[]')
 
+    normalized_ingredients = []
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
@@ -221,10 +243,22 @@ def edit_recipe(id):
             # ein Speichern ohne Änderung wieder exakt den ursprünglichen
             # kanonischen Wert zurück.
             amount, unit = normalize_amount_unit(amount, ing_units[i])
-            ingredient = Ingredient(
-                recipe_id=recipe.id, name=ing_names[i], amount=amount, unit=unit, category=category
-            )
-            db.session.add(ingredient)
+            normalized_ingredients.append({"name": ing_names[i], "amount": amount, "unit": unit, "category": category})
+
+    for ing in normalized_ingredients:
+        db.session.add(Ingredient(
+            recipe_id=recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"], category=ing["category"]
+        ))
+
+    if recipe.nutrition_override:
+        recipe.calories = int(request.form.get('calories') or 0)
+        recipe.protein = float(request.form.get('protein') or 0)
+        recipe.carbs = float(request.form.get('carbs') or 0)
+        recipe.fat = float(request.form.get('fat') or 0)
+    else:
+        computed = compute_recipe_nutrition(normalized_ingredients, recipe.servings)
+        recipe.calories, recipe.protein = computed["calories"], computed["protein"]
+        recipe.carbs, recipe.fat = computed["carbs"], computed["fat"]
 
     db.session.commit()
     # Zurück zur Bearbeitungsliste (im Gegensatz zu add_recipe, das zurück

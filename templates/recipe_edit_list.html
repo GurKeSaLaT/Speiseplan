@@ -128,11 +128,16 @@
                     </div>
 
                     <h6 class="border-bottom pb-1 mb-2 text-muted">Nährwerte (pro Portion)</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input nutrition-override-toggle" type="checkbox" name="nutrition_override" id="nutritionOverride{{ recipe.id }}" value="1" data-recipe-id="{{ recipe.id }}" {% if recipe.nutrition_override %}checked{% endif %}>
+                        <label class="form-check-label small" for="nutritionOverride{{ recipe.id }}">✏️ Nährwerte manuell eintragen</label>
+                        <div class="form-text">Ohne Häkchen werden die Nährwerte automatisch aus den Zutaten berechnet (siehe ⚙️ Einstellungen → 🍎 Nährwerte).</div>
+                    </div>
                     <div class="row mb-3">
-                        <div class="col-3"><label class="small text-muted mb-0">Kcal</label><input type="number" name="calories" class="form-control form-control-sm" value="{{ recipe.calories }}"></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Eiweiß</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm" value="{{ recipe.protein }}"></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Kohlh.</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm" value="{{ recipe.carbs }}"></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Fett</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm" value="{{ recipe.fat }}"></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Kcal</label><input type="number" name="calories" class="form-control form-control-sm" value="{{ recipe.calories }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Eiweiß</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm" value="{{ recipe.protein }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Kohlh.</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm" value="{{ recipe.carbs }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Fett</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm" value="{{ recipe.fat }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
                     </div>
 
                     <div class="mb-3">
@@ -196,11 +201,26 @@
 </div>
 {% endfor %}
 
-<script>window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};</script>
+<script>
+window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};
+window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
+</script>
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_alias_hint.js') }}"></script>
 <script>
+// Pro Bearbeiten-Modal (ein Rezept = eine Checkbox) die Nährwertfelder je
+// nach "manuell überschreiben"-Häkchen sperren/entsperren - mehrere Modals
+// gleichzeitig im DOM, daher über data-recipe-id im selben Modal gesucht statt
+// global.
+document.querySelectorAll('.nutrition-override-toggle').forEach(toggle => {
+    toggle.addEventListener('change', function() {
+        const modal = this.closest('.modal-content');
+        modal.querySelectorAll('input[name="calories"], input[name="protein"], input[name="carbs"], input[name="fat"]')
+            .forEach(input => { input.disabled = !this.checked; });
+    });
+});
+
 // categoryOptionsHtml() (Baut die <option>-Liste für eine Einkaufslisten-
 // Kategorie-Auswahl aus window.SHOPPING_CATEGORIES) kommt aus dem separat
 // eingebundenen static/ingredient_category_select.js - dieselbe Funktion

@@ -109,3 +109,31 @@ def test_recipe_defaults(app, make_category):
         assert recipe.is_favorite is False
         assert recipe.servings == 2
         assert recipe.calories == 0
+        assert recipe.nutrition_override is False
+
+
+def test_ingredient_nutrition_canonical_name_is_unique(app):
+    from models import IngredientNutrition, db
+
+    with app.app_context():
+        db.session.add(IngredientNutrition(canonical_name="Nudeln", calories=350))
+        db.session.commit()
+
+        db.session.add(IngredientNutrition(canonical_name="Nudeln", calories=999))
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+
+def test_ingredient_nutrition_defaults(app):
+    from models import IngredientNutrition, db
+
+    with app.app_context():
+        entry = IngredientNutrition(canonical_name="Reis")
+        db.session.add(entry)
+        db.session.commit()
+
+        assert entry.reference_amount == 100
+        assert entry.reference_unit == "g"
+        assert entry.calories == 0
+        assert entry.protein == 0.0

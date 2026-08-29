@@ -15,22 +15,32 @@
  * C) Weder A noch B: der Name ist bislang komplett unabhängig - bietet
  *    ein Mini-Formular an, um direkt einen Alias zu setzen.
  *
+ * Zusätzlich (unabhängig von A/B/C, siehe renderNutritionPart unten):
+ * prüft, ob für die aufgelöste kanonische Zutat bereits Nährwerte
+ * hinterlegt sind (services/nutrition.py, Verwaltung -> 🍎 Nährwerte) -
+ * falls nicht, bietet ein zweites Mini-Formular an, um sie direkt
+ * nachzutragen, ohne die Rezept-Seite zu verlassen.
+ *
  * window.INGREDIENT_ALIASES ({raw_name: canonical_name}, siehe
- * app.py: inject_ingredient_aliases()) muss VOR diesem Skript im DOM
- * eingebettet sein. Arbeitet rein über Event-Delegation auf document.body,
- * damit sowohl serverseitig gerenderte Zeilen als auch per JS dynamisch
- * hinzugefügte Zutatenzeilen (addIngredientField/addEditIngredientField)
- * ohne separate Initialisierung funktionieren - auch bei mehreren
- * unabhängigen Formularen gleichzeitig im DOM (je ein Bearbeiten-Modal
- * pro Rezept auf recipe_edit_list.html).
+ * app.py: inject_ingredient_aliases()) und window.INGREDIENT_NUTRITION
+ * ({canonical_name: {reference_amount, reference_unit, calories, protein,
+ * carbs, fat}}, siehe app.py: inject_ingredient_nutrition()) müssen VOR
+ * diesem Skript im DOM eingebettet sein. Arbeitet rein über Event-
+ * Delegation auf document.body, damit sowohl serverseitig gerenderte
+ * Zeilen als auch per JS dynamisch hinzugefügte Zutatenzeilen
+ * (addIngredientField/addEditIngredientField) ohne separate
+ * Initialisierung funktionieren - auch bei mehreren unabhängigen
+ * Formularen gleichzeitig im DOM (je ein Bearbeiten-Modal pro Rezept auf
+ * recipe_edit_list.html).
  */
 
 (function () {
     const ALIASES = window.INGREDIENT_ALIASES || {};
+    const NUTRITION = window.INGREDIENT_NUTRITION || {};
 
     // Menge aller kanonischen Zielnamen, für den schnellen "ist das
     // selbst eine Grundzutat?"-Check (Fall B). Wird bei jedem neu
-    // gesetzten Alias (siehe setAlias unten) mit aktualisiert.
+    // gesetzten Alias (siehe submitAlias unten) mit aktualisiert.
     let canonicalNames = new Set(Object.values(ALIASES));
 
     /** Python-.title()-Äquivalent (grob) für einen clientseitigen
@@ -49,23 +59,42 @@
             .map(([raw]) => raw);
     }
 
+    /** Auf welchen kanonischen Namen die Nährwert-Suche für "name" läuft:
+     * bei bestehendem Alias (Fall A) dessen Ziel, sonst der Name selbst
+     * (Fall B/C - server-seitig verhält sich normalize_ingredient_name()
+     * für einen unaliasierten Namen genauso, siehe services/nutrition.py:
+     * get_nutrition_entry). */
+    function resolveNutritionCanonical(name) {
+        return Object.prototype.hasOwnProperty.call(ALIASES, name) ? ALIASES[name] : name;
+    }
+
     function renderHint(hintEl, name) {
         hintEl.innerHTML = '';
         hintEl.classList.remove('text-muted');
         if (!name) return;
 
+        const aliasWrap = document.createElement('div');
+        hintEl.appendChild(aliasWrap);
+        renderAliasPart(aliasWrap, name, hintEl);
+
+        const nutritionWrap = document.createElement('div');
+        hintEl.appendChild(nutritionWrap);
+        renderNutritionPart(nutritionWrap, name, hintEl);
+    }
+
+    function renderAliasPart(wrap, name, hintEl) {
         if (Object.prototype.hasOwnProperty.call(ALIASES, name)) {
             // Fall A
-            hintEl.classList.add('text-muted');
-            hintEl.innerHTML = `→ wird als „<b>${escapeHtml(ALIASES[name])}</b>" zusammengefasst`;
+            wrap.classList.add('text-muted');
+            wrap.innerHTML = `→ wird als „<b>${escapeHtml(ALIASES[name])}</b>" zusammengefasst`;
             return;
         }
 
         if (canonicalNames.has(name)) {
             // Fall B
             const examples = rawNamesFor(name).slice(0, 3).join(', ');
-            hintEl.classList.add('text-muted');
-            hintEl.innerHTML = `🧺 Grundzutat${examples ? ' (z.B. für ' + escapeHtml(examples) + ')' : ''}`;
+            wrap.classList.add('text-muted');
+            wrap.innerHTML = `🧺 Grundzutat${examples ? ' (z.B. für ' + escapeHtml(examples) + ')' : ''}`;
             return;
         }
 
@@ -82,7 +111,38 @@
         input.addEventListener('keydown', e => {
             if (e.key === 'Enter') { e.preventDefault(); submitAlias(name, input.value.trim(), hintEl); }
         });
-        hintEl.appendChild(group);
+        wrap.appendChild(group);
+    }
+
+    /** Zeigt, sofern für die aufgelöste kanonische Zutat noch KEIN
+     * Nährwert-Eintrag existiert, ein Mini-Formular zum sofortigen
+     * Nachtragen an (POST /api/ingredient-nutrition/set, siehe
+     * routes/settings.py: api_set_ingredient_nutrition). Existiert
+     * bereits ein Eintrag, wird nichts angezeigt. */
+    function renderNutritionPart(wrap, name, hintEl) {
+        const canonical = resolveNutritionCanonical(name);
+        if (Object.prototype.hasOwnProperty.call(NUTRITION, canonical)) return;
+
+        const box = document.createElement('div');
+        box.className = 'mt-1 p-2 border rounded';
+        box.innerHTML = `
+            <div class="text-danger small fw-bold mb-1">⚠️ Keine Nährwerte für „${escapeHtml(canonical)}" hinterlegt</div>
+            <div class="row g-1">
+                <div class="col-6 col-md-4">
+                    <div class="input-group input-group-sm">
+                        <input type="number" step="0.1" class="form-control form-control-sm nutrition-ref-amount" placeholder="Menge" value="100">
+                        <input type="text" class="form-control form-control-sm nutrition-ref-unit" placeholder="Einh." value="g" style="max-width: 3.5rem;">
+                    </div>
+                </div>
+                <div class="col-3 col-md-2"><input type="number" class="form-control form-control-sm nutrition-calories" placeholder="Kcal"></div>
+                <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="Eiweiß"></div>
+                <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="Kohlh."></div>
+                <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="Fett"></div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger mt-1 nutrition-set-btn">Nährwerte speichern</button>
+        `;
+        box.querySelector('.nutrition-set-btn').addEventListener('click', () => submitNutrition(canonical, box, name, hintEl));
+        wrap.appendChild(box);
     }
 
     function submitAlias(rawName, canonicalName, hintEl) {
@@ -100,6 +160,31 @@
             renderHint(hintEl, data.raw_name);
         })
         .catch(() => alert('Hinweis: Alias konnte nicht gesetzt werden.'));
+    }
+
+    function submitNutrition(canonicalName, box, name, hintEl) {
+        const amount = parseFloat(box.querySelector('.nutrition-ref-amount').value) || 100;
+        const unit = box.querySelector('.nutrition-ref-unit').value.trim() || 'g';
+        const calories = parseFloat(box.querySelector('.nutrition-calories').value) || 0;
+        const protein = parseFloat(box.querySelector('.nutrition-protein').value) || 0;
+        const carbs = parseFloat(box.querySelector('.nutrition-carbs').value) || 0;
+        const fat = parseFloat(box.querySelector('.nutrition-fat').value) || 0;
+
+        fetch('/api/ingredient-nutrition/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF_TOKEN },
+            body: JSON.stringify({
+                name: canonicalName, reference_amount: amount, reference_unit: unit,
+                calories, protein, carbs, fat,
+            }),
+        })
+        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) { alert('Hinweis: ' + (data.error || 'Nährwerte konnten nicht gespeichert werden.')); return; }
+            NUTRITION[data.canonical_name] = data;
+            renderHint(hintEl, name);
+        })
+        .catch(() => alert('Hinweis: Nährwerte konnten nicht gespeichert werden.'));
     }
 
     function escapeHtml(text) {

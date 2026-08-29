@@ -21,6 +21,7 @@ from flask_wtf import CSRFProtect
 
 from models import db, Category, RecipeSeason, PlanDaySide
 from services.ingredient_aliases import get_all_aliases
+from services.nutrition import get_all_nutrition_entries
 from services.seasons import SEASON_PRESETS
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
 from services.units import renormalize_existing_ingredients
@@ -137,6 +138,9 @@ def init_db():
         db.session.commit()
     if 'instructions' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN instructions TEXT"))
+        db.session.commit()
+    if 'nutrition_override' not in existing_columns:
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN nutrition_override BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
 
     # Einkaufslisten-Kategorie einer Zutat (siehe services/shopping.py) - erst
@@ -309,6 +313,16 @@ def inject_ingredient_aliases():
     inject_shopping_categories() oben gehalten statt die Abfrage in jeder
     einzelnen Route zu wiederholen."""
     return {'ingredient_aliases': get_all_aliases()}
+
+
+@app.context_processor
+def inject_ingredient_nutrition():
+    """Stellt allen Templates die gepflegten Nährwert-Referenzen je
+    Alias-Zielzutat zur Verfügung (siehe services/nutrition.py) - genutzt
+    von recipe_create.html/recipe_edit_list.html (window.INGREDIENT_NUTRITION,
+    siehe static/ingredient_alias_hint.js), analog zu
+    inject_ingredient_aliases() oben."""
+    return {'ingredient_nutrition': get_all_nutrition_entries()}
 
 
 if __name__ == '__main__':
