@@ -23,7 +23,7 @@ from models import db, Category, RecipeSeason, PlanDaySide
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
 from services.seasons import SEASON_PRESETS
-from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
+from services.shopping import PANTRY_CATEGORIES, SHOPPING_CATEGORIES, UNCATEGORIZED
 from services.units import renormalize_existing_ingredients
 from routes.plan import plan_bp
 from routes.manage import manage_bp
@@ -335,8 +335,15 @@ def inject_shopping_categories():
     Kategorie-Dropdowns beim Zutaten-Eintragen (recipe_create.html,
     recipe_edit_list.html) als auch, über window.SHOPPING_CATEGORIES in
     base.html, von der clientseitigen Sortierung/Gruppierung der
-    Einkaufsliste (static/plan.js)."""
-    return {'shopping_categories': SHOPPING_CATEGORIES, 'shopping_uncategorized': UNCATEGORIZED}
+    Einkaufsliste (static/plan.js). pantry_categories (window.PANTRY_
+    CATEGORIES) markiert zusätzlich, welche dieser Kategorien NICHT
+    automatisch auf die Einkaufsliste sollen, sondern auf die separate
+    Vorrat-Liste (siehe static/plan-shopping.js: rebuildShoppingList)."""
+    return {
+        'shopping_categories': SHOPPING_CATEGORIES,
+        'shopping_uncategorized': UNCATEGORIZED,
+        'pantry_categories': sorted(PANTRY_CATEGORIES),
+    }
 
 
 @app.context_processor

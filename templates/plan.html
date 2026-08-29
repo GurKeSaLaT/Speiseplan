@@ -139,7 +139,24 @@
                 </div>
             </div>
 
-            <ul class="list-group list-group-flush p-2" id="shoppingListContainer" style="max-height: 75vh; overflow-y: auto;">
+            <ul class="list-group list-group-flush p-2" id="shoppingListContainer" style="max-height: 60vh; overflow-y: auto;">
+                <!-- Wird per JavaScript befüllt -->
+            </ul>
+        </div>
+
+        {# Gewürze/Verbrauchsartikel aus den geplanten Rezepten dieser Woche
+           - hat man in aller Regel schon zuhause, landet deshalb NICHT
+           automatisch oben in der Einkaufsliste (siehe services/shopping.py:
+           PANTRY_CATEGORIES, static/plan-shopping.js: rebuildShoppingList/
+           renderPantryList). Bewusst NICHT sticky wie die Einkaufsliste
+           oben - zweitrangig, scrollt normal mit. #}
+        <div class="card shadow-sm border-0 mt-4">
+            <div class="panel-head">
+                <h4>🧂 Vorrat prüfen</h4>
+                <span class="count" id="pantryItemsCount">0</span>
+            </div>
+            <p class="text-muted small px-3 pt-3 mb-0">Hat man meist schon zuhause - nur bei Bedarf per Klick auf die Einkaufsliste holen.</p>
+            <ul class="list-group list-group-flush p-2" id="pantryListContainer" style="max-height: 40vh; overflow-y: auto;">
                 <!-- Wird per JavaScript befüllt -->
             </ul>
         </div>

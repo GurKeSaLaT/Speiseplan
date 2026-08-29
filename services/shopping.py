@@ -13,9 +13,12 @@ dieselbe Reihenfolge.
 
 SHOPPING_CATEGORIES = [
     "Obst/Gemüse",
+    "Backwaren",
     "Milchprodukte",
     "Gewürze",
+    "Vorratsschrank",
     "Hygieneartikel",
+    "Verbrauchsartikel",
     "Getränke",
     "Teigwaren",
     "Konserven",
@@ -26,3 +29,20 @@ SHOPPING_CATEGORIES = [
 # entfernten) Kategorie - sortiert in der Einkaufsliste immer ans Ende,
 # siehe categorySortIndex() in static/plan.js.
 UNCATEGORIZED = "Sonstiges"
+
+# Zutaten dieser Kategorien hat man in aller Regel schon zuhause vorrätig
+# (Gewürze, Vorratsschrank-Backzutaten/Nüsse/Saucen, Verbrauchsartikel wie
+# Frischhaltefolie/Müllbeutel) - sie landen deshalb NICHT automatisch auf
+# der wöchentlichen Einkaufsliste, sondern auf einer separaten "Vorrat
+# prüfen"-Liste (siehe static/plan-shopping.js: rebuildShoppingList/
+# rebuildPantryList), von der aus man einzelne Posten gezielt per Button
+# doch noch auf die Einkaufsliste holen kann, falls z.B. das Salz gerade
+# alle ist. Betrifft ausdrücklich nur aus Rezepten abgeleitete Posten - ein
+# manuell hinzugefügter Artikel (auch einer, der gerade erst über besagten
+# Button von der Vorratsliste geholt wurde) hat damit bereits seine "ich
+# muss das wirklich kaufen"-Absicht erklärt und landet immer direkt auf der
+# Einkaufsliste, unabhängig von seiner Kategorie (siehe isExtra-Prüfung in
+# rebuildShoppingList()). Backwaren ist bewusst NICHT hier: Brot/Brötchen
+# sind im Gegensatz dazu typischerweise ein frischer wöchentlicher Einkauf,
+# keine Vorratsware.
+PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}

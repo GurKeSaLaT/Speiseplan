@@ -60,6 +60,27 @@ def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
     assert b'id="recipeDetailCookedCheckbox"' in resp.data
 
 
+def test_week_view_has_pantry_list_panel(client, app, make_recipe):
+    """Gewürze/Verbrauchsartikel (siehe services/shopping.py:
+    PANTRY_CATEGORIES) landen nicht direkt auf der Einkaufsliste, sondern
+    auf einer separaten "Vorrat prüfen"-Liste (siehe
+    static/plan-shopping.js: renderPantryList) - deren leere Hülle muss
+    unabhängig vom Planzustand immer vorhanden sein, JS befüllt sie."""
+    from models import PlanDay, db
+
+    monday = date(2026, 6, 15)
+    recipe_id = make_recipe("Montagsgericht")
+    with app.app_context():
+        db.session.add(PlanDay(date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    assert resp.status_code == 200
+    assert b'id="pantryListContainer"' in resp.data
+    assert b'id="pantryItemsCount"' in resp.data
+    assert "Vorrat prüfen".encode("utf-8") in resp.data
+
+
 def test_week_view_plan_data_reflects_excluded_and_servings(client, app):
     from models import PlanDay, db
 
