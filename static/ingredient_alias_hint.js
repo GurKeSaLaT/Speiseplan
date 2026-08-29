@@ -256,15 +256,27 @@
         renderHint(hintEl, titleCase(event.target.value));
     });
 
-    /** Leert den Alias-/Nährwert-Hinweis JEDER Zutatenzeile außer der
-     * übergebenen - der Hinweis (inkl. des ggf. enthaltenen "Nährwerte
-     * nachtragen"-Kastens) soll immer nur an GENAU EINER Zeile stehen,
-     * nämlich der gerade fokussierten/bearbeiteten, statt an allen
-     * gleichzeitig (das wäre bei einer Zutatenliste mit vielen Zeilen
-     * schnell unübersichtlich). */
+    /** Nächstgelegener gemeinsamer Rahmen einer Zutatenzeile: das
+     * umschließende <form> (bei recipe_edit_list.html genau EIN
+     * Bearbeiten-Modal, bei recipe_create.html das einzige Formular der
+     * Seite). Grenzt die folgenden DOM-Abfragen bewusst auf dieses eine
+     * Rezept ein statt document-weit zu suchen - auf recipe_edit_list.html
+     * liegen leicht 50+ Bearbeiten-Modals gleichzeitig im DOM (nur per CSS
+     * versteckt), ein ungebremstes document.querySelectorAll(...) bei
+     * JEDEM Fokuswechsel machte sich dadurch spürbar als Ruckeln bemerkbar. */
+    function formScopeOf(el) {
+        return el.closest('form') || document.body;
+    }
+
+    /** Leert den Alias-/Nährwert-Hinweis JEDER Zutatenzeile DESSELBEN
+     * Rezepts außer der übergebenen - der Hinweis (inkl. des ggf.
+     * enthaltenen "Nährwerte nachtragen"-Kastens) soll immer nur an GENAU
+     * EINER Zeile stehen, nämlich der gerade fokussierten/bearbeiteten,
+     * statt an allen gleichzeitig (das wäre bei einer Zutatenliste mit
+     * vielen Zeilen schnell unübersichtlich). */
     function clearOtherHints(exceptHintEl) {
-        document.querySelectorAll('.ingredient-alias-hint').forEach(el => {
-            if (el !== exceptHintEl) el.innerHTML = '';
+        formScopeOf(exceptHintEl).querySelectorAll('.ingredient-alias-hint').forEach(el => {
+            if (el !== exceptHintEl && el.innerHTML) el.innerHTML = '';
         });
     }
 
@@ -293,13 +305,31 @@
      * tatsächlich gespeicherten Namens - erst ein Klick/Tastatur-Aktivieren
      * blendet das eigentliche, editierbare <input> ein (dessen Wert sich
      * dadurch NIE von selbst ändert; das Fokussieren löst dabei automatisch
-     * obigen focusin-Handler aus, der auch den Hinweis einblendet). Verlässt
-     * man das Feld wieder (blur), wird wieder der (ggf. neu aufgelöste)
-     * Alias-Name angezeigt. Läuft einmalig beim Skript-Laden über alle zu
-     * diesem Zeitpunkt im DOM stehenden Paare - die per
-     * addEditIngredientField() dynamisch angehängten NEUEN Zeilen haben
-     * bewusst KEIN .ing-name-display (eine noch leere neue Zutat hat
-     * nichts zum "Auflösen"), brauchen diese Verdrahtung also nicht. */
+     * obigen focusin-Handler aus, der auch den Hinweis einblendet).
+     *
+     * Verlässt man das Feld wieder, klappt es wieder auf die Alias-Anzeige
+     * um - nicht nur über das eigene blur-Ereignis (das reicht bei genau
+     * einem offenen Feld, ist aber keine Garantie bei schnellem
+     * Herumklicken), sondern zusätzlich aktiv über revertAllOpenExcept()
+     * bei JEDEM Fokuswechsel irgendwo im selben Rezept-Formular: alle noch
+     * offenen Felder außer einem gerade selbst geöffneten klappen dabei
+     * zuverlässig wieder um.
+     *
+     * Läuft einmalig beim Skript-Laden über alle zu diesem Zeitpunkt im
+     * DOM stehenden Paare - die per addEditIngredientField() dynamisch
+     * angehängten NEUEN Zeilen haben bewusst KEIN .ing-name-display (eine
+     * noch leere neue Zutat hat nichts zum "Auflösen"), brauchen diese
+     * Verdrahtung also nicht. */
+    const showDisplayFns = new WeakMap();  // <input> -> Funktion, die es auf die Alias-Anzeige zurückklappt
+
+    function revertAllOpenExcept(exceptInput, scopeEl) {
+        formScopeOf(scopeEl).querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
+            if (openInput === exceptInput) return;
+            const revert = showDisplayFns.get(openInput);
+            if (revert) revert();
+        });
+    }
+
     function wireEditableIngredientNames() {
         document.querySelectorAll('.ing-name-display').forEach(display => {
             const input = display.nextElementSibling;
@@ -311,12 +341,14 @@
                 input.classList.add('d-none');
             }
             function showInput() {
+                revertAllOpenExcept(input, input);
                 display.classList.add('d-none');
                 input.classList.remove('d-none');
                 input.focus();
                 input.select();
             }
 
+            showDisplayFns.set(input, showDisplay);
             display.addEventListener('click', showInput);
             display.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showInput(); }
@@ -325,4 +357,13 @@
         });
     }
     wireEditableIngredientNames();
+
+    // Zusätzliches, robustes Zurückklappen bei JEDEM Fokuswechsel im
+    // Dokument (siehe Kommentar oben) - deckt z.B. Tab-Navigation
+    // zwischen zwei zugleich offenen Feldern ab, bei der man sich auf das
+    // blur-Ereignis allein nicht in jedem Browser rechtzeitig verlassen
+    // kann.
+    document.body.addEventListener('focusin', event => {
+        revertAllOpenExcept(event.target, event.target);
+    });
 })();
