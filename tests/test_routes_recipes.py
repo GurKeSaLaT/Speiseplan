@@ -90,6 +90,19 @@ def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_re
     assert b"speiseplan.recipeEditFilter" in resp.data
 
 
+def test_recipe_edit_list_view_has_auto_open_edit_script(client, make_recipe):
+    """Der "✏️ Rezept bearbeiten"-Button im Detail-Fenster auf der
+    Plan-Seite (siehe templates/plan.html/static/plan.js:
+    openRecipeDetail) verlinkt auf /manage/recipe/edit-list?edit=<id> -
+    diese Seite muss das per JS auswerten und automatisch das passende
+    Bearbeiten-Modal öffnen."""
+    make_recipe("Irgendein Gericht")
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert b"URLSearchParams(location.search).get('edit')" in resp.data
+    assert b"editModal' + editId" in resp.data
+
+
 def test_recipe_edit_list_view_search_data_includes_category(client, make_category, make_recipe):
     cat_id = make_category("Beilagen")
     make_recipe("Kartoffelpüree", category_id=cat_id)

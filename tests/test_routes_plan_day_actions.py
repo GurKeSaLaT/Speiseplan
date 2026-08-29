@@ -58,6 +58,21 @@ def test_reroll_day_no_candidates_returns_400(client, app, make_recipe):
     assert "error" in resp.get_json()
 
 
+def test_reroll_day_resets_cooked(client, app, make_recipe):
+    from models import PlanDay
+
+    old_id = make_recipe("Alt")
+    make_recipe("Neu")
+    _plan_day(app, date(2026, 6, 15), main_recipe_id=old_id, cooked=True)
+
+    resp = client.post("/day/2026-06-15/reroll-main")
+    assert resp.status_code == 200
+
+    with app.app_context():
+        row = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()
+        assert row.cooked is False
+
+
 # --- set-main ---
 
 def test_set_main_day_invalid_date_returns_400(client):
@@ -103,6 +118,20 @@ def test_set_main_day_without_existing_plan_day_creates_one(client, app, make_re
         row = PlanDay.query.filter_by(date=date(2026, 6, 20)).first()
         assert row is not None
         assert row.main_recipe_id == recipe_id
+
+
+def test_set_main_day_resets_cooked(client, app, make_recipe):
+    from models import PlanDay
+
+    recipe_id = make_recipe("Manuell gewählt")
+    _plan_day(app, date(2026, 6, 15), cooked=True)
+
+    resp = client.post("/day/2026-06-15/set-main", json={"recipe_id": recipe_id})
+    assert resp.status_code == 200
+
+    with app.app_context():
+        row = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()
+        assert row.cooked is False
 
 
 # --- side/add ---
@@ -184,6 +213,25 @@ def test_reroll_one_side_replaces_recipe_keeps_id(client, app, make_recipe):
     assert data["side_id"] == side_id
 
 
+def test_reroll_one_side_resets_cooked(client, app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    old_side = make_recipe("Alte Beilage", is_side_dish=True)
+    make_recipe("Neue Beilage", is_side_dish=True)
+    with app.app_context():
+        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        db.session.add(pd)
+        db.session.flush()
+        side = PlanDaySide(plan_day_id=pd.id, recipe_id=old_side, cooked=True)
+        db.session.add(side)
+        db.session.commit()
+        side_id = side.id
+
+    resp = client.post(f"/day/2026-06-15/side/{side_id}/reroll")
+    assert resp.status_code == 200
+    assert resp.get_json()["cooked"] is False
+
+
 # --- side/<id>/set ---
 
 def test_set_one_side_not_found_returns_404(client):
@@ -225,6 +273,25 @@ def test_set_one_side_success(client, app, make_recipe):
     resp = client.post(f"/day/2026-06-15/side/{side_id}/set", json={"recipe_id": new_side})
     assert resp.status_code == 200
     assert resp.get_json()["id"] == new_side
+
+
+def test_set_one_side_resets_cooked(client, app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    old_side = make_recipe("Alte Beilage", is_side_dish=True)
+    new_side = make_recipe("Neue, manuell gewählt", is_side_dish=True)
+    with app.app_context():
+        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        db.session.add(pd)
+        db.session.flush()
+        side = PlanDaySide(plan_day_id=pd.id, recipe_id=old_side, cooked=True)
+        db.session.add(side)
+        db.session.commit()
+        side_id = side.id
+
+    resp = client.post(f"/day/2026-06-15/side/{side_id}/set", json={"recipe_id": new_side})
+    assert resp.status_code == 200
+    assert resp.get_json()["cooked"] is False
 
 
 # --- side/<id>/remove ---
@@ -285,6 +352,24 @@ def test_move_one_side_moves_to_target_creating_plan_day(client, app, make_recip
         assert moved_side.plan_day_id == target_pd.id
 
 
+def test_move_one_side_preserves_cooked(client, app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    side_recipe_id = make_recipe("Beilage", is_side_dish=True)
+    with app.app_context():
+        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        db.session.add(pd)
+        db.session.flush()
+        side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id, cooked=True)
+        db.session.add(side)
+        db.session.commit()
+        side_id = side.id
+
+    resp = client.post(f"/day/2026-06-15/side/{side_id}/move/2026-06-20")
+    assert resp.status_code == 200
+    assert resp.get_json()["cooked"] is True
+
+
 # --- servings ---
 
 def test_set_day_servings_invalid_date_returns_400(client):
@@ -330,8 +415,8 @@ def test_swap_days_swaps_main_recipe_excluded_and_sides(client, app, make_recipe
     side_a = make_recipe("Beilage Montag", is_side_dish=True)
 
     with app.app_context():
-        pd_a = PlanDay(date=date(2026, 6, 15), main_recipe_id=recipe_a, excluded=False, servings=2)
-        pd_b = PlanDay(date=date(2026, 6, 16), main_recipe_id=recipe_b, excluded=True, servings=3)
+        pd_a = PlanDay(date=date(2026, 6, 15), main_recipe_id=recipe_a, excluded=False, servings=2, cooked=True)
+        pd_b = PlanDay(date=date(2026, 6, 16), main_recipe_id=recipe_b, excluded=True, servings=3, cooked=False)
         db.session.add_all([pd_a, pd_b])
         db.session.flush()
         db.session.add(PlanDaySide(plan_day_id=pd_a.id, recipe_id=side_a))
@@ -352,6 +437,10 @@ def test_swap_days_swaps_main_recipe_excluded_and_sides(client, app, make_recipe
         # servings wandert bewusst NICHT mit (siehe Docstring von swap_days)
         assert row_a.servings == 2
         assert row_b.servings == 3
+        # cooked gehört zum Hauptgericht (wie main_recipe_id/excluded),
+        # wandert beim Tausch also MIT.
+        assert row_a.cooked is False
+        assert row_b.cooked is True
         # Die Beilage ist jetzt an Tag B, nicht mehr an Tag A.
         assert PlanDaySide.query.filter_by(plan_day_id=row_a.id).count() == 0
         assert PlanDaySide.query.filter_by(plan_day_id=row_b.id).count() == 1
@@ -364,3 +453,84 @@ def test_swap_days_creates_missing_plan_day_rows(client, app):
     with app.app_context():
         assert PlanDay.query.filter_by(date=date(2026, 6, 15)).first() is not None
         assert PlanDay.query.filter_by(date=date(2026, 6, 16)).first() is not None
+
+
+# --- cooked (Hauptgericht) ---
+
+def test_set_day_cooked_invalid_date_returns_400(client):
+    resp = client.post("/day/garbage/cooked", json={"cooked": True})
+    assert resp.status_code == 400
+
+
+def test_set_day_cooked_without_main_recipe_returns_400(client, app):
+    _plan_day(app, date(2026, 6, 15))
+    resp = client.post("/day/2026-06-15/cooked", json={"cooked": True})
+    assert resp.status_code == 400
+
+
+def test_set_day_cooked_without_plan_day_returns_400(client):
+    resp = client.post("/day/2026-06-15/cooked", json={"cooked": True})
+    assert resp.status_code == 400
+
+
+def test_set_day_cooked_toggles_true_and_false(client, app, make_recipe):
+    from models import PlanDay
+
+    recipe_id = make_recipe("Gericht")
+    _plan_day(app, date(2026, 6, 15), main_recipe_id=recipe_id)
+
+    resp = client.post("/day/2026-06-15/cooked", json={"cooked": True})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "cooked": True}
+    with app.app_context():
+        assert PlanDay.query.filter_by(date=date(2026, 6, 15)).first().cooked is True
+
+    resp = client.post("/day/2026-06-15/cooked", json={"cooked": False})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "cooked": False}
+    with app.app_context():
+        assert PlanDay.query.filter_by(date=date(2026, 6, 15)).first().cooked is False
+
+
+# --- cooked (Beilage) ---
+
+def test_set_side_cooked_invalid_date_returns_400(client):
+    resp = client.post("/day/garbage/side/1/cooked", json={"cooked": True})
+    assert resp.status_code == 400
+
+
+def test_set_side_cooked_wrong_day_returns_404(client, app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    side_recipe_id = make_recipe("Beilage", is_side_dish=True)
+    with app.app_context():
+        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        db.session.add(pd)
+        db.session.flush()
+        side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
+        db.session.add(side)
+        db.session.commit()
+        side_id = side.id
+
+    resp = client.post(f"/day/2026-06-16/side/{side_id}/cooked", json={"cooked": True})
+    assert resp.status_code == 404
+
+
+def test_set_side_cooked_toggles(client, app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    side_recipe_id = make_recipe("Beilage", is_side_dish=True)
+    with app.app_context():
+        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        db.session.add(pd)
+        db.session.flush()
+        side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
+        db.session.add(side)
+        db.session.commit()
+        side_id = side.id
+
+    resp = client.post(f"/day/2026-06-15/side/{side_id}/cooked", json={"cooked": True})
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "cooked": True}
+    with app.app_context():
+        assert db.session.get(PlanDaySide, side_id).cooked is True

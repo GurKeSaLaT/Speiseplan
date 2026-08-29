@@ -254,6 +254,22 @@ if (recipeFilterInput) {
     });
 }
 
+// Öffnet automatisch das Bearbeiten-Modal eines bestimmten Rezepts, wenn
+// die Seite mit ?edit=<id> aufgerufen wird - genutzt vom "✏️ Rezept
+// bearbeiten"-Button im read-only Detail-Fenster auf der Plan-Seite
+// (siehe templates/plan.html/static/plan.js: openRecipeDetail), der
+// direkt zum passenden Rezept springen soll statt nur zur allgemeinen
+// Liste. Eine unbekannte/fehlende id wird stillschweigend ignoriert (kein
+// Modal mit diesem Namen im DOM).
+(function() {
+    const editId = new URLSearchParams(location.search).get('edit');
+    if (!editId) return;
+    const modalEl = document.getElementById('editModal' + editId);
+    if (modalEl) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+})();
+
 // Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
 // Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
 // aber pro Modal ein eigener Container, da auf dieser Seite gleichzeitig

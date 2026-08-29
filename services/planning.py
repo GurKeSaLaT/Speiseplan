@@ -385,6 +385,14 @@ def jsonify_recipe(recipe):
     templates/plan.html in das window.PLAN_DATA-JavaScript-Objekt
     eingebettet werden kann.
 
+    is_favorite/source_url/instructions sind zusätzlich zu den eigentlich
+    für die Einkaufsliste/Nährwertsumme nötigen Feldern mit dabei - werden
+    für die Berechnungen selbst nicht gebraucht, aber vom read-only
+    Rezept-Detail-Fenster auf der Plan-Seite angezeigt (siehe
+    static/plan.js: openRecipeDetail), das direkt aus den bereits im
+    Frontend vorliegenden weeklyPlanRecipes/weeklySideRecipes-Objekten
+    baut statt einen eigenen Server-Roundtrip zu brauchen.
+
     Zutatennamen werden dabei über normalize_ingredient_name() (services/
     ingredient_aliases.py) aufbereitet: zunächst .strip().title() (führende/
     nachgestellte Leerzeichen entfernt, erster Buchstabe jedes Worts groß),
@@ -419,6 +427,9 @@ def jsonify_recipe(recipe):
         "protein": recipe.protein,
         "carbs": recipe.carbs,
         "fat": recipe.fat,
+        "is_favorite": recipe.is_favorite,
+        "source_url": recipe.source_url,
+        "instructions": recipe.instructions,
         "ingredients": [
             {
                 "name": normalize_ingredient_name(ing.name),
@@ -437,7 +448,13 @@ def jsonify_side(plan_day_side):
     braucht diese ID, um genau DIESEN Beilagen-Slot gezielt neu zu
     würfeln, manuell zu ersetzen, zu entfernen oder auf einen anderen Tag
     zu verschieben, unabhängig davon, ob dasselbe Rezept vielleicht noch
-    als Beilage an einem anderen Tag steht."""
+    als Beilage an einem anderen Tag steht. Außerdem cooked - der
+    tatsächliche AKTUELLE Wert der PlanDaySide-Zeile (siehe models.py:
+    PlanDaySide.cooked), nicht pauschal False: reroll_one_side()/
+    set_one_side() setzen ihn vor dem Aufruf hier bewusst zurück (neues
+    Gericht = noch nicht gekocht), move_one_side() lässt ihn dagegen
+    unangetastet (dieselbe Beilage wandert nur auf einen anderen Tag)."""
     data = jsonify_recipe(plan_day_side.recipe)
     data['side_id'] = plan_day_side.id
+    data['cooked'] = plan_day_side.cooked
     return data

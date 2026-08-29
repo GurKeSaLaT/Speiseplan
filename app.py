@@ -211,6 +211,19 @@ def init_db():
         db.session.execute(text("ALTER TABLE plan_day_new RENAME TO plan_day"))
         db.session.commit()
 
+    # "Gekocht"-Häkchen im Rezept-Detail-Fenster (siehe models.py: PlanDay.cooked/
+    # PlanDaySide.cooked) - erst nachträglich hinzugekommen, existing_plan_day_columns
+    # wurde oben bereits für die side_recipe_id-Migration ermittelt.
+    existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
+    if 'cooked' not in existing_plan_day_columns:
+        db.session.execute(text("ALTER TABLE plan_day ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
+        db.session.commit()
+
+    existing_plan_day_side_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day_side)"))}
+    if 'cooked' not in existing_plan_day_side_columns:
+        db.session.execute(text("ALTER TABLE plan_day_side ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
+        db.session.commit()
+
     # Erststart mit komplett leerer Datenbank: ein sinnvoller Grundstock an
     # Kategorien, damit die App nicht mit einer leeren Kategorie-Liste
     # (und damit unbenutzbarer automatischer Planung) startet. Wird NUR

@@ -67,6 +67,14 @@ let dayExcluded = window.PLAN_DATA.excludedDays;
 // wandert beim Tage-Tausch also NICHT mit.
 let dayServings = window.PLAN_DATA.servingsList;
 
+// Ob das Hauptgericht eines Tages bereits als gekocht markiert wurde
+// (Index = Wochentag) - steuert das "Ausgrauen" der Tageskarte (siehe
+// renderMainDisplay) und die vorbefüllte Checkbox im Rezept-Detail-Fenster
+// (siehe openRecipeDetail). Beilagen tragen ihr eigenes cooked-Feld direkt
+// am Rezept-Objekt in weeklySideRecipes (siehe jsonify_side in
+// services/planning.py), brauchen also kein eigenes paralleles Array.
+let dayCooked = window.PLAN_DATA.cookedMain;
+
 // Rezepte im JavaScript-Speicher (Index = Wochentag, null = kein Rezept).
 // Dies ist die "Quelle der Wahrheit" für alles, was clientseitig aus dem
 // Plan berechnet wird (Nährwertsumme, Einkaufsliste, siehe
@@ -135,10 +143,12 @@ function postWithCsrf(url, extraOptions = {}) {
  * routes/plan/day_actions.py: reroll_day() auf, welche eine zufällige
  * Alternative aus derselben Kategorie wählt, die weder in dieser Woche
  * noch in den category-Nachbartagen bereits vorkommt). Bei Erfolg werden
- * sowohl die Tageskarte im DOM als auch der lokale weeklyPlanRecipes-
- * Speicher und die Einkaufsliste aktualisiert; bei Misserfolg (keine
- * Alternative verfügbar) bleibt alles unverändert und der Nutzer bekommt
- * eine Fehlermeldung.
+ * sowohl die Tageskarte im DOM (über refreshDayCard - ein neu gewürfeltes
+ * Gericht ist serverseitig automatisch nicht mehr "gekocht", siehe
+ * reroll_day() dort, das muss sich auch im Ausgrau-Zustand der Karte
+ * niederschlagen) als auch der lokale weeklyPlanRecipes-Speicher und die
+ * Einkaufsliste aktualisiert; bei Misserfolg (keine Alternative verfügbar)
+ * bleibt alles unverändert und der Nutzer bekommt eine Fehlermeldung.
  */
 function rerollSingleDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
@@ -150,21 +160,9 @@ function rerollSingleDay(dayIndex) {
         return response.json();
     })
     .then(newRecipe => {
-        // 1. HTML-Anzeige des Wochentags aktualisieren
-        dayCard.setAttribute('data-recipe-id', newRecipe.id);
-        dayCard.setAttribute('data-category-id', newRecipe.category_id);
-
-        dayCard.querySelector('.recipe-name').textContent = newRecipe.name;
-        dayCard.querySelector('.recipe-category').textContent = newRecipe.category_name;
-        dayCard.querySelector('.recipe-kcal').textContent = newRecipe.calories;
-        dayCard.querySelector('.recipe-protein').textContent = newRecipe.protein;
-        dayCard.querySelector('.recipe-carbs').textContent = newRecipe.carbs;
-        dayCard.querySelector('.recipe-fat').textContent = newRecipe.fat;
-
-        // 2. JavaScript-Speicher aktualisieren
         weeklyPlanRecipes[dayIndex] = newRecipe;
-
-        // 3. Einkaufsliste live neu berechnen
+        dayCooked[dayIndex] = false;
+        refreshDayCard(dayIndex);
         rebuildShoppingList();
     })
     .catch(err => {
@@ -185,9 +183,10 @@ function rerollSingleDay(dayIndex) {
 function renderMainDisplay(dayIndex) {
     const recipe = weeklyPlanRecipes[dayIndex];
     if (recipe) {
+        const cookedClass = dayCooked[dayIndex] ? ' dish-cooked' : '';
         return `
             <div class="d-flex justify-content-between align-items-start mb-2">
-                <div>
+                <div class="dish-clickable${cookedClass}" role="button" title="Details anzeigen" onclick="openRecipeDetail(${dayIndex}, null)">
                     <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayLabels[dayIndex]}</h5>
                     <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${recipe.name}</span>
                 </div>
@@ -197,7 +196,7 @@ function renderMainDisplay(dayIndex) {
                     <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Anderes Rezept auswählen" onclick="openMainManualSelect(${dayIndex})">✏️</button>
                 </div>
             </div>
-            <div class="text-muted small font-monospace bg-light p-2 rounded">
+            <div class="text-muted small font-monospace bg-light p-2 rounded dish-clickable${cookedClass}" role="button" title="Details anzeigen" onclick="openRecipeDetail(${dayIndex}, null)">
                 📊 <span class="recipe-kcal">${recipe.calories}</span> kcal |
                 E: <span class="recipe-protein">${recipe.protein}</span>g |
                 K: <span class="recipe-carbs">${recipe.carbs}</span>g |
@@ -261,6 +260,7 @@ function setMainRecipe(dayIndex, recipeId) {
     .then(newRecipe => {
         weeklyPlanRecipes[dayIndex] = newRecipe;
         dayExcluded[dayIndex] = false;
+        dayCooked[dayIndex] = false;
         refreshDayCard(dayIndex);
         rebuildShoppingList();
     })
@@ -423,6 +423,7 @@ function daySwap(i, j) {
         [weeklyPlanRecipes[i], weeklyPlanRecipes[j]] = [weeklyPlanRecipes[j], weeklyPlanRecipes[i]];
         [weeklySideRecipes[i], weeklySideRecipes[j]] = [weeklySideRecipes[j], weeklySideRecipes[i]];
         [dayExcluded[i], dayExcluded[j]] = [dayExcluded[j], dayExcluded[i]];
+        [dayCooked[i], dayCooked[j]] = [dayCooked[j], dayCooked[i]];
 
         refreshDayCard(i);
         refreshDayCard(j);
@@ -462,3 +463,137 @@ function daySwap(i, j) {
         }
     });
 })();
+
+// --- REZEPT-DETAIL-FENSTER ---
+// Ein einzelnes, wiederverwendetes Modal (#recipeDetailModal, siehe
+// plan.html) statt eines pro Gericht: es zeigt immer nur GENAU EIN
+// Gericht gleichzeitig, sein Inhalt wird bei jedem Öffnen per JS neu
+// befüllt. Öffnet man per Klick auf ein Hauptgericht (dish-clickable in
+// renderMainDisplay oben) oder eine Beilage (dish-clickable in
+// static/plan-sides.js: renderSidesSection) - liest in beiden Fällen aus
+// den bereits im Frontend vorliegenden weeklyPlanRecipes/
+// weeklySideRecipes-Objekten, kein eigener Server-Roundtrip nötig (siehe
+// services/planning.py: jsonify_recipe()-Docstring für die dafür
+// zusätzlich mitgelieferten Felder is_favorite/source_url/instructions).
+
+// Merkt sich, für welchen Tag/welche Beilage das Detail-Fenster gerade
+// offen ist - braucht toggleDetailCooked() unten, um zu wissen, wohin die
+// Checkbox-Änderung serverseitig gespeichert werden soll, ohne dass jeder
+// Aufrufer das selbst durchreichen müsste.
+let detailDayIndex = null;
+let detailSideId = null;
+
+/** Escaped Text für die sichere Einbettung in innerHTML (verhindert, dass
+ * z.B. ein Rezeptname mit "<"/"&" das Markup des Detail-Fensters bricht
+ * oder - da hier anders als bei renderMainDisplay/renderSidesSection auch
+ * längerer freier Text wie die Zubereitung angezeigt wird - referenziertes
+ * HTML ausführt). */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text ?? '';
+    return div.innerHTML;
+}
+
+/**
+ * Öffnet das Rezept-Detail-Fenster für das Hauptgericht eines Tages
+ * (sideId null) oder eine bestimmte Beilage (sideId gesetzt) - baut den
+ * kompletten, rein lesenden Inhalt aus dem bereits vorliegenden
+ * Rezept-Objekt auf und zeigt das Bootstrap-Modal an.
+ */
+function openRecipeDetail(dayIndex, sideId) {
+    const recipe = sideId
+        ? (weeklySideRecipes[dayIndex] || []).find(s => s.side_id === sideId)
+        : weeklyPlanRecipes[dayIndex];
+    if (!recipe) return;
+
+    detailDayIndex = dayIndex;
+    detailSideId = sideId;
+    const cooked = sideId ? !!recipe.cooked : !!dayCooked[dayIndex];
+
+    document.getElementById('recipeDetailTitle').textContent = (recipe.is_favorite ? '⭐ ' : '') + recipe.name;
+    document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit-list?edit=${recipe.id}`;
+    document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(recipe);
+
+    const checkbox = document.getElementById('recipeDetailCookedCheckbox');
+    checkbox.checked = cooked;
+    checkbox.onchange = () => toggleDetailCooked(checkbox.checked);
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('recipeDetailModal')).show();
+}
+
+/** Baut den read-only Inhalt des Detail-Fensters (Kategorie/Personen,
+ * Nährwerte, Zutatenliste, ggf. Anleitung/Quelle) aus einem
+ * Rezept-Objekt - bewusst eine andere, kompaktere Darstellung als das
+ * Anlegen-/Bearbeiten-Formular, die alles auf einen Blick zeigt statt
+ * einzelner Formularfelder. */
+function renderRecipeDetailBody(recipe) {
+    const ingredientsHtml = recipe.ingredients.length
+        ? `<ul class="mb-0 ps-3">${recipe.ingredients.map(ing =>
+            `<li>${escapeHtml(ing.amount)} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}</li>`
+          ).join('')}</ul>`
+        : '<span class="text-muted">Keine Zutaten hinterlegt.</span>';
+
+    const instructionsHtml = recipe.instructions
+        ? `<h6 class="fw-bold text-dark mt-3 mb-1">📝 Zubereitung</h6><p class="mb-0" style="white-space: pre-line;">${escapeHtml(recipe.instructions)}</p>`
+        : '';
+
+    const sourceHtml = recipe.source_url
+        ? `<a href="${escapeHtml(recipe.source_url)}" target="_blank" rel="noopener noreferrer" class="badge bg-light text-dark border px-2 py-1 text-decoration-none mt-2 d-inline-block">🔗 Quelle öffnen</a>`
+        : '';
+
+    return `
+        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+            <span class="badge badge-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
+            <span class="text-muted small">👥 ${recipe.servings} Personen</span>
+        </div>
+        <div class="text-muted small font-monospace bg-light p-2 rounded mb-3">
+            📊 ${recipe.calories} kcal | E: ${recipe.protein}g | K: ${recipe.carbs}g | F: ${recipe.fat}g
+        </div>
+        <h6 class="fw-bold text-dark mb-1">🛒 Zutaten</h6>
+        ${ingredientsHtml}
+        ${instructionsHtml}
+        ${sourceHtml}
+    `;
+}
+
+/**
+ * Speichert die geänderte "Gekocht"-Checkbox des gerade offenen
+ * Detail-Fensters serverseitig (routes/plan/day_actions.py:
+ * set_day_cooked()/set_side_cooked()) und aktualisiert bei Erfolg sowohl
+ * den lokalen Zustand (dayCooked bzw. das cooked-Feld direkt am
+ * Beilagen-Objekt) als auch - über refreshDayCard()/refreshSidesSection() -
+ * das Ausgrauen der betroffenen Tageskarte, ohne das Detail-Fenster dafür
+ * zu schließen.
+ */
+function toggleDetailCooked(cooked) {
+    const dayIndex = detailDayIndex;
+    const sideId = detailSideId;
+    const url = sideId
+        ? `/day/${dayDates[dayIndex]}/side/${sideId}/cooked`
+        : `/day/${dayDates[dayIndex]}/cooked`;
+
+    postWithCsrf(url, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cooked: cooked }),
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Konnte nicht gespeichert werden.');
+        return response.json();
+    })
+    .then(data => {
+        if (sideId) {
+            const side = (weeklySideRecipes[dayIndex] || []).find(s => s.side_id === sideId);
+            if (side) side.cooked = data.cooked;
+            refreshSidesSection(dayIndex);
+        } else {
+            dayCooked[dayIndex] = data.cooked;
+            refreshDayCard(dayIndex);
+        }
+    })
+    .catch(err => {
+        alert('Hinweis: ' + err.message);
+        // Checkbox auf den zuletzt bekannten Stand zurücksetzen, da die
+        // Änderung serverseitig nicht übernommen wurde.
+        document.getElementById('recipeDetailCookedCheckbox').checked = !cooked;
+    });
+}

@@ -315,6 +315,20 @@ def test_jsonify_recipe_ingredient_without_alias_keeps_own_name(app, make_recipe
         assert data["ingredients"][0]["name"] == "Reis"
 
 
+def test_jsonify_recipe_includes_detail_fields(app, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe(
+        "Gulasch", is_favorite=True, source_url="https://example.com/x", instructions="Alles anbraten."
+    )
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        data = jsonify_recipe(recipe)
+        assert data["is_favorite"] is True
+        assert data["source_url"] == "https://example.com/x"
+        assert data["instructions"] == "Alles anbraten."
+
+
 def test_jsonify_side_adds_side_id(app, make_recipe):
     from models import PlanDay, PlanDaySide, db
 
@@ -330,6 +344,21 @@ def test_jsonify_side_adds_side_id(app, make_recipe):
         data = jsonify_side(side)
         assert data["side_id"] == side.id
         assert data["name"] == "Salat"
+
+
+def test_jsonify_side_includes_cooked_flag(app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    recipe_id = make_recipe("Salat", is_side_dish=True)
+    with app.app_context():
+        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        db.session.add(pd)
+        db.session.flush()
+        side = PlanDaySide(plan_day_id=pd.id, recipe_id=recipe_id, cooked=True)
+        db.session.add(side)
+        db.session.commit()
+
+        assert jsonify_side(side)["cooked"] is True
 
 
 def shared_category(app, name="Testkategorie"):

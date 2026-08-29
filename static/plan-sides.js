@@ -32,12 +32,13 @@ function renderSidesSection(dayIndex) {
     const sides = weeklySideRecipes[dayIndex] || [];
     let html = '';
     sides.forEach(side => {
+        const cookedClass = side.cooked ? ' dish-cooked' : '';
         html += `
             <div class="d-flex justify-content-between align-items-center side-dish-card mb-1"
                  id="side-item-${dayIndex}-${side.side_id}"
                  draggable="true"
                  ondragstart="sideDragStart(event, ${dayIndex}, ${side.side_id})">
-                <div>
+                <div class="dish-clickable${cookedClass}" role="button" title="Details anzeigen" onclick="openRecipeDetail(${dayIndex}, ${side.side_id})">
                     <span class="fw-bold text-dark side-dish-name">🥗 ${side.name}</span>
                     <span class="badge badge-category side-dish-category ms-1">${side.category_name}</span>
                     <span class="text-muted small side-dish-kcal">(${side.calories} kcal)</span>

@@ -192,6 +192,17 @@ class PlanDay(db.Model):
     servings = db.Column(db.Integer, nullable=False, default=2)
     main_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
 
+    # Ob das Hauptgericht DIESES Tages bereits gekocht wurde (Checkbox im
+    # Rezept-Detail-Fenster, siehe static/plan.js: openRecipeDetail/
+    # toggleCooked) - steuert das "Ausgrauen" der Tageskarte im Wochenplan.
+    # Bezieht sich bewusst auf die AKTUELLE Zuweisung, nicht das Rezept an
+    # sich: wird das Hauptgericht neu gewürfelt/manuell ersetzt, setzen
+    # routes/plan/day_actions.py: reroll_day()/set_main_day() dieses Feld
+    # automatisch zurück auf False, da es sich dann um ein anderes,
+    # noch nicht gekochtes Gericht handelt. Bei swap_days() wandert der
+    # Wert dagegen MIT dem Hauptgericht auf den jeweils anderen Tag.
+    cooked = db.Column(db.Boolean, default=False, nullable=False)
+
     main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
     # cascade="all, delete-orphan": wird ein PlanDay gelöscht (kommt in der
     # aktuellen App nicht vor, aber zur Sicherheit), verschwinden auch seine
@@ -217,6 +228,13 @@ class PlanDaySide(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     plan_day_id = db.Column(db.Integer, db.ForeignKey('plan_day.id'), nullable=False)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
+
+    # Wie PlanDay.cooked oben, nur für diese eine Beilage statt das
+    # Hauptgericht des Tages - routes/plan/day_actions.py: reroll_one_side()/
+    # set_one_side() setzen es beim Ersetzen der Beilage zurück auf False,
+    # move_one_side() (nur ein Verschieben auf einen anderen Tag, dieselbe
+    # Zeile bleibt bestehen) lässt es dagegen unangetastet.
+    cooked = db.Column(db.Boolean, default=False, nullable=False)
 
     recipe = db.relationship('Recipe')
 

@@ -53,6 +53,11 @@ def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
     assert "noch keinen Plan".encode("utf-8") not in resp.data
     assert "Dein Wochenplan".encode("utf-8") in resp.data
     assert b'"name": "Montagsgericht"' in resp.data or "Montagsgericht".encode("utf-8") in resp.data
+    # Rezept-Detail-Fenster (siehe static/plan.js: openRecipeDetail) muss
+    # als Markup vorhanden sein, unabhängig davon, ob für diese Woche
+    # bereits ein Plan existiert.
+    assert b'id="recipeDetailModal"' in resp.data
+    assert b'id="recipeDetailCookedCheckbox"' in resp.data
 
 
 def test_week_view_plan_data_reflects_excluded_and_servings(client, app):
@@ -74,6 +79,27 @@ def test_week_view_plan_data_reflects_excluded_and_servings(client, app):
     assert plan_data["excludedDays"][0] is True
     assert plan_data["servingsList"][0] == 4
     assert plan_data["plan"][0] is None
+
+
+def test_week_view_plan_data_reflects_cooked_main(client, app, make_recipe):
+    from models import PlanDay, db
+
+    monday = date(2026, 6, 15)
+    recipe_id = make_recipe("Gekochtes Gericht")
+    with app.app_context():
+        db.session.add(PlanDay(date=monday, main_recipe_id=recipe_id, cooked=True))
+        db.session.add(PlanDay(date=monday + timedelta(days=1), cooked=False))
+        db.session.commit()
+
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    assert resp.status_code == 200
+    import json
+    import re
+
+    match = re.search(r"window\.PLAN_DATA = (\{.*?\});", resp.get_data(as_text=True), re.S)
+    plan_data = json.loads(match.group(1))
+    assert plan_data["cookedMain"][0] is True
+    assert plan_data["cookedMain"][1] is False
 
 
 def test_week_view_extra_items_use_display_unit(client, app):

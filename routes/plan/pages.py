@@ -89,6 +89,12 @@ def week_view(start_date):
     side_plan = [pd.sides if pd else [] for pd in ordered]
     excluded_days = {i for i, pd in enumerate(ordered) if pd and pd.excluded}
     servings_list = [pd.servings if pd else 2 for pd in ordered]
+    # Ob das Hauptgericht dieses Tages bereits als gekocht markiert wurde
+    # (siehe models.py: PlanDay.cooked) - steuert das "Ausgrauen" der
+    # Tageskarte (static/plan.js: renderMainDisplay). Beilagen tragen ihr
+    # eigenes cooked-Feld direkt im jsonify_side()-Dict, brauchen also
+    # keine eigene parallele Liste hier.
+    cooked_main = [pd.cooked if pd else False for pd in ordered]
 
     today = date.today()
     # Fertig formatierte Wochentag+Datum-Labels ("Montag, 15.09. (Heute)"),
@@ -110,6 +116,7 @@ def week_view(start_date):
         'dayLabels': day_labels,
         'excludedDays': [i in excluded_days for i in range(7)],
         'servingsList': servings_list,
+        'cookedMain': cooked_main,
         'plan': [jsonify_recipe(r) if r else None for r in plan],
         'sidePlan': [[jsonify_side(s) for s in sides] for sides in side_plan],
         'extraItems': [

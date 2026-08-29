@@ -117,6 +117,10 @@ def reroll_day(day_date):
         return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
 
     plan_day.main_recipe_id = chosen.id
+    # Neu gewürfeltes Gericht wurde noch nicht gekocht (siehe models.py:
+    # PlanDay.cooked) - unabhängig davon, ob der vorherige Stand hier
+    # bereits als gekocht markiert war.
+    plan_day.cooked = False
     db.session.commit()
     return jsonify_recipe(chosen)
 
@@ -162,6 +166,9 @@ def set_main_day(day_date):
 
     plan_day.excluded = False
     plan_day.main_recipe_id = recipe.id
+    # Siehe reroll_day() oben - ein manuell zugewiesenes Gericht ist per
+    # Definition noch nicht gekocht.
+    plan_day.cooked = False
     db.session.commit()
     return jsonify_recipe(recipe)
 
@@ -257,6 +264,8 @@ def reroll_one_side(day_date, side_id):
         return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
 
     plan_day_side.recipe_id = chosen.id
+    # Siehe reroll_day() oben - eine neu gewürfelte Beilage ist noch nicht gekocht.
+    plan_day_side.cooked = False
     db.session.commit()
     return jsonify_side(plan_day_side)
 
@@ -288,6 +297,8 @@ def set_one_side(day_date, side_id):
         return {"error": "Rezept nicht gefunden."}, 400
 
     plan_day_side.recipe_id = recipe.id
+    # Siehe reroll_day() oben - eine manuell gewählte Beilage ist noch nicht gekocht.
+    plan_day_side.cooked = False
     db.session.commit()
     return jsonify_side(plan_day_side)
 
@@ -385,8 +396,8 @@ def swap_days(date_a, date_b):
     """AJAX-Endpunkt hinter dem Drag-and-Drop-Tausch zweier ganzer
     Tageskarten auf der Plan-Seite (Ziehen der KARTE selbst, nicht einer
     einzelnen Beilage - für Letzteres siehe move_one_side oben): vertauscht
-    Hauptgericht, ALLE Beilagen UND Ausnahme-Status zweier Kalendertage
-    komplett miteinander. "Wird das Hauptgericht verschoben, kommen die
+    Hauptgericht, ALLE Beilagen, Ausnahme-Status UND Gekocht-Status zweier
+    Kalendertage komplett miteinander. "Wird das Hauptgericht verschoben, kommen die
     Beilagen mit" - deshalb hängen hier an einem Tages-Tausch immer alle
     zugehörigen PlanDaySide-Zeilen mit dran, nicht nur main_recipe_id.
 
@@ -424,6 +435,9 @@ def swap_days(date_a, date_b):
 
     plan_day_a.main_recipe_id, plan_day_b.main_recipe_id = plan_day_b.main_recipe_id, plan_day_a.main_recipe_id
     plan_day_a.excluded, plan_day_b.excluded = plan_day_b.excluded, plan_day_a.excluded
+    # cooked gehört zum Hauptgericht, nicht zum Wochentag (anders als
+    # servings, siehe Docstring oben) - wandert beim Tausch also MIT.
+    plan_day_a.cooked, plan_day_b.cooked = plan_day_b.cooked, plan_day_a.cooked
 
     sides_a = PlanDaySide.query.filter_by(plan_day_id=plan_day_a.id).all()
     sides_b = PlanDaySide.query.filter_by(plan_day_id=plan_day_b.id).all()
@@ -434,3 +448,54 @@ def swap_days(date_a, date_b):
 
     db.session.commit()
     return {"ok": True}
+
+
+@plan_bp.route('/day/<day_date>/cooked', methods=['POST'])
+def set_day_cooked(day_date):
+    """AJAX-Endpunkt hinter der "Gekocht"-Checkbox im Rezept-Detail-Fenster
+    (siehe static/plan.js: openRecipeDetail/toggleCooked) für das
+    HAUPTGERICHT eines Tages - für eine Beilage siehe set_side_cooked
+    unten.
+
+    Setzt bewusst nur, wenn für diesen Tag bereits ein Hauptgericht
+    zugewiesen ist (kein get-or-create wie z.B. bei set_day_servings): ein
+    Tag ohne main_recipe_id hat auch kein Gericht, das man als "gekocht"
+    markieren könnte - das Detail-Fenster ist ohnehin nur über einen Klick
+    auf ein bereits zugewiesenes Gericht erreichbar.
+
+    Erwartet einen JSON-Body {"cooked": bool}."""
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    if not plan_day or not plan_day.main_recipe_id:
+        return {"error": "Für diesen Tag ist kein Hauptgericht zugewiesen."}, 400
+
+    data = request.get_json() or {}
+    plan_day.cooked = bool(data.get('cooked'))
+    db.session.commit()
+    return {"ok": True, "cooked": plan_day.cooked}
+
+
+@plan_bp.route('/day/<day_date>/side/<int:side_id>/cooked', methods=['POST'])
+def set_side_cooked(day_date, side_id):
+    """Wie set_day_cooked() oben, aber für EINE bestimmte Beilage (das
+    Detail-Fenster einer Beilage öffnet sich mit derselben Checkbox,
+    siehe static/plan-sides.js: renderSidesSection).
+
+    Erwartet einen JSON-Body {"cooked": bool}."""
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": "Ungültiges Datum"}, 400
+
+    plan_day_side = PlanDaySide.query.join(PlanDay).filter(
+        PlanDaySide.id == side_id, PlanDay.date == target_date
+    ).first()
+    if not plan_day_side:
+        return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
+
+    data = request.get_json() or {}
+    plan_day_side.cooked = bool(data.get('cooked'))
+    db.session.commit()
+    return {"ok": True, "cooked": plan_day_side.cooked}

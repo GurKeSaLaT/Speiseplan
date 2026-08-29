@@ -164,6 +164,34 @@
     </div>
 </div>
 
+{# Rezept-Detail-Fenster (read-only): EIN gemeinsames Modal statt eines
+   pro Gericht (anders als recipe_edit_list.html mit einem Modal pro
+   Rezept) - es zeigt immer nur GENAU EIN Gericht, dessen Inhalt bei
+   jedem Öffnen per JS neu befüllt wird (siehe static/plan.js:
+   openRecipeDetail/renderRecipeDetailBody). Der "Bearbeiten"-Link führt
+   auf die Rezepte-bearbeiten-Seite und öffnet dort automatisch das
+   passende Bearbeiten-Modal (siehe templates/recipe_edit_list.html,
+   ?edit=<id>-Parameter). #}
+<div class="modal fade" id="recipeDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-md">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header text-white" style="background-color: var(--primary-food);">
+                <h5 class="modal-title fw-bold" id="recipeDetailTitle"></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <a href="#" id="recipeDetailEditLink" class="btn btn-sm btn-outline-secondary fw-bold mb-3">✏️ Rezept bearbeiten</a>
+                <div id="recipeDetailBody"><!-- per JS befüllt --></div>
+                <hr>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="recipeDetailCookedCheckbox">
+                    <label class="form-check-label fw-bold" for="recipeDetailCookedCheckbox">🍳 Gekocht</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 .recipe-day-card {
     cursor: grab;
@@ -175,8 +203,42 @@
 .recipe-day-card.drag-over {
     background-color: var(--highlight-bg);
 }
+/* Deutlich auffälliger als die frühere reine 4px-Linksrandmarkierung:
+   umlaufender Rahmen, sanfte Hintergrundfarbe UND ein "Heute"-Tag oben
+   rechts - fällt beim Überfliegen der Woche sofort ins Auge. */
 .recipe-day-card.today-card {
-    border-left: 4px solid var(--primary-food) !important;
+    position: relative;
+    border: 2px solid var(--primary-food) !important;
+    background-color: var(--highlight-bg);
+}
+.recipe-day-card.today-card::before {
+    content: "HEUTE";
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #fff;
+    background-color: var(--primary-food);
+    padding: 2px 8px;
+    border-radius: 999px;
+    z-index: 1;
+}
+
+/* Ein Gericht (Hauptgericht oder Beilage) im Wochenplan ist per Klick auf
+   Name/Kategorie/Nährwerte anklickbar (öffnet das read-only Detail-Fenster,
+   siehe static/plan.js: openRecipeDetail) - die 🎲/✏️/❌-Aktionsbuttons
+   bleiben davon bewusst ausgenommen (eigene onclick-Handler, kein
+   umschließendes dish-clickable). */
+.dish-clickable {
+    cursor: pointer;
+}
+/* Als "gekocht" markierte Gerichte werden im Wochenplan ausgegraut, ohne
+   unlesbar zu werden (siehe models.py: PlanDay.cooked/PlanDaySide.cooked). */
+.dish-cooked {
+    opacity: 0.55;
+    filter: grayscale(65%);
 }
 /* Einzelne Beilagen-Zeilen sind zusätzlich für sich ziehbar (siehe
    static/plan-sides.js: sideDragStart/moveSideDish) - eigener Grab-Cursor, damit
