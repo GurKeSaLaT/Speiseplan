@@ -103,62 +103,71 @@
 
     <!-- 2. SPALTE: Die Einkaufsliste -->
     <div class="col-12 col-lg-5">
-        <div class="card shadow-sm border-0 sticky-lg-top" style="top: 24px; z-index: 100;">
-            <div class="panel-head">
-                <h4>🛒 Einkaufsliste</h4>
-                <span class="count" id="totalIngredientsCount">0</span>
-            </div>
+        {# Beide Karten hier gemeinsam sticky, statt nur die Einkaufsliste
+           allein (wie ursprünglich): ein einzelnes sticky-Element gibt
+           seinen Platz im Textfluss NICHT an nachfolgende Geschwister ab -
+           die Vorrat-Karte wäre beim Scrollen durch die (längere) Tageskarten-
+           Spalte links unter der fixierten Einkaufsliste weitergelaufen und
+           dahinter verschwunden. Als gemeinsamer, selbst scrollender Block
+           (max-height/overflow-y) bleiben beide zusammen sichtbar, auch wenn
+           sie zusammen höher als der Viewport sind. #}
+        <div class="sticky-lg-top" style="top: 24px; z-index: 100; max-height: calc(100vh - 48px); overflow-y: auto;">
+            <div class="card shadow-sm border-0">
+                <div class="panel-head">
+                    <h4>🛒 Einkaufsliste</h4>
+                    <span class="count" id="totalIngredientsCount">0</span>
+                </div>
 
-            {# Mini-Formular zum manuellen Hinzufügen eines Artikels, der zu
-               keinem Rezept gehört (z.B. Hygieneartikel). name ist das
-               einzige Pflichtfeld; die Kategorie-Auswahl bestimmt, in
-               welcher Gruppe der Artikel unten in der Liste landet (siehe
-               static/plan-shopping.js: addExtraShoppingItem/rebuildShoppingList). #}
-            <div class="p-2 border-bottom">
-                <div class="row g-1">
-                    <div class="col-12 col-sm-4">
-                        <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="Artikel..." onkeydown="if(event.key==='Enter'){addExtraShoppingItem();}">
-                    </div>
-                    <div class="col-4 col-sm-2">
-                        <input type="number" step="0.1" id="extraItemAmount" class="form-control form-control-sm" placeholder="Menge">
-                    </div>
-                    <div class="col-4 col-sm-2">
-                        <input type="text" id="extraItemUnit" class="form-control form-control-sm" placeholder="Einheit">
-                    </div>
-                    <div class="col-4 col-sm-3">
-                        <select id="extraItemCategory" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
-                            <option value="" selected>Sonstiges</option>
-                            {% for cat in shopping_categories %}
-                            <option value="{{ cat }}">{{ cat }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-12 col-sm-1 d-grid">
-                        <button type="button" class="btn btn-sm btn-success" style="background-color: var(--primary-food) !important; border-color: var(--primary-food) !important;" onclick="addExtraShoppingItem()" title="Zur Einkaufsliste hinzufügen">+</button>
+                {# Mini-Formular zum manuellen Hinzufügen eines Artikels, der zu
+                   keinem Rezept gehört (z.B. Hygieneartikel). name ist das
+                   einzige Pflichtfeld; die Kategorie-Auswahl bestimmt, in
+                   welcher Gruppe der Artikel unten in der Liste landet (siehe
+                   static/plan-shopping.js: addExtraShoppingItem/rebuildShoppingList). #}
+                <div class="p-2 border-bottom">
+                    <div class="row g-1">
+                        <div class="col-12 col-sm-4">
+                            <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="Artikel..." onkeydown="if(event.key==='Enter'){addExtraShoppingItem();}">
+                        </div>
+                        <div class="col-4 col-sm-2">
+                            <input type="number" step="0.1" id="extraItemAmount" class="form-control form-control-sm" placeholder="Menge">
+                        </div>
+                        <div class="col-4 col-sm-2">
+                            <input type="text" id="extraItemUnit" class="form-control form-control-sm" placeholder="Einheit">
+                        </div>
+                        <div class="col-4 col-sm-3">
+                            <select id="extraItemCategory" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
+                                <option value="" selected>Sonstiges</option>
+                                {% for cat in shopping_categories %}
+                                <option value="{{ cat }}">{{ cat }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-1 d-grid">
+                            <button type="button" class="btn btn-sm btn-success" style="background-color: var(--primary-food) !important; border-color: var(--primary-food) !important;" onclick="addExtraShoppingItem()" title="Zur Einkaufsliste hinzufügen">+</button>
+                        </div>
                     </div>
                 </div>
+
+                <ul class="list-group list-group-flush p-2" id="shoppingListContainer">
+                    <!-- Wird per JavaScript befüllt -->
+                </ul>
             </div>
 
-            <ul class="list-group list-group-flush p-2" id="shoppingListContainer" style="max-height: 60vh; overflow-y: auto;">
-                <!-- Wird per JavaScript befüllt -->
-            </ul>
-        </div>
-
-        {# Gewürze/Verbrauchsartikel aus den geplanten Rezepten dieser Woche
-           - hat man in aller Regel schon zuhause, landet deshalb NICHT
-           automatisch oben in der Einkaufsliste (siehe services/shopping.py:
-           PANTRY_CATEGORIES, static/plan-shopping.js: rebuildShoppingList/
-           renderPantryList). Bewusst NICHT sticky wie die Einkaufsliste
-           oben - zweitrangig, scrollt normal mit. #}
-        <div class="card shadow-sm border-0 mt-4">
-            <div class="panel-head">
-                <h4>🧂 Vorrat prüfen</h4>
-                <span class="count" id="pantryItemsCount">0</span>
+            {# Gewürze/Vorratsschrank/Verbrauchsartikel aus den geplanten
+               Rezepten dieser Woche - hat man in aller Regel schon zuhause,
+               landet deshalb NICHT automatisch oben in der Einkaufsliste
+               (siehe services/shopping.py: PANTRY_CATEGORIES,
+               static/plan-shopping.js: rebuildShoppingList/renderPantryList). #}
+            <div class="card shadow-sm border-0 mt-4 mb-4">
+                <div class="panel-head">
+                    <h4>🧂 Vorrat prüfen</h4>
+                    <span class="count" id="pantryItemsCount">0</span>
+                </div>
+                <p class="text-muted small px-3 pt-3 mb-0">Hat man meist schon zuhause - nur bei Bedarf per Klick auf die Einkaufsliste holen.</p>
+                <ul class="list-group list-group-flush p-2" id="pantryListContainer">
+                    <!-- Wird per JavaScript befüllt -->
+                </ul>
             </div>
-            <p class="text-muted small px-3 pt-3 mb-0">Hat man meist schon zuhause - nur bei Bedarf per Klick auf die Einkaufsliste holen.</p>
-            <ul class="list-group list-group-flush p-2" id="pantryListContainer" style="max-height: 40vh; overflow-y: auto;">
-                <!-- Wird per JavaScript befüllt -->
-            </ul>
         </div>
     </div>
 </div>
