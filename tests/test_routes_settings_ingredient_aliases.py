@@ -66,7 +66,9 @@ def test_api_set_ingredient_alias_creates_mapping(client, app):
     resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Olivenöl", "canonical_name": "Öl"})
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data == {"ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl"}
+    # category ist None, da "Öl" noch bei keiner bestehenden Zutat-Zeile
+    # kategorisiert ist (siehe eigene Tests für infer_category unten).
+    assert data == {"ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl", "category": None}
 
     with app.app_context():
         assert normalize_ingredient_name("Olivenöl") == "Öl"
@@ -78,9 +80,27 @@ def test_api_set_ingredient_alias_normalizes_input(client, app):
     resp = client.post("/api/ingredient-alias/set", json={"raw_name": "  fusilli  ", "canonical_name": "nudeln"})
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data == {"ok": True, "raw_name": "Fusilli", "canonical_name": "Nudeln"}
+    assert data == {"ok": True, "raw_name": "Fusilli", "canonical_name": "Nudeln", "category": None}
     with app.app_context():
         assert normalize_ingredient_name("Fusilli") == "Nudeln"
+
+
+def test_api_set_ingredient_alias_returns_inferred_category(client, app, make_recipe):
+    """Existiert bereits eine kategorisierte Zutat-Zeile für die kanonische
+    Zutat (z.B. "Nudeln" schon als "Teigwaren" einsortiert), soll das
+    Setzen eines weiteren Alias auf denselben Namen diese Kategorie direkt
+    mitliefern - static/ingredient_alias_hint.js übernimmt sie automatisch
+    ins Kategorie-Feld der aktuellen Zutatenzeile (siehe
+    fillCategoryFromAlias), damit alle gleichgesetzten Zutaten konsistent
+    einsortiert sind."""
+    make_recipe("Spaghetti-Gericht", ingredients=[
+        {"name": "Nudeln", "amount": 500, "unit": "g", "category": "Teigwaren"},
+    ])
+
+    resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Penne", "canonical_name": "Nudeln"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["category"] == "Teigwaren"
 
 
 def test_api_set_ingredient_alias_requires_both_fields(client):

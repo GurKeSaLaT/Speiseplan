@@ -31,6 +31,7 @@ from services.nutrition import (
     compute_calories, get_all_nutrition_entries, infer_reference_unit, list_alias_canonical_names, set_nutrition,
 )
 from services.settings import get_settings, update_display_units
+from services.shopping import infer_category
 from services.units import DISPLAY_UNIT_CHOICES, MASS, VOLUME
 
 settings_bp = Blueprint('settings', __name__)
@@ -103,7 +104,14 @@ def api_set_ingredient_alias():
     Gibt die NORMALISIERTEN Werte zurück, damit das Frontend seine lokale
     Kopie von window.INGREDIENT_ALIASES konsistent mit dem
     Nachschlage-Schlüssel aktualisieren kann, den auch der Server
-    verwendet (siehe services/ingredient_aliases.py: normalize_name)."""
+    verwendet (siehe services/ingredient_aliases.py: normalize_name).
+    category ist die anhand bestehender Zutat-Zeilen geratene Einkaufslisten-
+    Kategorie für die kanonische Zutat (siehe services/shopping.py:
+    infer_category) - das Frontend übernimmt sie automatisch in das
+    Kategorie-Feld DIESER Zutatenzeile, damit alle gleichgesetzten Zutaten
+    in derselben Kategorie landen, statt je nach Rezept unterschiedlich
+    einsortiert zu sein. None (noch keine bestehende Zeile kategorisiert)
+    lässt das Frontend-Feld unangetastet."""
     data = request.get_json() or {}
     raw_name = (data.get('raw_name') or '').strip()
     canonical_name = (data.get('canonical_name') or '').strip()
@@ -111,10 +119,12 @@ def api_set_ingredient_alias():
         return {"error": "Name und Alias dürfen nicht leer sein."}, 400
 
     set_alias(raw_name, canonical_name)
+    resolved_canonical = normalize_ingredient_name(raw_name)
     return {
         "ok": True,
         "raw_name": normalize_name(raw_name),
-        "canonical_name": normalize_ingredient_name(raw_name),
+        "canonical_name": resolved_canonical,
+        "category": infer_category(resolved_canonical),
     }
 
 

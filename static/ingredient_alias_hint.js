@@ -173,9 +173,29 @@
             ALIASES[data.raw_name] = data.canonical_name;
             canonicalNames = new Set(Object.values(ALIASES));
             fillUnitFromNutrition(hintEl, data.canonical_name);
+            fillCategoryFromAlias(hintEl, data.category);
             renderHint(hintEl, data.raw_name);
         })
         .catch(() => alert('Hinweis: Alias konnte nicht gesetzt werden.'));
+    }
+
+    /** Übernimmt beim Setzen eines Alias automatisch die für die
+     * kanonische Zutat bereits verwendete Einkaufslisten-Kategorie (vom
+     * Server anhand bestehender Zutat-Zeilen geraten, siehe
+     * routes/settings.py: api_set_ingredient_alias/services/shopping.py:
+     * infer_category) in das Kategorie-Feld DIESER Zutatenzeile - nur,
+     * wenn dort noch die Standardauswahl "Sonstiges" (leerer Wert) steht,
+     * eine bereits bewusst getroffene Auswahl wird nie überschrieben.
+     * Damit landen alle auf denselben Namen gleichgesetzten Zutaten (z.B.
+     * "Spaghetti"/"Fusilli" -> "Nudeln") konsistent in derselben Gruppe
+     * auf der Einkaufsliste, statt je nach Rezept unterschiedlich
+     * einsortiert zu sein. */
+    function fillCategoryFromAlias(hintEl, category) {
+        if (!category) return;
+        const categorySelect = hintEl.closest('.ingredient-row')?.querySelector('[name="ing_category[]"]');
+        if (categorySelect && !categorySelect.value) {
+            categorySelect.value = category;
+        }
     }
 
     /** Übernimmt beim Setzen eines Alias automatisch die für die

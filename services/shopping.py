@@ -46,3 +46,30 @@ UNCATEGORIZED = "Sonstiges"
 # sind im Gegensatz dazu typischerweise ein frischer wöchentlicher Einkauf,
 # keine Vorratsware.
 PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}
+
+
+def infer_category(canonical_name):
+    """Rät die Einkaufslisten-Kategorie für eine kanonische Zutat anhand
+    bereits bestehender Zutat-Zeilen: die unter diesem Namen (nach
+    Alias-Auflösung) am häufigsten vergebene, nicht-leere Kategorie - oder
+    None, falls noch keine einzige Zeile dieser kanonischen Zutat
+    kategorisiert ist.
+
+    Genutzt beim Setzen eines Alias in static/ingredient_alias_hint.js
+    (siehe routes/settings.py: api_set_ingredient_alias): damit landen
+    alle auf denselben Namen gleichgesetzten Zutaten (z.B. "Spaghetti" und
+    "Fusilli" -> "Nudeln") automatisch in derselben Kategorie, statt dass
+    dieselbe kanonische Zutat je nach Rezept in unterschiedlichen Gruppen
+    auf der Einkaufsliste auftaucht - analog zu infer_reference_unit() in
+    services/nutrition.py für die Nährwert-Referenzeinheit."""
+    from collections import Counter
+    from models import Ingredient
+    from services.ingredient_aliases import normalize_ingredient_name
+
+    categories = [
+        ing.category for ing in Ingredient.query.all()
+        if ing.category and normalize_ingredient_name(ing.name) == canonical_name
+    ]
+    if not categories:
+        return None
+    return Counter(categories).most_common(1)[0][0]
