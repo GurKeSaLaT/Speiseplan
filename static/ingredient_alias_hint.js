@@ -1,6 +1,6 @@
 /**
  * ingredient_alias_hint.js - Live-Hinweis neben jedem Zutatennamen-Feld
- * beim Rezept anlegen/bearbeiten (recipe_create.html, recipe_edit_list.html):
+ * beim Rezept anlegen/bearbeiten (templates/recipe_form.html):
  * zeigt beim Eintragen einer Zutat, ob dafür bereits eine Zutaten-
  * Gleichsetzung (siehe services/ingredient_aliases.py, Verwaltung ->
  * 🔗 Zutaten gleichsetzen) besteht, und erlaubt es, direkt eine neue
@@ -28,10 +28,8 @@
  * diesem Skript im DOM eingebettet sein. Arbeitet rein über Event-
  * Delegation auf document.body, damit sowohl serverseitig gerenderte
  * Zeilen als auch per JS dynamisch hinzugefügte Zutatenzeilen
- * (addIngredientField/addEditIngredientField) ohne separate
- * Initialisierung funktionieren - auch bei mehreren unabhängigen
- * Formularen gleichzeitig im DOM (je ein Bearbeiten-Modal pro Rezept auf
- * recipe_edit_list.html).
+ * (static/recipe_form.js: rformAddIngredientRow) ohne separate
+ * Initialisierung funktionieren.
  */
 
 (function () {
@@ -272,13 +270,13 @@
     });
 
     /** Nächstgelegener gemeinsamer Rahmen einer Zutatenzeile: das
-     * umschließende <form> (bei recipe_edit_list.html genau EIN
-     * Bearbeiten-Modal, bei recipe_create.html das einzige Formular der
-     * Seite). Grenzt die folgenden DOM-Abfragen bewusst auf dieses eine
-     * Rezept ein statt document-weit zu suchen - auf recipe_edit_list.html
-     * liegen leicht 50+ Bearbeiten-Modals gleichzeitig im DOM (nur per CSS
-     * versteckt), ein ungebremstes document.querySelectorAll(...) bei
-     * JEDEM Fokuswechsel machte sich dadurch spürbar als Ruckeln bemerkbar. */
+     * umschließende <form> (auf recipe_form.html das einzige Formular der
+     * Seite - anders als früher, als recipe_edit_list.html leicht 50+
+     * Bearbeiten-Modals gleichzeitig im DOM hielt und ein ungebremstes
+     * document.querySelectorAll(...) bei JEDEM Fokuswechsel dadurch
+     * spürbar als Ruckeln auffiel; die eigene Seite pro Rezept macht diese
+     * Eingrenzung inzwischen überflüssig, sie schadet als zusätzliche
+     * Absicherung aber nicht). */
     function formScopeOf(el) {
         return el.closest('form') || document.body;
     }
@@ -314,21 +312,18 @@
         renderHint(hintEl, titleCase(event.target.value));
     });
 
-    /** Zeigt bei bereits bestehenden Zutatenzeilen (recipe_edit_list.html)
-     * standardmäßig den aufgelösten Alias-Namen (server-seitig als
-     * .ing-name-display-<span> vorbefüllt, siehe dort) statt des
-     * tatsächlich gespeicherten Namens - erst ein Klick/Tastatur-Aktivieren
-     * blendet das eigentliche, editierbare <input> ein (dessen Wert sich
-     * dadurch NIE von selbst ändert).
+    /** Zeigt bei bereits bestehenden Zutatenzeilen (recipe_form.html im
+     * Bearbeiten-Modus) standardmäßig den aufgelösten Alias-Namen
+     * (server-seitig als .ing-name-display-<span> vorbefüllt, siehe dort)
+     * statt des tatsächlich gespeicherten Namens - erst ein Klick/
+     * Tastatur-Aktivieren blendet das eigentliche, editierbare <input>
+     * ein (dessen Wert sich dadurch NIE von selbst ändert).
      *
      * Komplett über Event-Delegation auf document/document.body (wie der
-     * Rest dieser Datei) statt über einen einmaligen Durchlauf mit
-     * direkten Listenern pro Zeile: recipe_edit_list.html hat leicht 50+
-     * Bearbeiten-Modals mit je mehreren Zutatenzeilen gleichzeitig im DOM
-     * (nur per CSS versteckt) - mehrere hundert direkt angehängte
-     * click/keydown/blur-Listener beim Laden der Seite machten sich als
-     * spürbares Ruckeln bemerkbar, Delegation kommt dagegen mit einer
-     * Handvoll Listenern für die GESAMTE Seite aus.
+     * Rest dieser Datei) statt über direkte Listener pro Zeile - kommt so
+     * mit einer Handvoll Listenern für die GESAMTE Seite aus, unabhängig
+     * davon, wie viele Zutatenzeilen ein Rezept hat oder wie viele davon
+     * erst nachträglich per rformAddIngredientRow() hinzukommen.
      *
      * Zum Schließen (zurück auf die Alias-Anzeige) wird bewusst NICHT auf
      * das blur-Ereignis des <input> gesetzt: das würde voraussetzen, dass
@@ -389,9 +384,7 @@
     document.addEventListener('click', event => {
         // formScopeOf() statt document.querySelectorAll(...): dieser
         // Listener feuert bei JEDEM Klick irgendwo auf der Seite (nicht
-        // nur auf Zutatenfeldern) - ungebremst über alle 50+ gleichzeitig
-        // im DOM liegenden Bearbeiten-Modals hinweg gesucht, wäre das
-        // spürbar langsam gewesen (siehe Kommentar bei formScopeOf).
+        // nur auf Zutatenfeldern), siehe Kommentar bei formScopeOf.
         formScopeOf(event.target).querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
             const row = openInput.closest('.ingredient-row');
             if (row && !row.contains(event.target)) revertIngredientNameField(openInput);

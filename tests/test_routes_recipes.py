@@ -66,14 +66,17 @@ def test_recipe_create_view_embeds_ingredient_aliases_for_hint_js(client, app):
 def test_recipe_create_view_ingredient_row_has_delete_button(client):
     """Jede Zutatenzeile (inkl. der leeren Ausgangszeile) braucht einen
     kleinen Löschen-Button, der die ganze .ingredient-row entfernt - sowohl
-    server-seitig gerendert als auch im addIngredientField()-JS-Template,
-    das später hinzugefügte Zeilen baut."""
+    server-seitig gerendert als auch im rformAddIngredientRow()-JS-Template
+    in static/recipe_form.js, das später hinzugefügte Zeilen baut."""
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert 'class="ingredient-row' in html  # server-gerendert
-    assert "div.className = 'ingredient-row" in html  # addIngredientField()-JS-Template
     assert "this.closest('.ingredient-row').remove()" in html
+
+    js = (STATIC_DIR / "recipe_form.js").read_text(encoding="utf-8")
+    assert "div.className = 'ingredient-row'" in js  # rformAddIngredientRow()-JS-Template
+    assert "this.closest('.ingredient-row').remove()" in js
 
 
 def test_recipe_create_view_alias_hint_spans_full_ingredient_row(client):
@@ -111,26 +114,35 @@ def test_recipe_edit_list_view_no_search_filter_when_empty(client):
     assert b'id="recipeFilter"' not in resp.data
 
 
-def test_recipe_edit_list_view_ingredient_row_has_delete_button(client, make_recipe):
+def test_recipe_edit_view_ingredient_row_has_delete_button(client, make_recipe):
     """Wie test_recipe_create_view_ingredient_row_has_delete_button, aber
-    für das Bearbeiten-Formular: sowohl die bestehenden Zutatenzeilen als
-    auch die leere Ausgangszeile brauchen den Löschen-Button. Das
-    addEditIngredientField()-JS-Template dafür liegt (anders als beim
-    Anlegen-Formular) in der separaten static/recipe_edit_modal.js, siehe
-    test_recipe_edit_modal_js_has_delete_button_template unten."""
-    make_recipe("Gericht mit Zutat", ingredients=[{"name": "Mehl", "amount": 100, "unit": "g"}])
-    resp = client.get("/manage/recipe/edit-list")
+    für die Bearbeiten-Seite eines Rezepts: sowohl die bestehenden
+    Zutatenzeilen als auch die leere Ausgangszeile brauchen den
+    Löschen-Button. Nutzt dasselbe recipe_form.html/recipe_form.js wie die
+    Anlegen-Seite (siehe routes/recipes.py: recipe_edit_view)."""
+    recipe_id = make_recipe("Gericht mit Zutat", ingredients=[{"name": "Mehl", "amount": 100, "unit": "g"}])
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert html.count('class="ingredient-row') >= 2  # bestehende Zutat + leere Zeile
-    assert "recipe_edit_modal.js" in html
     assert "this.closest('.ingredient-row').remove()" in html
 
 
-def test_recipe_edit_modal_js_has_delete_button_template():
-    content = (STATIC_DIR / "recipe_edit_modal.js").read_text(encoding="utf-8")
-    assert "div.className = 'ingredient-row" in content  # addEditIngredientField()-JS-Template
-    assert "this.closest('.ingredient-row').remove()" in content
+def test_recipe_edit_view_unknown_id_returns_404(client):
+    resp = client.get("/manage/recipe/edit/999999")
+    assert resp.status_code == 404
+
+
+def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe):
+    """Der "Bearbeiten"-Button verlinkt seit der Formular-Überarbeitung auf
+    eine eigene Seite pro Rezept (routes/recipes.py: recipe_edit_view,
+    /manage/recipe/edit/<id>) statt ein Modal per JS zu öffnen - vorher gab
+    es dafür ein gemeinsames, per JS befülltes Modal (siehe ehemals
+    static/recipe_edit_modal.js)."""
+    recipe_id = make_recipe("Irgendein Gericht")
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert f'href="/manage/recipe/edit/{recipe_id}"'.encode() in resp.data
 
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
@@ -145,37 +157,17 @@ def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_re
     assert b"speiseplan.recipeEditFilter" in resp.data
 
 
-def test_recipe_edit_list_view_has_auto_open_edit_script(client, make_recipe):
+def test_recipe_detail_edit_link_points_to_dedicated_edit_page():
     """Der "✏️ Rezept bearbeiten"-Button im Detail-Fenster auf der
-    Plan-Seite (siehe templates/plan.html/static/plan.js:
-    openRecipeDetail) verlinkt auf /manage/recipe/edit-list?edit=<id> -
-    diese Seite muss static/recipe_edit_modal.js einbinden (das die
-    Auswertung übernimmt, siehe test_recipe_edit_modal_js_* unten) und
-    für jedes Rezept ein per openEditModal() klonbares <template> sowie
-    einen entsprechend verdrahteten "Bearbeiten"-Button bereitstellen."""
-    recipe_id = make_recipe("Irgendein Gericht")
-    resp = client.get("/manage/recipe/edit-list")
-    assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "recipe_edit_modal.js" in html
-    assert f'id="editModalTpl{recipe_id}"' in html
-    assert f'onclick="openEditModal({recipe_id})"' in html
-
-
-def test_recipe_edit_modal_js_auto_opens_after_dom_content_loaded():
-    """Der ?edit=<id>-Autostart darf erst NACH DOMContentLoaded laufen, da
-    er letztlich bootstrap.Modal aufruft (über openEditModal) - dieses
-    Skript steht (wie der ganze Seiteninhalt) VOR bootstrap.bundle.min.js
-    im DOM (siehe templates/base.html - das Bundle wird ganz am Ende des
-    <body> eingebunden), ein sofortiger Aufruf träfe also auf ein noch
-    undefiniertes window.bootstrap und würde stillschweigend
-    fehlschlagen, ohne dass sich das Modal öffnet."""
-    content = (STATIC_DIR / "recipe_edit_modal.js").read_text(encoding="utf-8")
-    assert "URLSearchParams(location.search).get('edit')" in content
-    dcl_index = content.index("addEventListener('DOMContentLoaded'")
-    edit_id_index = content.index("URLSearchParams(location.search).get('edit')")
-    open_call_index = content.index("openEditModal(editId)")
-    assert dcl_index < edit_id_index < open_call_index
+    Plan-Seite (siehe templates/plan.html) verlinkt seit der
+    Formular-Überarbeitung direkt auf die eigene Bearbeiten-Seite eines
+    Rezepts (routes/recipes.py: recipe_edit_view) statt wie vorher auf
+    /manage/recipe/edit-list?edit=<id> (das dortige Modal-Autostart-
+    Verfahren gibt es seit static/recipe_edit_modal.js's Entfernung nicht
+    mehr)."""
+    content = (STATIC_DIR / "plan.js").read_text(encoding="utf-8")
+    assert "`/manage/recipe/edit/${recipe.id}`" in content
+    assert "edit-list?edit=" not in content
 
 
 def test_recipe_edit_list_view_search_data_includes_category(client, make_category, make_recipe):
@@ -337,7 +329,7 @@ def test_edit_recipe_normalizes_ingredient_units(client, app, make_recipe):
         assert (recipe.ingredients[0].amount, recipe.ingredients[0].unit) == (1000, "ml")
 
 
-def test_recipe_edit_list_view_shows_ingredients_in_display_unit(client, app, make_recipe):
+def test_recipe_edit_view_shows_ingredients_in_display_unit(client, app, make_recipe):
     from services.settings import update_display_units
 
     recipe_id = make_recipe(
@@ -346,52 +338,53 @@ def test_recipe_edit_list_view_shows_ingredients_in_display_unit(client, app, ma
     with app.app_context():
         update_display_units("kg", "ml")
 
-    resp = client.get("/manage/recipe/edit-list")
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     assert b'value="1.5"' in resp.data
     assert b'value="kg"' in resp.data
 
 
-def test_recipe_edit_list_view_shows_alias_name_as_display_text(client, app, make_recipe):
+def test_recipe_edit_view_shows_alias_name_as_display_text(client, app, make_recipe):
     """Eine Zutatenzeile mit gesetztem Alias zeigt standardmäßig den
     aufgelösten kanonischen Namen (.ing-name-display), NICHT den
     tatsächlich für dieses Rezept gespeicherten Namen - der bleibt
     unangetastet im (versteckten) echten Formularfeld, damit ein
     Speichern ohne bewusste Bearbeitung den ursprünglichen Namen nicht
     stillschweigend durch den Alias ersetzt (siehe
-    static/ingredient_alias_hint.js: wireEditableIngredientNames)."""
+    static/ingredient_alias_hint.js: openIngredientNameField)."""
     from services.ingredient_aliases import set_alias
 
     recipe_id = make_recipe("Pasta-Gericht", ingredients=[{"name": "Fusilli", "amount": 400, "unit": "g"}])
     with app.app_context():
         set_alias("Fusilli", "Nudeln")
 
-    resp = client.get("/manage/recipe/edit-list")
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert 'class="form-control form-control-sm ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Nudeln</span>' in html
+    assert 'class="ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Nudeln</span>' in html
     # Das eigentliche, editierbare Feld behält den echten gespeicherten Namen.
-    assert 'class="form-control form-control-sm ing-name-input d-none" value="Fusilli"' in html
+    assert 'class="ing-name-input d-none" value="Fusilli"' in html
 
 
-def test_recipe_edit_list_view_shows_own_name_when_no_alias(client, make_recipe):
-    make_recipe("Solo-Gericht", ingredients=[{"name": "Radicchio", "amount": 1, "unit": "Stk"}])
+def test_recipe_edit_view_shows_own_name_when_no_alias(client, make_recipe):
+    recipe_id = make_recipe("Solo-Gericht", ingredients=[{"name": "Radicchio", "amount": 1, "unit": "Stk"}])
 
-    resp = client.get("/manage/recipe/edit-list")
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert 'ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Radicchio</span>' in html
 
 
-def test_recipe_edit_list_view_has_editable_name_wiring_script(client, make_recipe):
+def test_recipe_edit_view_has_editable_name_wiring_script(client, make_recipe):
     """static/ingredient_alias_hint.js muss eingebunden sein - es enthält
     sowohl das Klick-zum-Bearbeiten-Verhalten als auch das initiale
     Nachladen des Alias-/Nährwert-Hinweises für bereits ausgefüllte
     Zutatenzeilen (siehe dortige Kommentare)."""
-    make_recipe("Irgendein Gericht", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
-    resp = client.get("/manage/recipe/edit-list")
+    recipe_id = make_recipe("Irgendein Gericht", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     assert b"ingredient_alias_hint.js" in resp.data
+    assert b"recipe_form.js" in resp.data
 
 
 def test_edit_recipe_unknown_id_returns_404(client, make_category):
@@ -595,19 +588,19 @@ def test_recipe_create_view_nutrition_inputs_disabled_by_default(client):
     # Kcal hat bewusst KEIN name-Attribut (wird nie mitgeschickt, siehe
     # services/nutrition.py: compute_calories()) - nur die Anzeige ist
     # immer deaktiviert.
-    assert b'id="caloriesDisplay" class="form-control" disabled' in resp.data
-    assert b'name="protein" id="proteinInput" class="form-control" disabled' in resp.data
+    assert b'id="caloriesDisplay" class="rform-field" disabled' in resp.data
+    assert b'name="protein" id="proteinInput" class="rform-field" disabled' in resp.data
 
 
-def test_recipe_edit_list_view_prefills_override_checkbox(client, make_recipe):
+def test_recipe_edit_view_prefills_override_checkbox(client, make_recipe):
     recipe_id = make_recipe("Übersteuert", nutrition_override=True, calories=555)
-    resp = client.get("/manage/recipe/edit-list")
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
-    assert f'id="nutritionOverride{recipe_id}"'.encode() in resp.data
+    assert b'id="nutritionOverride"' in resp.data
     assert b'value="555"' in resp.data
     # Bei bereits gesetztem Override-Häkchen duerfen die Felder NICHT
     # deaktiviert sein (der Nutzer soll seine manuellen Werte direkt
     # weiter bearbeiten koennen) - das Checkbox-Input selbst muss "checked"
     # tragen (Attribut-Reihenfolge im Template ist ein Detail, daher hier
     # nur auf Vorhandensein prüfen statt exakter Attribut-Reihenfolge).
-    assert b"checked" in resp.data.split(f'id="nutritionOverride{recipe_id}"'.encode())[1][:80]
+    assert b"checked" in resp.data.split(b'id="nutritionOverride"')[1][:80]

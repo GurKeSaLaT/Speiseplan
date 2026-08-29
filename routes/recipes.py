@@ -3,15 +3,18 @@ Gerichte (Recipe), inklusive ihrer Zutaten (Ingredient), Saison-Zuordnung
 (RecipeSeason, über services/seasons.py verwaltet) und dem Import von
 chefkoch.de (über services/recipe_import.py).
 
-Zwei GET-Ansichten (recipe_create_view, recipe_edit_list_view) rendern die
-Formulare; drei POST-Handler (add_recipe, edit_recipe, delete_recipe)
-verarbeiten deren Absenden. import_recipe_preview() ist ein vierter,
-JSON-basierter POST-Handler für den AJAX-Import-Button auf der
-Erstellen-Seite - er speichert NICHTS, sondern liefert nur die aus einer
-chefkoch.de-URL ausgelesenen Rezeptdaten zurück, mit denen
-recipe_create.html das normale Formular vorbefüllt (siehe
-services/recipe_import.py für den Grund: die Kategorie muss der Nutzer
-ohnehin selbst wählen, ein direktes Speichern ohne Review wäre riskanter).
+recipe_create_view() und recipe_edit_view() rendern beide dasselbe Formular-
+Template (templates/recipe_form.html), einmal mit recipe=None (Anlegen) und
+einmal mit einem geladenen Recipe (Bearbeiten) - recipe_edit_list_view()
+zeigt nur noch die reine Übersichtsliste, die dorthin verlinkt. Drei
+POST-Handler (add_recipe, edit_recipe, delete_recipe) verarbeiten das
+Absenden. import_recipe_preview() ist ein vierter, JSON-basierter
+POST-Handler für den AJAX-Import-Button auf der Anlegen-Seite - er
+speichert NICHTS, sondern liefert nur die aus einer chefkoch.de-URL
+ausgelesenen Rezeptdaten zurück, mit denen recipe_form.html das normale
+Formular vorbefüllt (siehe services/recipe_import.py für den Grund: die
+Kategorie muss der Nutzer ohnehin selbst wählen, ein direktes Speichern
+ohne Review wäre riskanter).
 
 Die eigentliche Saison-Formular-Logik (Checkboxen + eigener Zeitraum
 parsen, für die Bearbeiten-Ansicht vorbefüllen) liegt bewusst NICHT hier,
@@ -59,71 +62,62 @@ def _canonical_ingredient_list():
 
 @recipes_bp.route('/manage/recipe/create')
 def recipe_create_view():
-    """Zeigt das Formular zum Anlegen eines neuen Rezepts - siehe
-    _canonical_ingredient_list() für die Namens-Autovervollständigung."""
+    """Zeigt das Formular zum Anlegen eines neuen Rezepts - dasselbe
+    Template wie recipe_edit_view() unten (templates/recipe_form.html),
+    nur mit recipe=None (siehe dortigen Kommentar). _canonical_ingredient_
+    list() liefert die Namens-Autovervollständigung."""
     categories = Category.query.all()
     return render_template(
-        'recipe_create.html', categories=categories,
+        'recipe_form.html', categories=categories, recipe=None,
         ingredient_list=_canonical_ingredient_list(), seasons=SEASONS,
+        selected_presets=set(), custom_start='', custom_end='',
+    )
+
+
+@recipes_bp.route('/manage/recipe/edit/<int:id>')
+def recipe_edit_view(id):
+    """Zeigt das Formular zum Bearbeiten EINES bestehenden Rezepts -
+    dasselbe Template wie recipe_create_view() oben, nur mit gesetztem
+    recipe (siehe templates/recipe_form.html). Vorher gab es dafür keine
+    eigene Seite: alle Rezepte bekamen gleichzeitig ihr eigenes, nur per
+    CSS verstecktes Bearbeiten-Modal auf /manage/recipe/edit-list - bei
+    50-100+ Rezepten spürbar langsam (siehe Kommentar in
+    templates/recipe_edit_list.html zur alten <template>-Lösung, die
+    dieses Problem nur abgemildert, nicht behoben hat: EIN Rezept nach
+    dem anderen zu laden umgeht es von vornherein vollständig)."""
+    recipe = Recipe.query.get_or_404(id)
+    categories = Category.query.all()
+
+    # Siehe ehemals recipe_edit_list_view() weiter unten für denselben
+    # Umrechnungs-/Aufbereitungs-Schritt, hier nur noch für GENAU EIN
+    # Rezept statt für alle gleichzeitig.
+    selected_presets, custom_range = describe_recipe_seasons(recipe)
+    display_units = get_display_units()
+    ingredient_display = {}
+    for ing in recipe.ingredients:
+        display_amount, display_unit = convert_for_display(ing.amount, ing.unit, display_units)
+        ingredient_display[ing.id] = (display_amount, display_unit, normalize_ingredient_name(ing.name))
+
+    return render_template(
+        'recipe_form.html', categories=categories, recipe=recipe,
+        ingredient_list=_canonical_ingredient_list(), seasons=SEASONS,
+        selected_presets=selected_presets,
+        custom_start=f"2000-{custom_range.start_month:02d}-{custom_range.start_day:02d}" if custom_range else '',
+        custom_end=f"2000-{custom_range.end_month:02d}-{custom_range.end_day:02d}" if custom_range else '',
+        ingredient_display=ingredient_display,
     )
 
 
 @recipes_bp.route('/manage/recipe/edit-list')
 def recipe_edit_list_view():
-    """Zeigt die Liste aller Rezepte mit einem Bearbeiten-Formular pro
-    Rezept (siehe templates/recipe_edit_list.html - server-seitig als
-    inertes <template>, wird per JS erst beim tatsächlichen Öffnen in das
-    eine wiederverwendete Modal geklont, siehe dortigen Kommentar und
-    static/recipe_edit_modal.js).
-
-    Da jedes Formular sein eigenes vorbefülltes Saison-Formular braucht
-    (welche Standard-Saison-Checkboxen sind angehakt, welcher eigene
-    Zeitraum steht in den Datumsfeldern), wird das für JEDES Rezept
-    einzeln über describe_recipe_seasons() aufbereitet und in
-    recipe_season_info (ein Dict, Rezept-ID -> aufbereitete Daten) an das
-    Template gereicht. Die 'custom_start'/'custom_end'-Werte bekommen
-    dabei ein beliebiges (Schaltjahr-taugliches) Platzhalterjahr
-    vorangestellt, weil <input type="date"> zwingend ein vollständiges
-    Datum erwartet, obwohl beim Speichern ohnehin nur Monat und Tag
-    ausgewertet werden (siehe services/seasons.py: parse_recipe_seasons).
-    """
+    """Zeigt die reine Übersichtsliste aller Rezepte (Suche/Filter,
+    Badges, Bearbeiten-/Löschen-Link) - das eigentliche Bearbeiten-Formular
+    liegt seit recipe_edit_view() oben auf einer eigenen Seite pro Rezept,
+    diese Liste verlinkt nur noch dorthin (siehe templates/
+    recipe_edit_list.html: "Bearbeiten ✏️"-Button)."""
     recipes = Recipe.query.all()
-    categories = Category.query.all()
-
-    recipe_season_info = {}
-    # Zutatenmengen werden kanonisch (immer g/ml) gespeichert, aber in der
-    # vom Nutzer gewählten Einheit (siehe services/settings.py) im
-    # Bearbeiten-Formular vorbefüllt - Ingredient-ID -> (amount, unit,
-    # canonical_name) für die Formularfelder in recipe_edit_list.html. Ein
-    # Speichern OHNE Änderung liefert über normalize_amount_unit() wieder
-    # exakt denselben kanonischen Wert (siehe services/units.py-Docstring),
-    # das Umrechnen hier ist also verlustfrei umkehrbar. canonical_name
-    # (dritter Wert) ist der über eine evtl. bestehende Alias-Zuordnung
-    # aufgelöste Name (siehe services/ingredient_aliases.py) - das Template
-    # zeigt ihn standardmäßig statt des tatsächlich gespeicherten Namens an
-    # (erst ein Klick ins Feld legt Letzteren zum Bearbeiten frei, siehe
-    # static/ingredient_alias_hint.js: openIngredientNameField).
-    display_units = get_display_units()
-    ingredient_display = {}
-    for recipe in recipes:
-        selected_presets, custom_range = describe_recipe_seasons(recipe)
-        recipe_season_info[recipe.id] = {
-            'selected_presets': selected_presets,
-            'custom_start': f"2000-{custom_range.start_month:02d}-{custom_range.start_day:02d}" if custom_range else '',
-            'custom_end': f"2000-{custom_range.end_month:02d}-{custom_range.end_day:02d}" if custom_range else '',
-            # Fertig formatierte Badge-Labels (z.B. "Sommer", "15.5.–20.6."),
-            # damit das Template selbst keine Formatierungslogik braucht.
-            'labels': format_recipe_seasons(recipe),
-        }
-        for ing in recipe.ingredients:
-            display_amount, display_unit = convert_for_display(ing.amount, ing.unit, display_units)
-            ingredient_display[ing.id] = (display_amount, display_unit, normalize_ingredient_name(ing.name))
-
-    return render_template(
-        'recipe_edit_list.html', recipes=recipes, categories=categories,
-        ingredient_list=_canonical_ingredient_list(), seasons=SEASONS, recipe_season_info=recipe_season_info,
-        ingredient_display=ingredient_display,
-    )
+    recipe_labels = {recipe.id: format_recipe_seasons(recipe) for recipe in recipes}
+    return render_template('recipe_edit_list.html', recipes=recipes, recipe_labels=recipe_labels)
 
 
 @recipes_bp.route('/add-recipe', methods=['POST'])
@@ -140,7 +134,7 @@ def add_recipe():
     Die Zutaten kommen als vier parallele Listen aus dem Formular
     (ing_name[], ing_amount[], ing_unit[], ing_category[] - ein
     HTML-Formular mit dynamisch per JavaScript hinzugefügten Zeilen, siehe
-    recipe_create.html), werden über den gemeinsamen Index paarweise
+    recipe_form.html), werden über den gemeinsamen Index paarweise
     zusammengeführt und Zeilen mit leerem Namen übersprungen (z.B. eine
     ungenutzte letzte leere Zeile im Formular). ing_category[] ist dabei
     der einzige der vier optional: ein leerer String wird zu None (siehe
@@ -319,7 +313,7 @@ def delete_recipe(id):
 @recipes_bp.route('/manage/recipe/import-preview', methods=['POST'])
 def import_recipe_preview():
     """AJAX-Endpunkt hinter dem "Importieren"-Button auf der Erstellen-Seite
-    (siehe recipe_create.html): lädt die übergebene chefkoch.de-URL und gibt
+    (siehe recipe_form.html): lädt die übergebene chefkoch.de-URL und gibt
     die daraus ausgelesenen Rezeptdaten als JSON zurück (siehe
     services/recipe_import.py: fetch_recipe_from_url). Legt selbst NICHTS
     in der Datenbank an - das Frontend befüllt damit nur das normale

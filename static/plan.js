@@ -533,7 +533,7 @@ function openRecipeDetail(dayIndex, sideId) {
     const cooked = sideId ? !!recipe.cooked : !!dayCooked[dayIndex];
 
     document.getElementById('recipeDetailTitle').textContent = (recipe.is_favorite ? '⭐ ' : '') + recipe.name;
-    document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit-list?edit=${recipe.id}`;
+    document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit/${recipe.id}`;
     document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(recipe);
 
     const checkbox = document.getElementById('recipeDetailCookedCheckbox');

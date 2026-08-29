@@ -91,7 +91,7 @@
        die Einkaufsliste danach, unabhängig davon, welche Seite gerade
        geladen ist (die Kategorie-Dropdowns beim Zutaten-Eintragen bekommen
        dieselbe Liste zusätzlich direkt server-seitig gerendert, siehe
-       recipe_create.html/recipe_edit_list.html). #}
+       recipe_form.html). #}
     <script>
         window.SHOPPING_CATEGORIES = {{ shopping_categories | tojson }};
         window.SHOPPING_UNCATEGORIZED = {{ shopping_uncategorized | tojson }};
@@ -148,7 +148,7 @@
             <div class="rail-section">
                 <div class="rail-label">Rezepte</div>
                 <a class="rail-link {% if request.path == '/manage/recipe/create' %}active{% endif %}" href="/manage/recipe/create"><span class="ic">✨</span>Erstellen</a>
-                <a class="rail-link {% if request.path == '/manage/recipe/edit-list' %}active{% endif %}" href="/manage/recipe/edit-list"><span class="ic">📝</span>Bearbeiten</a>
+                <a class="rail-link {% if request.path == '/manage/recipe/edit-list' or request.path.startswith('/manage/recipe/edit/') %}active{% endif %}" href="/manage/recipe/edit-list"><span class="ic">📝</span>Bearbeiten</a>
             </div>
 
             <div class="rail-section">

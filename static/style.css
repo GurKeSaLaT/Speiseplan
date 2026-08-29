@@ -411,6 +411,187 @@ body {
     .card-body { padding: 1.25rem !important; }
 }
 
+/* ============================================================
+   REZEPT-FORMULAR (templates/recipe_form.html, static/recipe_form.js):
+   EIN gemeinsames Formular für Anlegen UND Bearbeiten (siehe
+   routes/recipes.py: recipe_create_view/recipe_edit_view) - vorher zwei
+   grundverschiedene Ansichten (eigene Vollseite vs. Bearbeiten-Modal aus
+   templates/recipe_edit_list.html), was sowohl inkonsistent wirkte als
+   auch (bei vielen gleichzeitig im DOM gehaltenen Modals) die Ursache
+   eines echten Performance-Problems war. Eigene "rform-"-Vorsilbe, damit
+   nichts hier mit Bootstrap-eigenen Klassen (z.B. .field, .chip) oder den
+   Dashboard-Klassen weiter oben kollidiert. Die Zutatenzeilen selbst
+   behalten bewusst ihre ALTEN, unpräfixierten Klassennamen
+   (.ingredient-row/.ing-name-display/.ing-name-input/
+   .ingredient-alias-hint) - static/ingredient_alias_hint.js kennt genau
+   diese Selektoren, eine Umbenennung hätte dort mitziehen müssen, ganz
+   ohne echten Vorteil. ============================================== */
+.rform-layout { display: grid; grid-template-columns: 1fr 320px; gap: 1.4rem; align-items: start; }
+
+.rform-entry-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-bottom: 1.4rem; }
+.rform-entry-card {
+    background: var(--card-bg); border: 2px solid var(--border-subtle); border-radius: var(--radius-main);
+    padding: 1.1rem 1.2rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04); cursor: pointer;
+    transition: border-color .15s ease;
+}
+.rform-entry-card.active { border-color: var(--primary-food); }
+.rform-entry-card .ic { font-size: 1.4rem; margin-bottom: 0.4rem; display: block; }
+.rform-entry-card .t { font-weight: 800; font-size: 0.95rem; display: block; margin-bottom: 0.2rem; }
+.rform-entry-card .d { font-size: 0.8rem; color: var(--bs-secondary-color); line-height: 1.4; }
+.rform-import-row { display: none; margin-top: 0.9rem; gap: 0.6rem; }
+.rform-import-row.show { display: flex; }
+.rform-import-row input {
+    flex: 1; border: 1px solid var(--border-subtle); background: var(--bg-warm); border-radius: 10px;
+    padding: 0.65rem 0.9rem; font-size: 0.88rem; color: var(--text-dark);
+}
+
+.rform-section {
+    background: var(--card-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius-main);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04); margin-bottom: 1.1rem; overflow: hidden;
+}
+.rform-section-head {
+    padding: 1rem 1.3rem; display: flex; align-items: center; justify-content: space-between;
+    gap: 0.8rem; border-bottom: 1px solid var(--border-subtle); flex-wrap: wrap;
+}
+.rform-section-head.rform-toggle-row { cursor: pointer; }
+.rform-section-head h2 { font-size: 0.95rem; font-weight: 800; margin: 0; display: flex; align-items: center; gap: 0.55rem; }
+.rform-section-head .hint { font-size: 0.76rem; color: var(--bs-secondary-color); font-weight: 600; }
+.rform-section-body { padding: 1.2rem 1.3rem; }
+.rform-section.rform-collapsed .rform-section-body { display: none; }
+.rform-chevron { transition: transform .15s ease; color: var(--bs-secondary-color); font-size: 0.8rem; }
+.rform-section.rform-collapsed .rform-chevron { transform: rotate(-90deg); }
+.rform-head-pills { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+.rform-field-label { font-size: 0.76rem; font-weight: 700; color: var(--bs-secondary-color); margin: 0 0 0.35rem; display: block; }
+.rform-field {
+    border: 1px solid var(--border-subtle); background: var(--bg-warm); border-radius: 10px;
+    padding: 0.6rem 0.8rem; font-size: 0.9rem; color: var(--text-dark); width: 100%;
+}
+.rform-field:focus { outline: none; border-color: var(--primary-food); }
+.rform-field-hero { font-size: 1.2rem; font-weight: 700; padding: 0.75rem 0.9rem; }
+.rform-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+.rform-grid-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.9rem; }
+.rform-mb { margin-bottom: 0.9rem; }
+
+/* Pillen (Beilage/Favorit/manuelle Nährwerte) und Saison-Chips: jeweils
+   eine ganz normale <input type="checkbox"> INNERHALB eines <label>, nur
+   per CSS/JS zur Pille/Chip umgestylt - ein Klick irgendwo auf das Label
+   schaltet die Checkbox nativ um (kein eigener Klick-Handler nötig), ein
+   "change"-Listener in recipe_form.js spiegelt den Zustand nur noch in
+   die .on-Klasse für die Optik. So bleibt das echte, mitgeschickte
+   Formularfeld die einzige Wahrheitsquelle. */
+.rform-pill-input, .rform-chip-input { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
+.rform-pill {
+    display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border-subtle);
+    background: var(--bg-warm); border-radius: 999px; padding: 0.35rem 0.75rem 0.35rem 0.5rem;
+    font-size: 0.78rem; font-weight: 700; color: var(--bs-secondary-color); cursor: pointer;
+}
+.rform-pill .dot {
+    width: 14px; height: 14px; border-radius: 50%; background: var(--card-bg); border: 2px solid var(--border-subtle);
+    flex-shrink: 0; transition: all .15s ease;
+}
+.rform-pill.on { border-color: var(--primary-food); color: var(--primary-food); background: var(--highlight-bg); }
+.rform-pill.on .dot { background: var(--primary-food); border-color: var(--primary-food); }
+
+.rform-season-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.rform-chip {
+    border: 1px solid var(--border-subtle); background: var(--bg-warm); border-radius: 999px;
+    padding: 0.4rem 0.85rem; font-size: 0.8rem; font-weight: 700; color: var(--bs-secondary-color); cursor: pointer;
+}
+.rform-chip.on { background: var(--highlight-bg); border-color: var(--primary-food); color: var(--primary-food); }
+
+/* Zutatenzeilen: dieselben Elemente/Klassen wie zuvor (siehe Kommentar
+   oben), hier nur als CSS-Grid neu angeordnet statt der alten
+   Bootstrap-.row/.col-Aufteilung. */
+.rform-section .ing-col-labels {
+    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto; gap: 0.55rem;
+    font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--bs-secondary-color); padding-bottom: 0.5rem;
+}
+.rform-section .ing-col-labels span:last-child { width: 30px; }
+.rform-section .ingredient-row { padding: 0.4rem 0; border-bottom: 1px dashed var(--border-subtle); }
+.rform-section .ingredient-row:last-of-type { border-bottom: none; }
+.rform-section .ingredient-row .ing-fields {
+    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto; gap: 0.55rem; align-items: center;
+}
+.rform-section .ingredient-row input,
+.rform-section .ingredient-row select,
+.rform-section .ingredient-row .ing-name-display {
+    border: 1px solid var(--border-subtle); background: var(--bg-warm); border-radius: 8px;
+    padding: 0.5rem 0.6rem; font-size: 0.85rem; color: var(--text-dark); width: 100%; margin: 0;
+    box-sizing: border-box;
+}
+.rform-section .ingredient-row .ing-name-display {
+    display: block; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rform-ing-del {
+    border: none; background: var(--bs-danger-bg-subtle, rgba(192, 67, 61, 0.12)); color: var(--bs-danger, #C0433D);
+    width: 32px; height: 32px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; flex-shrink: 0;
+}
+.rform-add-ing {
+    margin-top: 0.8rem; border: 1px dashed var(--border-subtle); background: transparent; color: var(--bs-secondary-color);
+    font-weight: 700; font-size: 0.83rem; padding: 0.55rem 1rem; border-radius: 10px; cursor: pointer; width: 100%;
+}
+.rform-add-ing:hover { border-color: var(--primary-food); color: var(--primary-food); }
+
+.rform-nutrition-summary { display: flex; align-items: center; gap: 1.4rem; padding: 0.2rem 0 0.4rem; flex-wrap: wrap; }
+.rform-nutrition-summary .stat { text-align: left; }
+.rform-nutrition-summary .stat .num { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.rform-nutrition-summary .stat .cap { font-size: 0.7rem; color: var(--bs-secondary-color); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.rform-nutrition-badge {
+    font-size: 0.72rem; font-weight: 700; color: var(--primary-food); background: var(--highlight-bg);
+    padding: 0.3rem 0.7rem; border-radius: 999px; white-space: nowrap;
+}
+.rform-nutrition-fields { display: none; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; margin-top: 0.9rem; }
+.rform-nutrition-fields.show { display: grid; }
+.rform-nutrition-summary.hide-when-manual.hidden { display: none; }
+
+.rform-preview { position: sticky; top: 24px; }
+.rform-preview-card { background: var(--card-bg); border: 1px solid var(--border-subtle); border-radius: var(--radius-main); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04); overflow: hidden; }
+.rform-preview-media {
+    height: 110px; background: linear-gradient(155deg, var(--primary-food), var(--primary-dark));
+    display: flex; align-items: center; justify-content: center; font-size: 2.2rem;
+}
+.rform-preview-body { padding: 1.1rem 1.2rem; }
+.rform-preview-body .pname { font-weight: 800; font-size: 1.05rem; margin: 0 0 0.4rem; text-wrap: balance; }
+.rform-preview-meta { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; }
+.rform-preview-meta .b { font-size: 0.72rem; font-weight: 700; background: var(--highlight-bg); color: var(--primary-food); padding: 0.2rem 0.6rem; border-radius: 999px; }
+.rform-preview-list { font-size: 0.8rem; color: var(--bs-secondary-color); line-height: 1.7; }
+.rform-preview-list b { color: var(--text-dark); font-weight: 700; }
+.rform-checklist { margin-top: 1rem; border-top: 1px solid var(--border-subtle); padding-top: 0.9rem; }
+.rform-checklist .ci { display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem; color: var(--bs-secondary-color); margin-bottom: 0.4rem; }
+.rform-checklist .ci.done { color: var(--primary-food); font-weight: 700; }
+.rform-checklist .dot2 { width: 7px; height: 7px; border-radius: 50%; background: var(--border-subtle); flex-shrink: 0; }
+.rform-checklist .ci.done .dot2 { background: var(--primary-food); }
+
+.rform-action-bar {
+    position: fixed; left: 260px; right: 0; bottom: 0; background: var(--card-bg); border-top: 1px solid var(--border-subtle);
+    padding: 0.9rem 2.2rem; display: flex; align-items: center; justify-content: flex-end; gap: 0.7rem;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06); z-index: 10;
+}
+.rform-action-bar .saved { margin-right: auto; font-size: 0.78rem; color: var(--bs-secondary-color); }
+.rform-btn { border: none; border-radius: 10px; padding: 0.65rem 1.3rem; font-weight: 700; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.rform-btn-ghost { background: transparent; color: var(--bs-secondary-color); border: 1px solid var(--border-subtle); }
+.rform-btn-primary { background: linear-gradient(155deg, var(--primary-food), var(--primary-dark)); color: #fff; box-shadow: 0 10px 22px rgba(46, 111, 64, 0.25); }
+
+/* Platz am Fuß der Seite für die fixierte Aktionsleiste, damit sie den
+   letzten Formularabschnitt nicht überdeckt. */
+.rform-bottom-spacer { height: 5rem; }
+
+@media (max-width: 980px) {
+    .rform-layout { grid-template-columns: 1fr; }
+    .rform-preview { position: static; }
+}
+@media (max-width: 860px) {
+    .rform-action-bar { left: 0; }
+}
+@media (max-width: 640px) {
+    .rform-grid-2, .rform-grid-3, .rform-entry-choice { grid-template-columns: 1fr; }
+    .rform-section .ing-col-labels { display: none; }
+    .rform-section .ingredient-row .ing-fields { grid-template-columns: 1fr; }
+    .rform-action-bar { padding: 0.8rem 1.1rem; flex-wrap: wrap; }
+}
+
 /* Von den clientseitigen Listen-Filtern verwendet (Rezepte bearbeiten,
    Kategorien verwalten, Zutaten gleichsetzen - siehe static/fuzzy_search.js),
    um eine Zeile auszublenden. Bewusst eine EIGENE Klasse statt direkt

@@ -27,7 +27,7 @@ from datetime import date
 from models import db, RecipeSeason
 
 # Die vier wählbaren Standard-Saisons, in dieser Reihenfolge auch als
-# Checkboxen in recipe_create.html/recipe_edit_list.html angezeigt.
+# Checkboxen in recipe_form.html angezeigt.
 SEASONS = ['Frühling', 'Sommer', 'Herbst', 'Winter']
 
 # Feste (Startmonat, Starttag, Endmonat, Endtag)-Zeiträume je Standard-Saison.

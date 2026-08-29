@@ -1,23 +1,13 @@
-{# Rezept-Übersicht mit Bearbeiten/Löschen (/manage/recipe/edit-list). Jedes
-   Rezept bekommt sein vollständig vorbefülltes Bearbeiten-Formular - siehe
-   routes/recipes.py: recipe_edit_list_view() für recipe_season_info, das
-   pro Rezept die angehakten Saison-Presets und den ggf. eigenen Zeitraum
-   aufbereitet. Die ingredients-datalist (Zutaten-Autovervollständigung)
-   wird nur EINMAL global definiert und von allen Formularen gemeinsam
-   über list="..." referenziert.
-
-   WICHTIG: jedes Formular steckt in einem <template id="editModalTpl
-   <recipe.id>">, NICHT in einem eigenen, direkt aktiven .modal-div - bei
-   typischerweise 50-100+ Rezepten wären das ebenso viele voll gerenderte
-   <select>-Elemente (Kategorie je Zutatenzeile) gleichzeitig im DOM, nur
-   per CSS versteckt. Der Inhalt eines <template> ist dagegen inert: kein
-   Layout, keine Style-Berechnung, keine natives Autovervollständigen-/
-   Formular-Verhalten, bis er tatsächlich gebraucht wird - das machte sich
-   vorher als spürbares Ruckeln bemerkbar, sobald man in IRGENDEIN
-   Zutatenfeld klickte, unabhängig davon, welches Rezept gerade offen war.
-   static/recipe_edit_modal.js: openEditModal() klont den Inhalt des
-   passenden <template> beim Öffnen in das einzige, wiederverwendete
-   #editModalHost-Element und leert es beim Schließen wieder. #}
+{# Reine Rezept-Übersicht (/manage/recipe/edit-list): Suche/Filter, Badges,
+   Bearbeiten-/Löschen-Link. Das eigentliche Bearbeiten-Formular liegt seit
+   der Formular-Überarbeitung auf einer eigenen Seite PRO Rezept (siehe
+   routes/recipes.py: recipe_edit_view(), /manage/recipe/edit/<id>,
+   templates/recipe_form.html) - vorher steckte hier für JEDES Rezept ein
+   vollständiges, nur per <template> inert gehaltenes Bearbeiten-Formular
+   (siehe frühere static/recipe_edit_modal.js), das beim tatsächlichen
+   Öffnen erst in ein gemeinsames Modal geklont wurde. Eine eigene Seite
+   pro Rezept braucht diesen ganzen Klon-Mechanismus gar nicht erst: es
+   liegt ohnehin nie mehr als EIN Rezept-Formular gleichzeitig im DOM. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -41,7 +31,7 @@
                             {% if recipe.is_side_dish %}
                             <span class="badge bg-info text-dark px-2 py-1" style="font-size: 0.75rem;">🥗 Beilage</span>
                             {% endif %}
-                            {% for label in recipe_season_info[recipe.id].labels %}
+                            {% for label in recipe_labels[recipe.id] %}
                             <span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;">{{ label }}</span>
                             {% endfor %}
                             {% if recipe.source_url %}
@@ -49,9 +39,9 @@
                             {% endif %}
                         </div>
                         <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-warning fw-bold text-dark btn-sm px-3" onclick="openEditModal({{ recipe.id }})">
+                            <a href="/manage/recipe/edit/{{ recipe.id }}" class="btn btn-warning fw-bold text-dark btn-sm px-3">
                                 Bearbeiten ✏️
-                            </button>
+                            </a>
                             <button type="button" class="btn btn-outline-danger btn-sm px-3" onclick="deleteRecipeSafely({{ recipe.id }}, '{{ recipe.name }}')">
                                 Löschen 🗑️
                             </button>
@@ -66,227 +56,8 @@
     </div>
 </div>
 
-<!-- DIE DATALISTE FÜR VORSCHLÄGE (Global für alle Modals nutzbar) -->
-<datalist id="ingredients-datalist">
-    {% for ing in ingredient_list %}
-    <option value="{{ ing }}"></option>
-    {% endfor %}
-</datalist>
-<datalist id="canonical-names-datalist">
-    {% for canonical in ingredient_aliases.values() | unique | sort %}
-    <option value="{{ canonical }}"></option>
-    {% endfor %}
-</datalist>
-
-<style>
-/* Anzeige-Zeile für den aufgelösten Alias-Namen einer Zutat (siehe
-   static/ingredient_alias_hint.js: wireEditableIngredientNames) - optisch
-   wie das <input> darunter, aber selbst kein Formularfeld. */
-.ing-name-display {
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-</style>
-
-<!-- WIEDERVERWENDETES MODAL-GERÜST: der eigentliche Inhalt wird beim
-     Öffnen aus dem passenden <template> unten hineingeklont (siehe
-     static/recipe_edit_modal.js) und beim Schließen wieder geleert. -->
-<div class="modal fade" id="editModalHost" tabindex="-1" aria-hidden="true">
-</div>
-
-<!-- BEARBEITEN-FORMULARE, EINES PRO REZEPT (inert in <template>, siehe
-     Kommentar ganz oben in dieser Datei) -->
-{% for recipe in recipes %}
-<template id="editModalTpl{{ recipe.id }}">
-    <div class="modal-dialog modal-md">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title fw-bold">📝 Rezept bearbeiten: {{ recipe.name }}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form action="/edit-recipe/{{ recipe.id }}" method="POST">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="modal-body">
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Name des Gerichts</label>
-                        <input type="text" name="name" class="form-control" value="{{ recipe.name }}" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Kategorie</label>
-                        <select name="category_id" class="form-select" required>
-                            {% for cat in categories %}
-                            <option value="{{ cat.id }}" {% if cat.id == recipe.category_id %}selected{% endif %}>{{ cat.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Link</label>
-                        <input type="url" name="source_url" class="form-control form-control-sm" value="{{ recipe.source_url or '' }}" placeholder="z.B. https://www.chefkoch.de/rezepte/...">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Saison</label>
-                        <div class="d-flex flex-wrap gap-3 mb-2">
-                            {% for s in seasons %}
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="seasons" id="season_{{ s }}_{{ recipe.id }}" value="{{ s }}" {% if s in recipe_season_info[recipe.id].selected_presets %}checked{% endif %}>
-                                <label class="form-check-label" for="season_{{ s }}_{{ recipe.id }}">{{ s }}</label>
-                            </div>
-                            {% endfor %}
-                        </div>
-                        <div class="row g-2 align-items-center">
-                            <div class="col-auto"><label class="small text-muted mb-0">eigener Zeitraum</label></div>
-                            <div class="col-auto"><input type="date" name="season_custom_start" class="form-control form-control-sm" value="{{ recipe_season_info[recipe.id].custom_start }}"></div>
-                            <div class="col-auto">bis</div>
-                            <div class="col-auto"><input type="date" name="season_custom_end" class="form-control form-control-sm" value="{{ recipe_season_info[recipe.id].custom_end }}"></div>
-                        </div>
-                        <div class="form-text">Keine Auswahl = ganzjährig. Nur Tag/Monat des eigenen Zeitraums zählen, das Jahr wird ignoriert.</div>
-                    </div>
-
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_side_dish" id="is_side_dish{{ recipe.id }}" value="1" {% if recipe.is_side_dish %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="is_side_dish{{ recipe.id }}">
-                            🥗 Zusatzgericht / Beilage
-                        </label>
-                    </div>
-
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_favorite" id="is_favorite{{ recipe.id }}" value="1" {% if recipe.is_favorite %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="is_favorite{{ recipe.id }}">
-                            ⭐ Favorit
-                        </label>
-                    </div>
-
-                    <h6 class="border-bottom pb-1 mb-2 text-muted">Nährwerte (pro Portion)</h6>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input nutrition-override-toggle" type="checkbox" name="nutrition_override" id="nutritionOverride{{ recipe.id }}" value="1" data-recipe-id="{{ recipe.id }}" {% if recipe.nutrition_override %}checked{% endif %}>
-                        <label class="form-check-label small" for="nutritionOverride{{ recipe.id }}">✏️ Nährwerte manuell eintragen</label>
-                        <div class="form-text">Ohne Häkchen werden die Nährwerte automatisch aus den Zutaten berechnet (siehe ⚙️ Einstellungen → 🍎 Nährwerte).</div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-3"><label class="small text-muted mb-0">Kcal</label><input type="number" class="form-control form-control-sm nutrition-calories-display" value="{{ recipe.calories }}" title="Errechnet aus Eiweiß/Kohlenhydraten/Fett" disabled></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Eiweiß</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm nutrition-protein" value="{{ recipe.protein }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Kohlh.</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm nutrition-carbs" value="{{ recipe.carbs }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Fett</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm nutrition-fat" value="{{ recipe.fat }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Personen</label>
-                        <input type="number" name="servings" class="form-control form-control-sm" style="max-width: 100px;" min="1" step="1" value="{{ recipe.servings }}" required>
-                        <div class="form-text">Für wie viele Personen sind die Zutatenmengen ausgelegt?</div>
-                    </div>
-
-                    <h6 class="border-bottom pb-1 mb-2 text-muted">Zutaten</h6>
-                    <div id="edit-ingredients-container{{ recipe.id }}">
-                        {% for ing in recipe.ingredients %}
-                        {% set disp = ingredient_display[ing.id] %}
-                        <div class="ingredient-row mb-1">
-                            <div class="row g-2">
-                                <div class="col-4">
-                                    {# Zeigt standardmäßig den (über eine evtl.
-                                       bestehende Alias-Zuordnung aufgelösten)
-                                       kanonischen Namen (disp[2]) statt des
-                                       tatsächlich für DIESES Rezept
-                                       gespeicherten Namens - ein Klick
-                                       blendet stattdessen das echte,
-                                       editierbare Feld ein (siehe
-                                       static/ingredient_alias_hint.js:
-                                       openIngredientNameField). Der
-                                       eigentliche Eingabewert (ing.name)
-                                       ändert sich dadurch NIE von sich aus -
-                                       nur eine bewusste Bearbeitung durch den
-                                       Nutzer überschreibt ihn.
-
-                                       BEWUSST OHNE list="ingredients-datalist":
-                                       ein <input list="..."> lässt den
-                                       Browser beim ERSTEN Fokussieren offenbar
-                                       einmalig (und danach zwischengespeichert)
-                                       einen Such-Index über die komplette
-                                       Vorschlagsliste aufbauen, was genau das
-                                       spürbare Zögern verursachte, wenn man
-                                       eine BEREITS benannte Zutat zum
-                                       Bearbeiten öffnete - dort bringt eine
-                                       Vorschlagsliste ohnehin wenig (der Name
-                                       steht ja schon fest). Die neue,
-                                       zunächst leere Zutatenzeile unten
-                                       behält die Datalist, da eine
-                                       Vorschlagsliste beim Eintippen eines
-                                       KOMPLETT NEUEN Namens tatsächlich hilft. #}
-                                    <span class="form-control form-control-sm ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">{{ disp[2] }}</span>
-                                    <input type="text" name="ing_name[]" class="form-control form-control-sm ing-name-input d-none" value="{{ ing.name }}" autocomplete="off">
-                                </div>
-                                <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" value="{{ disp[0] }}"></div>
-                                <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" value="{{ disp[1] }}"></div>
-                                <div class="col-3">
-                                    <select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
-                                        <option value="" {% if not ing.category %}selected{% endif %}>Sonstiges</option>
-                                        {% for cat in shopping_categories %}
-                                        <option value="{{ cat }}" {% if cat == ing.category %}selected{% endif %}>{{ cat }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="col-1 d-grid">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove()">✕</button>
-                                </div>
-                            </div>
-                            <div class="ingredient-alias-hint small mt-1"></div>
-                        </div>
-                        {% endfor %}
-                        <div class="ingredient-row mb-1">
-                            <div class="row g-2">
-                                <div class="col-4">
-                                    <input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..." list="ingredients-datalist" autocomplete="off">
-                                </div>
-                                <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
-                                <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
-                                <div class="col-3">
-                                    <select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
-                                        <option value="" selected>Sonstiges</option>
-                                        {% for cat in shopping_categories %}
-                                        <option value="{{ cat }}">{{ cat }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div class="col-1 d-grid">
-                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove()">✕</button>
-                                </div>
-                            </div>
-                            <div class="ingredient-alias-hint small mt-1"></div>
-                        </div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addEditIngredientField({{ recipe.id }})">+ Zutat hinzufügen</button>
-
-                    <div class="mt-3">
-                        <label class="form-label small fw-bold">Anleitung</label>
-                        <textarea name="instructions" class="form-control form-control-sm" rows="6">{{ recipe.instructions or '' }}</textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                    <button type="submit" class="btn btn-warning fw-bold">Änderungen speichern</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</template>
-{% endfor %}
-
-<script>
-window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};
-window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
-</script>
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
-<script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
-<script src="{{ url_for('static', filename='ingredient_alias_hint.js') }}"></script>
-<script src="{{ url_for('static', filename='recipe_edit_modal.js') }}"></script>
 <script>
-// categoryOptionsHtml() (Baut die <option>-Liste für eine Einkaufslisten-
-// Kategorie-Auswahl aus window.SHOPPING_CATEGORIES) kommt aus dem separat
-// eingebundenen static/ingredient_category_select.js - dieselbe Funktion
-// nutzt auch recipe_create.html, daher hier nicht dupliziert gepflegt.
-
 // Rein clientseitiger Fuzzy-Filter über die Rezeptliste (siehe
 // static/fuzzy_search.js) - kein Server-Roundtrip nötig.
 // row.dataset.search enthält Name UND Kategorie (siehe data-search oben) -
@@ -296,13 +67,12 @@ const recipeFilterInput = document.getElementById('recipeFilter');
 wireFuzzyFilter(recipeFilterInput, '.recipe-list-row', row => row.dataset.search);
 
 // Suchbegriff über einen echten Seitenaufruf hinweg merken: das
-// Bearbeiten-Formular ist ein normales <form> (kein AJAX), ein Speichern
-// lädt die Seite über den redirect(url_for(...)) in
-// routes/recipes.py: edit_recipe() also komplett neu - ohne das hier
-// würde die eingetippte Suche dabei verloren gehen, obwohl der Nutzer nur
-// EIN Rezept bearbeitet und direkt danach an derselben Stelle
-// weitersuchen möchte. sessionStorage statt localStorage, da der
-// Suchbegriff nur für die laufende Sitzung sinnvoll ist, nicht dauerhaft.
+// Bearbeiten-Formular liegt jetzt auf einer eigenen Seite (siehe
+// routes/recipes.py: recipe_edit_view()) - ein Speichern lädt danach diese
+// Liste über den redirect(url_for(...)) in edit_recipe() komplett neu,
+// ohne das hier würde ein eingetippter Suchbegriff dabei verloren gehen.
+// sessionStorage statt localStorage, da der Suchbegriff nur für die
+// laufende Sitzung sinnvoll ist, nicht dauerhaft.
 if (recipeFilterInput) {
     const FILTER_STORAGE_KEY = 'speiseplan.recipeEditFilter';
     const savedFilter = sessionStorage.getItem(FILTER_STORAGE_KEY);
@@ -338,4 +108,3 @@ function deleteRecipeSafely(recipeId, recipeName) {
 }
 </script>
 {% endblock %}
-

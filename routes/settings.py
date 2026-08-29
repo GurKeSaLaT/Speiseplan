@@ -95,7 +95,7 @@ def update_ingredient_aliases():
 @settings_bp.route('/api/ingredient-alias/set', methods=['POST'])
 def api_set_ingredient_alias():
     """AJAX-Gegenstück zu update_ingredient_aliases() oben: setzt GENAU
-    EINEN Alias sofort beim Eintragen einer Zutat in recipe_create.html/
+    EINEN Alias sofort beim Eintragen einer Zutat in recipe_form.html/
     recipe_edit_list.html, ohne die Seite zu verlassen (siehe
     static/ingredient_alias_hint.js - der "Alias setzen"-Button dort, der
     beim Fall "weder Alias noch Grundzutat" erscheint).

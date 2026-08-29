@@ -332,7 +332,7 @@ def inject_css_version():
 def inject_shopping_categories():
     """Stellt allen Templates die feste Einkaufslisten-Kategorie-Reihenfolge
     zur Verfügung (siehe services/shopping.py) - gebraucht sowohl von den
-    Kategorie-Dropdowns beim Zutaten-Eintragen (recipe_create.html,
+    Kategorie-Dropdowns beim Zutaten-Eintragen (recipe_form.html,
     recipe_edit_list.html) als auch, über window.SHOPPING_CATEGORIES in
     base.html, von der clientseitigen Sortierung/Gruppierung der
     Einkaufsliste (static/plan.js). pantry_categories (window.PANTRY_
@@ -350,7 +350,7 @@ def inject_shopping_categories():
 def inject_ingredient_aliases():
     """Stellt allen Templates die gepflegten Zutaten-Alias-Zuordnungen zur
     Verfügung (siehe services/ingredient_aliases.py) - genutzt wird das
-    aktuell nur von recipe_create.html/recipe_edit_list.html
+    aktuell nur von recipe_form.html
     (window.INGREDIENT_ALIASES, siehe static/ingredient_alias_hint.js),
     global als Context Processor aber genauso einfach wie
     inject_shopping_categories() oben gehalten statt die Abfrage in jeder
@@ -362,7 +362,7 @@ def inject_ingredient_aliases():
 def inject_ingredient_nutrition():
     """Stellt allen Templates die gepflegten Nährwert-Referenzen je
     Alias-Zielzutat zur Verfügung (siehe services/nutrition.py) - genutzt
-    von recipe_create.html/recipe_edit_list.html (window.INGREDIENT_NUTRITION,
+    von recipe_form.html (window.INGREDIENT_NUTRITION,
     siehe static/ingredient_alias_hint.js), analog zu
     inject_ingredient_aliases() oben."""
     return {'ingredient_nutrition': get_all_nutrition_entries()}

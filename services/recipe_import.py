@@ -15,7 +15,7 @@ Google-/Suchmaschinen-Standard ist.
 Das Ergebnis ist bewusst nur eine VORSCHAU, kein direkt gespeichertes
 Rezept: routes/recipes.py: import_recipe_preview() liefert das geparste
 Dict als JSON an die Erstellen-Seite, die damit das normale Formular
-vorbefüllt (siehe recipe_create.html) - der Nutzer sieht und bearbeitet
+vorbefüllt (siehe recipe_form.html) - der Nutzer sieht und bearbeitet
 alles (insbesondere die Kategorie, die sich nicht zuverlässig auf unsere
 eigenen Kategorien abbilden lässt) BEVOR irgendetwas gespeichert wird.
 Kein Automatismus dieser Datei schreibt selbst in die Datenbank.
@@ -196,7 +196,7 @@ def _parse_servings(recipe_yield):
     erster Eintrag die reine Zahl als String ist (z.B. ["4", "4 Portionen"]).
     Extrahiert daraus die erste gefundene Ganzzahl; ohne einen einzigen
     Treffer wird 2 als Standardwert verwendet (derselbe Default wie beim
-    manuellen Rezept-Anlegen, siehe recipe_create.html)."""
+    manuellen Rezept-Anlegen, siehe recipe_form.html)."""
     if isinstance(recipe_yield, list):
         recipe_yield = recipe_yield[0] if recipe_yield else ''
     match = re.search(r'\d+', str(recipe_yield or ''))
@@ -265,7 +265,7 @@ def _parse_ingredient_line(line):
     """Zerlegt eine einzelne Zutatenzeile (chefkoch.de-typisch z.B.
     "500 g Mehl", "1 Zwiebel(n)", "n. B. Salz und Pfeffer") in
     {name, amount, unit} - dieselbe Form, die das Zutaten-Formular beim
-    manuellen Anlegen erwartet (siehe recipe_create.html: ing_name[]/
+    manuellen Anlegen erwartet (siehe recipe_form.html: ing_name[]/
     ing_amount[]/ing_unit[]).
 
     Bewusst ein einfacher, nicht perfekter Best-Effort-Parser: findet die

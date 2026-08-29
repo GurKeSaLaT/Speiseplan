@@ -1,0 +1,301 @@
+{# Gemeinsames Formular für "Rezept anlegen" (routes/recipes.py:
+   recipe_create_view, /manage/recipe/create) UND "Rezept bearbeiten"
+   (recipe_edit_view, /manage/recipe/edit/<id>) - unterschieden einzig über
+   die Variable `recipe` (None beim Anlegen, sonst das zu bearbeitende
+   Recipe-Objekt). Vorher zwei grundverschiedene Ansichten (eigene
+   Vollseite vs. ein Bearbeiten-Modal aus recipe_edit_list.html je
+   Rezept) - das wirkte inkonsistent und war zugleich die Ursache eines
+   echten Performance-Problems (50-100+ voll gerenderte, nur per CSS
+   versteckte Modals gleichzeitig im DOM). Jetzt EINE Seite pro Rezept
+   (bzw. eine für "neu"), in klar priorisierte, teils einklappbare
+   Abschnitte gegliedert (Grunddaten -> Zutaten -> Saison/Nährwerte
+   [optional, eingeklappt] -> Anleitung) statt eines langen,
+   undifferenzierten Formulars - siehe dazu das mit dem Nutzer
+   abgestimmte Mockup.
+
+   Die Zutatenzeilen behalten bewusst ihre ALTEN, unpräfixierten
+   Klassennamen (.ingredient-row/.ing-name-display/.ing-name-input/
+   .ingredient-alias-hint) - static/ingredient_alias_hint.js kennt genau
+   diese Selektoren (u.a. die direkte Geschwister-Beziehung zwischen
+   .ing-name-display und .ing-name-input). Neu ist nur ihre optische
+   Anordnung als CSS-Grid (siehe static/style.css: .rform-*). #}
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-head">
+    <div>
+        <p class="eyebrow">{{ 'Rezept bearbeiten' if recipe else 'Neues Rezept' }}</p>
+        <h1 class="page-head-title">{{ recipe.name if recipe else 'Rezept erstellen' }}</h1>
+    </div>
+    <a href="/manage/recipe/edit-list" class="weeknav-btn">← Zurück zur Liste</a>
+</div>
+
+<div class="rform-layout">
+    <div>
+        {% if not recipe %}
+        {# Entry-Wahl nur beim Anlegen: Import per Link vs. von Grund auf
+           selbst eintragen. Rein optisch/UX (zeigt standardmäßig das
+           Import-Feld) - beide "Karten" führen zum selben Formular
+           darunter, nichts wird dadurch serverseitig unterschiedlich
+           behandelt. #}
+        <div class="rform-entry-choice">
+            <div class="rform-entry-card active" id="entryCardImport" onclick="rformChooseEntry('import')">
+                <span class="ic">🔗</span>
+                <span class="t">Von Webseite importieren</span>
+                <span class="d">chefkoch.de, lecker.de &amp; weitere - füllt Zutaten, Nährwerte &amp; Anleitung automatisch aus.</span>
+                <div class="rform-import-row show" id="importRow">
+                    <input type="text" id="importUrl" placeholder="https://www.chefkoch.de/rezepte/...">
+                    <button type="button" class="rform-btn rform-btn-primary" id="importButton" onclick="event.stopPropagation(); rformImportRecipe()">Importieren</button>
+                </div>
+                <div id="importStatus" class="form-text mt-1"></div>
+            </div>
+            <div class="rform-entry-card" id="entryCardManual" onclick="rformChooseEntry('manual')">
+                <span class="ic">✏️</span>
+                <span class="t">Manuell erstellen</span>
+                <span class="d">Von Grund auf selbst eintragen - z.B. für ein eigenes Familienrezept ohne Quelle im Netz.</span>
+            </div>
+        </div>
+        {% endif %}
+
+        <form id="recipe-form" action="{{ url_for('recipes.edit_recipe', id=recipe.id) if recipe else url_for('recipes.add_recipe') }}" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- Grunddaten -->
+            <div class="rform-section">
+                <div class="rform-section-head">
+                    <h2>📋 Grunddaten</h2>
+                    <div class="rform-head-pills">
+                        <label class="rform-pill{{ ' on' if recipe and recipe.is_side_dish else '' }}">
+                            <input type="checkbox" class="rform-pill-input" name="is_side_dish" value="1" {% if recipe and recipe.is_side_dish %}checked{% endif %}>
+                            <span class="dot"></span>🥗 Beilage
+                        </label>
+                        <label class="rform-pill{{ ' on' if recipe and recipe.is_favorite else '' }}">
+                            <input type="checkbox" class="rform-pill-input" name="is_favorite" value="1" {% if recipe and recipe.is_favorite %}checked{% endif %}>
+                            <span class="dot"></span>⭐ Favorit
+                        </label>
+                    </div>
+                </div>
+                <div class="rform-section-body">
+                    <div class="rform-mb">
+                        <label class="rform-field-label">Name des Gerichts</label>
+                        <input type="text" name="name" id="nameInput" class="rform-field rform-field-hero" required placeholder="z.B. Spaghetti Bolognese" value="{{ recipe.name if recipe else '' }}">
+                    </div>
+                    <div class="rform-grid-3">
+                        <div>
+                            <label class="rform-field-label">Kategorie</label>
+                            <select name="category_id" id="categoryInput" class="rform-field" required>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}" {% if recipe and cat.id == recipe.category_id %}selected{% endif %}>{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="rform-field-label">Personen</label>
+                            <input type="number" name="servings" id="servingsInput" class="rform-field" min="1" step="1" value="{{ recipe.servings if recipe else 2 }}" required>
+                        </div>
+                        <div>
+                            <label class="rform-field-label">Link (optional)</label>
+                            <input type="url" name="source_url" id="sourceUrlInput" class="rform-field" placeholder="https://..." value="{{ recipe.source_url if recipe else '' }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Zutaten -->
+            <div class="rform-section">
+                <div class="rform-section-head">
+                    <h2>🛒 Zutaten</h2>
+                    <span class="hint" id="ingCount"></span>
+                </div>
+                <div class="rform-section-body">
+                    <p class="text-muted small mb-2">Einheiten werden automatisch vereinheitlicht (g/kg, ml/l/EL/TL/Tasse) - welche Einheit dabei angezeigt wird, lässt sich unter ⚙️ Einstellungen → 📏 Einheiten festlegen.</p>
+                    <div class="ing-col-labels">
+                        <span>Zutat</span><span>Menge</span><span>Einheit</span><span>Kategorie</span><span></span>
+                    </div>
+                    <div id="ingredientsContainer">
+                        {% if recipe %}
+                        {% for ing in recipe.ingredients %}
+                        {% set disp = ingredient_display[ing.id] %}
+                        <div class="ingredient-row">
+                            <div class="ing-fields">
+                                <div class="ing-name-wrap">
+                                    {# Zeigt standardmäßig den (über eine evtl. bestehende Alias-
+                                       Zuordnung aufgelösten) kanonischen Namen (disp[2]) - erst ein
+                                       Klick blendet das echte, editierbare Feld ein (siehe
+                                       static/ingredient_alias_hint.js: openIngredientNameField).
+                                       BEWUSST OHNE list="ingredients-datalist": das ließ den Browser
+                                       beim ersten Fokussieren einer bereits benannten Zutat spürbar
+                                       zögern (siehe dortiger Kommentar). #}
+                                    <span class="ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">{{ disp[2] }}</span>
+                                    <input type="text" name="ing_name[]" class="ing-name-input d-none" value="{{ ing.name }}" autocomplete="off">
+                                </div>
+                                <input type="number" step="0.1" name="ing_amount[]" value="{{ disp[0] }}">
+                                <input type="text" name="ing_unit[]" value="{{ disp[1] }}">
+                                <select name="ing_category[]" title="Einkaufslisten-Kategorie">
+                                    <option value="" {% if not ing.category %}selected{% endif %}>Sonstiges</option>
+                                    {% for cat in shopping_categories %}
+                                    <option value="{{ cat }}" {% if cat == ing.category %}selected{% endif %}>{{ cat }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="rform-ing-del" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
+                            </div>
+                            <div class="ingredient-alias-hint small mt-1"></div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                        <div class="ingredient-row">
+                            <div class="ing-fields">
+                                <input type="text" name="ing_name[]" placeholder="{{ 'Neue Zutat...' if recipe else 'Zutat' }}" list="ingredients-datalist" autocomplete="off">
+                                <input type="number" step="0.1" name="ing_amount[]" placeholder="Menge">
+                                <input type="text" name="ing_unit[]" placeholder="Einheit">
+                                <select name="ing_category[]" title="Einkaufslisten-Kategorie">
+                                    <option value="" selected>Sonstiges</option>
+                                    {% for cat in shopping_categories %}
+                                    <option value="{{ cat }}">{{ cat }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="rform-ing-del" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
+                            </div>
+                            <div class="ingredient-alias-hint small mt-1"></div>
+                        </div>
+                    </div>
+                    <button type="button" class="rform-add-ing" onclick="rformAddIngredientRow()">+ Zutat hinzufügen</button>
+                </div>
+            </div>
+
+            <!-- Saison (optional, eingeklappt) -->
+            <div class="rform-section rform-collapsed" id="seasonSection">
+                <div class="rform-section-head rform-toggle-row" onclick="rformToggleSection(this)">
+                    <h2>🌦️ Saison <span class="hint">optional</span></h2>
+                    <span class="rform-chevron">▾</span>
+                </div>
+                <div class="rform-section-body">
+                    <div class="rform-season-chips rform-mb">
+                        {% for s in seasons %}
+                        <label class="rform-chip{{ ' on' if s in selected_presets else '' }}">
+                            <input type="checkbox" class="rform-chip-input" name="seasons" value="{{ s }}" {% if s in selected_presets %}checked{% endif %}>
+                            {{ s }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="rform-grid-2">
+                        <div>
+                            <label class="rform-field-label">Eigener Zeitraum von</label>
+                            <input type="date" name="season_custom_start" class="rform-field" value="{{ custom_start }}">
+                        </div>
+                        <div>
+                            <label class="rform-field-label">bis</label>
+                            <input type="date" name="season_custom_end" class="rform-field" value="{{ custom_end }}">
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">Keine Auswahl = ganzjährig. Mehrere Saisons und/oder ein eigener Zeitraum sind kombinierbar (das Jahr beim eigenen Zeitraum wird ignoriert, nur Tag/Monat zählen).</div>
+                </div>
+            </div>
+
+            <!-- Nährwerte (eingeklappt, Header zeigt direkt das aktuelle Ergebnis) -->
+            <div class="rform-section rform-collapsed" id="nutritionSection">
+                <div class="rform-section-head rform-toggle-row" onclick="rformToggleSection(this)">
+                    <div class="rform-head-pills">
+                        <h2>📊 Nährwerte</h2>
+                        <span class="rform-nutrition-badge" id="nutritionBadge">
+                            {% if recipe %}{{ recipe.calories }} kcal{% else %}wird beim Speichern berechnet{% endif %}
+                        </span>
+                    </div>
+                    <span class="rform-chevron">▾</span>
+                </div>
+                <div class="rform-section-body">
+                    <div class="rform-nutrition-summary{{ ' hidden' if recipe and recipe.nutrition_override else '' }}" id="nutritionSummary">
+                        <div class="stat"><div class="num">{{ recipe.calories if recipe else 0 }}</div><div class="cap">Kcal</div></div>
+                        <div class="stat"><div class="num">{{ '%.1f'|format(recipe.protein)|replace('.', ',') if recipe else '0,0' }}g</div><div class="cap">Eiweiß</div></div>
+                        <div class="stat"><div class="num">{{ '%.1f'|format(recipe.carbs)|replace('.', ',') if recipe else '0,0' }}g</div><div class="cap">Kohlh.</div></div>
+                        <div class="stat"><div class="num">{{ '%.1f'|format(recipe.fat)|replace('.', ',') if recipe else '0,0' }}g</div><div class="cap">Fett</div></div>
+                    </div>
+                    <label class="rform-pill{{ ' on' if recipe and recipe.nutrition_override else '' }}">
+                        <input type="checkbox" class="rform-pill-input" id="nutritionOverride" name="nutrition_override" value="1" {% if recipe and recipe.nutrition_override %}checked{% endif %}>
+                        <span class="dot"></span>✏️ Stattdessen manuell eintragen
+                    </label>
+                    <div class="form-text mt-1">Ohne Häkchen werden die Nährwerte automatisch aus den Zutaten berechnet (siehe ⚙️ Einstellungen → 🍎 Nährwerte) - jeweils beim Speichern neu.</div>
+
+                    <div class="rform-nutrition-fields{{ ' show' if recipe and recipe.nutrition_override else '' }}" id="nutritionFields">
+                        <div>
+                            <label class="rform-field-label">Kcal</label>
+                            <input type="number" id="caloriesDisplay" class="rform-field" disabled title="Errechnet aus Eiweiß/Kohlenhydraten/Fett" value="{{ recipe.calories if recipe else '' }}">
+                        </div>
+                        <div>
+                            <label class="rform-field-label">Eiweiß (g)</label>
+                            <input type="number" step="0.1" name="protein" id="proteinInput" class="rform-field" {% if not (recipe and recipe.nutrition_override) %}disabled{% endif %} value="{{ recipe.protein if recipe else '' }}">
+                        </div>
+                        <div>
+                            <label class="rform-field-label">Kohlh. (g)</label>
+                            <input type="number" step="0.1" name="carbs" id="carbsInput" class="rform-field" {% if not (recipe and recipe.nutrition_override) %}disabled{% endif %} value="{{ recipe.carbs if recipe else '' }}">
+                        </div>
+                        <div>
+                            <label class="rform-field-label">Fett (g)</label>
+                            <input type="number" step="0.1" name="fat" id="fatInput" class="rform-field" {% if not (recipe and recipe.nutrition_override) %}disabled{% endif %} value="{{ recipe.fat if recipe else '' }}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anleitung -->
+            <div class="rform-section">
+                <div class="rform-section-head"><h2>📝 Anleitung</h2></div>
+                <div class="rform-section-body">
+                    <textarea name="instructions" id="instructionsInput" class="rform-field" rows="8" placeholder="Zubereitungsschritte...">{{ recipe.instructions or '' if recipe else '' }}</textarea>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Live-Vorschau -->
+    <div class="rform-preview">
+        <div class="rform-preview-card">
+            <div class="rform-preview-media">🍽️</div>
+            <div class="rform-preview-body">
+                <p class="pname" id="pvName">{{ recipe.name if recipe else 'Unbenanntes Rezept' }}</p>
+                <div class="rform-preview-meta">
+                    <span class="b" id="pvCat">{{ recipe.category.name if recipe else (categories[0].name if categories else '') }}</span>
+                    <span class="b" id="pvServ">👥 {{ recipe.servings if recipe else 2 }} Personen</span>
+                </div>
+                <div class="rform-preview-list">
+                    <b id="pvKcal">{{ recipe.calories if recipe else 0 }} kcal</b> pro Portion<br>
+                    <span id="pvIngCount">0</span> Zutaten hinterlegt
+                </div>
+                <div class="rform-checklist">
+                    <div class="ci" id="ciName"><span class="dot2"></span>Name &amp; Kategorie</div>
+                    <div class="ci" id="ciIng"><span class="dot2"></span><span id="ciIngLabel">Zutaten (0)</span></div>
+                    <div class="ci" id="ciInstr"><span class="dot2"></span>Anleitung</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="rform-bottom-spacer"></div>
+
+<div class="rform-action-bar">
+    <a href="/manage/recipe/edit-list" class="rform-btn rform-btn-ghost">Abbrechen</a>
+    <button type="submit" form="recipe-form" class="rform-btn rform-btn-primary">{{ 'Änderungen speichern' if recipe else 'Rezept speichern' }}</button>
+</div>
+
+<datalist id="ingredients-datalist">
+    {% for ing_name in ingredient_list %}
+    <option value="{{ ing_name }}"></option>
+    {% endfor %}
+</datalist>
+<datalist id="canonical-names-datalist">
+    {% for canonical in ingredient_aliases.values() | unique | sort %}
+    <option value="{{ canonical }}"></option>
+    {% endfor %}
+</datalist>
+
+<script>
+window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};
+window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
+{% if recipe %}
+window.RECIPE_NUTRITION = {{ {'calories': recipe.calories, 'protein': recipe.protein, 'carbs': recipe.carbs, 'fat': recipe.fat} | tojson }};
+{% endif %}
+</script>
+<script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
+<script src="{{ url_for('static', filename='ingredient_alias_hint.js') }}"></script>
+<script src="{{ url_for('static', filename='recipe_form.js') }}"></script>
+{% endblock %}

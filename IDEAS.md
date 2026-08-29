@@ -157,7 +157,7 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   clientseitige Aggregation in `rebuildShoppingList()` gleichnamige
   Zutaten rein nach "Name+Einheit" gruppiert, ist entscheidend, dass ALLE
   Vorkommen einer Familie serverseitig konsistent in derselben Einheit
-  ankommen), das Rezept-Bearbeiten-Formular (`recipe_edit_list_view()`)
+  ankommen), das Rezept-Bearbeiten-Formular (`recipe_edit_view()`)
   und die Import-Vorschau (`import_recipe_preview()`). Die Umrechnung ist
   exakt und verlustfrei umkehrbar (Faktor 1000), ein Speichern ohne
   Änderung eines in Kilogramm angezeigten Werts liefert über
