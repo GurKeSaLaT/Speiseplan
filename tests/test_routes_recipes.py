@@ -78,6 +78,18 @@ def test_recipe_edit_list_view_no_search_filter_when_empty(client):
     assert b'id="recipeFilter"' not in resp.data
 
 
+def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
+    """Der Bearbeiten-Dialog ist ein normales <form> - ein Speichern lädt
+    die Seite über routes/recipes.py: edit_recipe()'s redirect() komplett
+    neu, ohne das würde ein eingetippter Suchbegriff dabei verloren gehen.
+    sessionStorage merkt ihn sich stattdessen über den Seitenaufruf hinweg."""
+    make_recipe("Suchbares Gericht")
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert b"sessionStorage" in resp.data
+    assert b"speiseplan.recipeEditFilter" in resp.data
+
+
 def test_recipe_edit_list_view_search_data_includes_category(client, make_category, make_recipe):
     cat_id = make_category("Beilagen")
     make_recipe("Kartoffelpüree", category_id=cat_id)

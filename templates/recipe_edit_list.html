@@ -231,7 +231,28 @@ document.querySelectorAll('.nutrition-override-toggle').forEach(toggle => {
 // row.dataset.search enthält Name UND Kategorie (siehe data-search oben) -
 // eine Suche nach "Beilagen" findet so auch Rezepte, deren Name selbst
 // nicht "Beilagen" enthält.
-wireFuzzyFilter(document.getElementById('recipeFilter'), '.recipe-list-row', row => row.dataset.search);
+const recipeFilterInput = document.getElementById('recipeFilter');
+wireFuzzyFilter(recipeFilterInput, '.recipe-list-row', row => row.dataset.search);
+
+// Suchbegriff über einen echten Seitenaufruf hinweg merken: das
+// Bearbeiten-Formular ist ein normales <form> (kein AJAX), ein Speichern
+// lädt die Seite über den redirect(url_for(...)) in
+// routes/recipes.py: edit_recipe() also komplett neu - ohne das hier
+// würde die eingetippte Suche dabei verloren gehen, obwohl der Nutzer nur
+// EIN Rezept bearbeitet und direkt danach an derselben Stelle
+// weitersuchen möchte. sessionStorage statt localStorage, da der
+// Suchbegriff nur für die laufende Sitzung sinnvoll ist, nicht dauerhaft.
+if (recipeFilterInput) {
+    const FILTER_STORAGE_KEY = 'speiseplan.recipeEditFilter';
+    const savedFilter = sessionStorage.getItem(FILTER_STORAGE_KEY);
+    if (savedFilter) {
+        recipeFilterInput.value = savedFilter;
+        recipeFilterInput.dispatchEvent(new Event('input'));
+    }
+    recipeFilterInput.addEventListener('input', () => {
+        sessionStorage.setItem(FILTER_STORAGE_KEY, recipeFilterInput.value);
+    });
+}
 
 // Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
 // Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
