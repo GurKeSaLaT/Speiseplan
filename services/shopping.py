@@ -14,6 +14,7 @@ dieselbe Reihenfolge.
 SHOPPING_CATEGORIES = [
     "Obst/Gemüse",
     "Milchprodukte",
+    "Gewürze",
     "Hygieneartikel",
     "Getränke",
     "Teigwaren",
