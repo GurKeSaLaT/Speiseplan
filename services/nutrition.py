@@ -17,19 +17,49 @@ routes/settings.py) zeigt dabei bewusst NUR die tatsächlichen Alias-
 Zielnamen (list_alias_canonical_names()) - unaliasierte Einzelzutaten
 bekommen ihren Nährwert stattdessen direkt beim Zutat-Eintragen über den
 Inline-Hinweis nachgetragen (siehe static/ingredient_alias_hint.js).
+
+Referenzbasis IMMER 100 g / 100 ml / 1 Stk (REFERENCE_BASES unten) - frei
+wählbare Referenzmengen (z.B. "1 Becher", "1 Dose", "1 Prise") wurden
+bewusst verworfen: sie sind weder untereinander vergleichbar noch lässt
+sich ihre Größe auf der Verwaltungsseite kompakt genug darstellen (siehe
+set_nutrition()). Für die eigentliche Berechnung (compute_recipe_nutrition)
+zählen zusätzlich stückbasierte Einheiten-Schreibweisen wie "Stück",
+"Stange" oder "Scheibe" als gleichwertig zu "Stk" (siehe _normalize_unit) -
+das ist bewusst NUR eine Lockerung für den Nährwert-Abgleich, NICHT für
+services/units.py: normalize_amount_unit(), da unterschiedliche
+Schreibweisen auf der Einkaufsliste weiterhin als eigene Posten geführt
+werden sollen.
 """
 
 from collections import Counter
 
 from models import Ingredient, IngredientAlias, IngredientNutrition, db
 from services.ingredient_aliases import normalize_ingredient_name
+from services.units import normalize_amount_unit
+
+# Referenzbasis je Einheit - siehe Moduldocstring. set_nutrition() erzwingt
+# reference_unit aus diesen drei Schlüsseln und leitet reference_amount
+# IMMER daraus ab (nie frei eingebbar).
+REFERENCE_BASES = {"g": 100, "ml": 100, "Stk": 1}
+
+# Einheiten-Schreibweisen, die beim Nährwert-ABGLEICH (nicht beim Speichern
+# der Zutatenzeile selbst!) als "1 Stk" zählen - deckt die auf chefkoch.de
+# gebräuchlichen Stückzahl-Angaben ab (siehe services/units.py:
+# NON_CONVERTIBLE_UNITS für die vollständige, dort maßgebliche Liste).
+_PIECE_LIKE_UNITS = {
+    '', 'stk', 'stück', 'stange', 'stangen', 'zehe', 'zehen',
+    'scheibe', 'scheiben', 'stk.',
+}
 
 
 def _normalize_unit(unit):
     """Für den Einheiten-Vergleich beim Berechnen (siehe
     compute_recipe_nutrition) - Groß-/Kleinschreibung und Leerraum sollen
-    keine Rolle spielen ("g" soll z.B. auch "G" oder " g " treffen)."""
-    return (unit or '').strip().lower()
+    keine Rolle spielen ("g" soll z.B. auch "G" oder " g " treffen), und
+    stückbasierte Schreibweisen sollen alle gegen eine "Stk"-Referenz
+    matchen (siehe Moduldocstring)."""
+    key = (unit or '').strip().lower()
+    return 'stk' if key in _PIECE_LIKE_UNITS else key
 
 
 def get_nutrition_entry(name):
@@ -56,18 +86,28 @@ def get_all_nutrition_entries():
     }
 
 
-def set_nutrition(name, reference_amount, reference_unit, calories, protein, carbs, fat):
+def set_nutrition(name, reference_unit, calories, protein, carbs, fat):
     """Legt einen Nährwert-Eintrag an oder aktualisiert ihn - name wird wie
     beim Nachschlagen auf seine kanonische Form normalisiert, damit
     "Spaghetti" und "Fusilli" (beide -> "Nudeln", falls alias-gruppiert)
-    denselben Eintrag treffen."""
+    denselben Eintrag treffen.
+
+    reference_amount gibt es hier bewusst NICHT als Parameter - sie ergibt
+    sich immer zwingend aus reference_unit (siehe REFERENCE_BASES/
+    Moduldocstring). Ein unbekannter/leerer reference_unit-Wert fällt auf
+    "g" zurück, statt einen Fehler zu werfen (z.B. bei manipulierten
+    Formulardaten)."""
     canonical = normalize_ingredient_name(name)
+    reference_unit = (reference_unit or 'g').strip()
+    if reference_unit not in REFERENCE_BASES:
+        reference_unit = 'g'
+
     entry = IngredientNutrition.query.filter_by(canonical_name=canonical).first()
     if not entry:
         entry = IngredientNutrition(canonical_name=canonical)
         db.session.add(entry)
-    entry.reference_amount = reference_amount
-    entry.reference_unit = (reference_unit or 'g').strip()
+    entry.reference_amount = REFERENCE_BASES[reference_unit]
+    entry.reference_unit = reference_unit
     entry.calories = calories
     entry.protein = protein
     entry.carbs = carbs
@@ -86,17 +126,25 @@ def list_alias_canonical_names():
 
 
 def infer_reference_unit(canonical_name):
-    """Rät eine sinnvolle Standard-Einheit für einen NEUEN Nährwert-
-    Eintrag: die unter dieser kanonischen Zutat am häufigsten tatsächlich
-    verwendete Einheit (z.B. "g" für "Mehl", "Stk" für "Ei") - fällt auf
-    "g" zurück, wenn dazu noch gar keine Zutat-Zeile existiert."""
-    units = [
-        ing.unit for ing in Ingredient.query.all()
-        if ing.unit and normalize_ingredient_name(ing.name) == canonical_name
-    ]
-    if not units:
+    """Rät eine sinnvolle Standard-Referenzeinheit (g/ml/Stk, siehe
+    REFERENCE_BASES) für einen NEUEN Nährwert-Eintrag: welche der drei
+    Familien unter dieser kanonischen Zutat am häufigsten tatsächlich
+    verwendet wird. Jede Zutatenzeile wird dafür über
+    services/units.py: normalize_amount_unit() auf ihre Masse-/Volumen-
+    Familie geprüft (deckt z.B. "kg" oder "EL" korrekt als Masse/Volumen
+    ab, nicht nur die bereits kanonischen "g"/"ml") - alles andere
+    (Stk, Bund, Dose, Prise, eine leere Einheit, ...) zählt als "Stk",
+    da es sich für eine 100g/100ml-Referenz ohnehin nicht eignet.
+    Fällt auf "g" zurück, wenn dazu noch gar keine Zutat-Zeile existiert."""
+    families = []
+    for ing in Ingredient.query.all():
+        if normalize_ingredient_name(ing.name) != canonical_name:
+            continue
+        _, unit = normalize_amount_unit(1, ing.unit)
+        families.append(unit if unit in ('g', 'ml') else 'Stk')
+    if not families:
         return 'g'
-    return Counter(units).most_common(1)[0][0]
+    return Counter(families).most_common(1)[0][0]
 
 
 def compute_recipe_nutrition(ingredient_rows, servings):

@@ -129,10 +129,11 @@
             <div class="text-danger small fw-bold mb-1">⚠️ Keine Nährwerte für „${escapeHtml(canonical)}" hinterlegt</div>
             <div class="row g-1">
                 <div class="col-6 col-md-4">
-                    <div class="input-group input-group-sm">
-                        <input type="number" step="0.1" class="form-control form-control-sm nutrition-ref-amount" placeholder="Menge" value="100">
-                        <input type="text" class="form-control form-control-sm nutrition-ref-unit" placeholder="Einh." value="g" style="max-width: 3.5rem;">
-                    </div>
+                    <select class="form-select form-select-sm nutrition-ref-unit">
+                        <option value="g" selected>pro 100 g</option>
+                        <option value="ml">pro 100 ml</option>
+                        <option value="Stk">pro 1 Stk</option>
+                    </select>
                 </div>
                 <div class="col-3 col-md-2"><input type="number" class="form-control form-control-sm nutrition-calories" placeholder="Kcal"></div>
                 <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="Eiweiß"></div>
@@ -163,8 +164,7 @@
     }
 
     function submitNutrition(canonicalName, box, name, hintEl) {
-        const amount = parseFloat(box.querySelector('.nutrition-ref-amount').value) || 100;
-        const unit = box.querySelector('.nutrition-ref-unit').value.trim() || 'g';
+        const unit = box.querySelector('.nutrition-ref-unit').value;
         const calories = parseFloat(box.querySelector('.nutrition-calories').value) || 0;
         const protein = parseFloat(box.querySelector('.nutrition-protein').value) || 0;
         const carbs = parseFloat(box.querySelector('.nutrition-carbs').value) || 0;
@@ -174,7 +174,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF_TOKEN },
             body: JSON.stringify({
-                name: canonicalName, reference_amount: amount, reference_unit: unit,
+                name: canonicalName, reference_unit: unit,
                 calories, protein, carbs, fat,
             }),
         })

@@ -272,7 +272,7 @@ def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_catego
     cat_id = make_category("Berechnet")
     with app.app_context():
         # 350 kcal/100g Mehl.
-        set_nutrition("Mehl", reference_amount=100, reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
+        set_nutrition("Mehl", reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
 
     form = _base_recipe_form(cat_id, servings="2", **{
         "nutrition_override": "",
@@ -318,7 +318,7 @@ def test_add_recipe_override_ignores_computed_nutrition(client, app, make_catego
 
     cat_id = make_category("Überschrieben")
     with app.app_context():
-        set_nutrition("Nudeln", reference_amount=100, reference_unit="g", calories=999, protein=1, carbs=1, fat=1)
+        set_nutrition("Nudeln", reference_unit="g", calories=999, protein=1, carbs=1, fat=1)
 
     # _base_recipe_form() setzt nutrition_override="1" und feste
     # calories="400" etc. per Default - diese müssen trotz vorhandener
@@ -339,7 +339,7 @@ def test_edit_recipe_recomputes_nutrition_when_ingredients_change(client, app, m
     recipe_id = make_recipe("Neu berechnen", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
     with app.app_context():
         cat_id = db.session.get(Recipe, recipe_id).category_id
-        set_nutrition("Reis", reference_amount=100, reference_unit="g", calories=130, protein=3, carbs=28, fat=0.3)
+        set_nutrition("Reis", reference_unit="g", calories=130, protein=3, carbs=28, fat=0.3)
 
     form = _base_recipe_form(cat_id, servings="1", **{
         "nutrition_override": "",
@@ -378,7 +378,7 @@ def test_recipe_create_view_embeds_ingredient_nutrition_for_hint_js(client, app)
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        set_nutrition("Öl", reference_amount=100, reference_unit="ml", calories=884, protein=0, carbs=0, fat=100)
+        set_nutrition("Öl", reference_unit="ml", calories=884, protein=0, carbs=0, fat=100)
 
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200

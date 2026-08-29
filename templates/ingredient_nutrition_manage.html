@@ -8,6 +8,13 @@
    aufgerufen aus routes/recipes.py: add_recipe()/edit_recipe()), sofern
    ein Rezept nicht auf "manuell überschreiben" gestellt ist.
 
+   Referenzbasis ist immer 100 g / 100 ml / 1 Stk (services/nutrition.py:
+   REFERENCE_BASES) - dafür ein festes <select> statt einer frei
+   eingebbaren Menge+Einheit, sowohl damit alle Einträge miteinander
+   vergleichbar bleiben als auch weil ein schmales Zahlenfeld auf
+   kleinen Bildschirmen den Wert (z.B. "100") sichtbar auf "1" abschneiden
+   konnte.
+
    Unaliasierte Einzelzutaten tauchen hier bewusst NICHT auf - für die
    gibt es stattdessen den Inline-Hinweis direkt beim Zutat-Eintragen
    (siehe static/ingredient_alias_hint.js). #}
@@ -37,7 +44,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2 d-none d-md-flex">
                         <div class="col-md-3">Zutat</div>
-                        <div class="col-md-2">Je Menge</div>
+                        <div class="col-md-2">Referenz</div>
                         <div class="col-md-2">Kcal</div>
                         <div style="flex: 0 0 auto; width: 12.5%;">Eiweiß (g)</div>
                         <div style="flex: 0 0 auto; width: 12.5%;">Kohlh. (g)</div>
@@ -51,10 +58,11 @@
                                 <input type="text" class="form-control form-control-sm{% if not row.has_entry %} text-muted{% endif %}" value="{{ row.canonical_name }}" disabled>
                             </div>
                             <div class="col-6 col-md-2">
-                                <div class="input-group input-group-sm">
-                                    <input type="number" step="0.1" name="reference_amount[]" class="form-control form-control-sm" value="{{ row.reference_amount }}" title="Referenzmenge">
-                                    <input type="text" name="reference_unit[]" class="form-control form-control-sm" value="{{ row.reference_unit }}" style="max-width: 4.5rem;" title="Referenzeinheit">
-                                </div>
+                                <select name="reference_unit[]" class="form-select form-select-sm" title="Referenzbasis">
+                                    <option value="g" {% if row.reference_unit == 'g' %}selected{% endif %}>pro 100 g</option>
+                                    <option value="ml" {% if row.reference_unit == 'ml' %}selected{% endif %}>pro 100 ml</option>
+                                    <option value="Stk" {% if row.reference_unit == 'Stk' %}selected{% endif %}>pro 1 Stk</option>
+                                </select>
                             </div>
                             <div class="col-6 col-md-2"><input type="number" name="calories[]" class="form-control form-control-sm" value="{{ row.calories }}" placeholder="Kcal"></div>
                             <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="protein[]" class="form-control form-control-sm" value="{{ row.protein }}" placeholder="Eiweiß"></div>
