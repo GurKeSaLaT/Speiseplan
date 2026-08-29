@@ -78,6 +78,18 @@ def test_recipe_edit_list_view_no_search_filter_when_empty(client):
     assert b'id="recipeFilter"' not in resp.data
 
 
+def test_recipe_edit_list_view_search_data_includes_category(client, make_category, make_recipe):
+    cat_id = make_category("Beilagen")
+    make_recipe("Kartoffelpüree", category_id=cat_id)
+
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    # data-search muss die Kategorie mit enthalten, damit eine Suche nach
+    # "Beilagen" auch Rezepte findet, deren NAME selbst nicht "Beilagen"
+    # enthält (siehe static/fuzzy_search.js: wireFuzzyFilter).
+    assert b'data-search="kartoffelp\xc3\xbcree beilagen"' in resp.data
+
+
 def test_recipe_edit_list_view_shows_season_badges(client, app, make_recipe):
     from models import RecipeSeason, db
     from services.seasons import SEASON_PRESETS
