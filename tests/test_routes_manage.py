@@ -7,7 +7,10 @@ def test_manage_page_renders(client):
     resp = client.get("/manage")
     assert resp.status_code == 200
     assert "Übersicht".encode("utf-8") in resp.data
-    assert b'class="manage-shell"' in resp.data
+    # Die Seitenleiste ist jetzt global (templates/base.html), diese Seite
+    # liefert nur noch den Dashboard-Inhalt.
+    assert b'class="app-shell"' in resp.data
+    assert "Guten Tag".encode("utf-8") in resp.data
 
 
 def test_manage_page_sidebar_links_to_all_sections(client):
@@ -34,7 +37,7 @@ def test_manage_page_shows_stats(client, make_category, make_recipe):
 def test_manage_page_empty_state_has_no_recent_list(client):
     resp = client.get("/manage")
     assert resp.status_code == 200
-    assert b'class="recent"' not in resp.data
+    assert b'class="panel-list"' not in resp.data
 
 
 def test_manage_page_lists_recently_updated_recipes(client, app, make_recipe):

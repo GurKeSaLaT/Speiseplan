@@ -118,120 +118,91 @@
 </head>
 <body>
 
-    {# Navigationsleiste: der Markenname "🍽️ Speiseplan" führt (wie der
-       frühere, jetzt entfernte "📅 Wochenplaner"-Punkt) auf "/" - beide
-       zeigten auf dasselbe Ziel, ein eigener Menüpunkt dafür war doppelt.
-       "⚙️ Einstellungen" (früher "Verwaltung") ist jetzt ein Dropdown mit
-       Direktlinks auf die Unterseiten (siehe settings-nav-dropdown weiter
-       unten für das Öffnen-Verhalten per Hover/Tippen) - die
-       active-custom-Klasse markiert ihn, sobald irgendeine "/manage..."-
-       Unterseite aktiv ist. "Darstellung" (Hell-/Dunkelmodus) hat keine
-       eigene URL (nur ein Widget auf /manage selbst) und taucht daher
-       NICHT als Direktlink auf, sondern nur über den "Übersicht"-Eintrag
-       ganz unten im Menü. #}
-    <nav class="navbar navbar-expand-md navbar-dark navbar-custom mb-4 py-3">
-        <div class="container">
-            <a class="navbar-brand fw-bold fs-4" href="/">🍽️ Speiseplan</a>
-            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto mb-2 mb-md-0 gap-2 mt-2 mt-md-0">
-                    <li class="nav-item dropdown settings-nav-dropdown">
-                        <a class="nav-link px-3 dropdown-toggle {% if request.path.startswith('/manage') %}active-custom{% endif %}" href="/manage" id="settingsDropdownToggle" role="button" aria-expanded="false">⚙️ Einstellungen</a>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdownToggle">
-                            <li><a class="dropdown-item" href="/manage/recipe/create">✨ Rezepte erstellen</a></li>
-                            <li><a class="dropdown-item" href="/manage/recipe/edit-list">📝 Rezepte bearbeiten</a></li>
-                            <li><a class="dropdown-item" href="/manage/categories">🏷️ Kategorien verwalten</a></li>
-                            <li><a class="dropdown-item" href="/manage/units">📏 Einheiten</a></li>
-                            <li><a class="dropdown-item" href="/manage/ingredient-aliases">🔗 Zutaten gleichsetzen</a></li>
-                            <li><a class="dropdown-item" href="/manage/ingredient-nutrition">🍎 Nährwerte</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="/manage">⚙️ Übersicht &amp; Darstellung</a></li>
-                        </ul>
-                    </li>
-                </ul>
+    {# Persistente Seitenleiste statt der früheren grünen Top-Navbar mit
+       Hover-Dropdown - auf JEDER Seite identisch (site-weites App-Shell,
+       siehe static/style.css: .app-shell/.app-rail). Zwei feste
+       Hauptziele oben (Wochenplan/Übersicht), darunter direkte
+       Kurzlinks zu den einzelnen Verwaltungsbereichen - ersetzt damit
+       sowohl den früheren "Wochenplaner"-Link als auch das
+       "Einstellungen"-Dropdown-Menü, beide brauchten keine eigene
+       Öffnen/Schließen-Logik mehr, da alle Ziele ohnehin permanent
+       sichtbar sind. Aktive Markierung rein serverseitig über
+       request.path (kein JS nötig). Auf schmalen Bildschirmen klappt die
+       Leiste zu einer horizontal scrollbaren Reiterleiste zusammen (siehe
+       @media in static/style.css) - Marke/Gruppentitel/Darstellung
+       werden dort ausgeblendet, um Platz für die eigentlichen Linkziele
+       zu lassen. #}
+    <div class="app-shell">
+        <aside class="app-rail">
+            <a class="rail-brand" href="/">
+                <span class="mark">🍽️</span>
+                <span class="name">Speiseplan</span>
+            </a>
+
+            <div class="nav-primary">
+                <a class="nav-link {% if request.path == '/' or request.path.startswith('/plan') %}active{% endif %}" href="/"><span class="ic">🗓️</span>Wochenplan</a>
+                <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>Übersicht</a>
+            </div>
+
+            <div class="rail-section">
+                <div class="rail-label">Rezepte</div>
+                <a class="rail-link {% if request.path == '/manage/recipe/create' %}active{% endif %}" href="/manage/recipe/create"><span class="ic">✨</span>Erstellen</a>
+                <a class="rail-link {% if request.path == '/manage/recipe/edit-list' %}active{% endif %}" href="/manage/recipe/edit-list"><span class="ic">📝</span>Bearbeiten</a>
+            </div>
+
+            <div class="rail-section">
+                <div class="rail-label">Daten</div>
+                <a class="rail-link {% if request.path == '/manage/categories' %}active{% endif %}" href="/manage/categories"><span class="ic">🏷️</span>Kategorien</a>
+                <a class="rail-link {% if request.path == '/manage/units' %}active{% endif %}" href="/manage/units"><span class="ic">📏</span>Einheiten</a>
+                <a class="rail-link {% if request.path == '/manage/ingredient-aliases' %}active{% endif %}" href="/manage/ingredient-aliases"><span class="ic">🔗</span>Zutaten gleichsetzen</a>
+                <a class="rail-link {% if request.path == '/manage/ingredient-nutrition' %}active{% endif %}" href="/manage/ingredient-nutrition"><span class="ic">🍎</span>Nährwerte</a>
+            </div>
+
+            <div class="rail-theme">
+                <div class="theme-row"><span class="lbl">🎨 Darstellung</span></div>
+                <div class="segmented" id="themeSwitcher">
+                    <button type="button" data-theme-choice="system">System</button>
+                    <button type="button" data-theme-choice="light">Hell</button>
+                    <button type="button" data-theme-choice="dark">Dunkel</button>
+                </div>
+            </div>
+        </aside>
+
+        <div class="app-content">
+            {# Hauptinhalt: wird von jeder Unterseite über {% block content %}...{% endblock %} befüllt #}
+            <div class="container pb-5">
+                {% block content %}{% endblock %}
             </div>
         </div>
-    </nav>
-
-    {# Hauptinhalt: wird von jeder Unterseite über {% block content %}...{% endblock %} befüllt #}
-    <div class="container pb-5">
-        {% block content %}{% endblock %}
     </div>
 
-    {# 3. Lokales Bootstrap-JS-Bundle (inkl. Popper) - wird u.a. für das
-       Umschalt-Menü auf schmalen Bildschirmen (navbar-toggler) und die
-       Bearbeiten-Modals (recipe_edit_list.html) benötigt. #}
+    {# 3. Lokales Bootstrap-JS-Bundle (inkl. Popper) - wird u.a. für die
+       Bearbeiten-Modals (recipe_edit_list.html) und das Rezept-Detail-
+       Fenster (templates/plan.html) benötigt. #}
     <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 
-    {# "⚙️ Einstellungen"-Dropdown in der Navigation: bewusst OHNE
-       data-bs-toggle="dropdown" auf dem Link (das würde jeden Klick fest
-       auf "nur öffnen/schließen" festlegen, siehe unten) - stattdessen
-       wird eine bootstrap.Dropdown-Instanz direkt per JS gesteuert, damit
-       derselbe Link je nach Zustand ENTWEDER das Menü öffnet ODER zur
-       Übersichtsseite navigiert:
-       - Maus-Geräte (echtes Hover, per (hover: hover)-Media-Query erkannt):
-         Menü öffnet sich beim Drüberfahren von selbst - ein anschließender
-         Klick auf "Einstellungen" trifft das Menü dadurch bereits offen an
-         und navigiert normal weiter zur Übersichtsseite.
-       - Touch-Geräte (kein Hover): der ERSTE Tipp öffnet nur das Menü
-         (Standard-Navigation wird unterdrückt), der ZWEITE Tipp auf
-         denselben Link trifft das Menü bereits offen an und navigiert
-         diesmal ganz normal weiter - genau das vom Nutzer gewünschte
-         Verhalten. #}
+    {# Darstellung-Segmented-Control in der Seitenleiste: nutzt die weiter
+       oben in diesem Template definierte globale Logik
+       (window.speiseplanGetThemePreference/speiseplanSetThemePreference) -
+       auf jeder Seite identisch, da die Seitenleiste jetzt global ist
+       (früher nur auf /manage, siehe templates/manage.html). #}
     <script>
-    (function() {
-        var toggle = document.getElementById('settingsDropdownToggle');
-        var dropdownLi = toggle && toggle.closest('.settings-nav-dropdown');
-        if (!toggle || !dropdownLi) return;
+    document.addEventListener('DOMContentLoaded', () => {
+        var buttons = document.querySelectorAll('#themeSwitcher button');
+        var current = window.speiseplanGetThemePreference ? window.speiseplanGetThemePreference() : 'system';
 
-        var dropdown = bootstrap.Dropdown.getOrCreateInstance(toggle);
-
-        if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
-            // Zwischen dem Toggle-Link und dem per Popper absolut
-            // positionierten Menü liegt ein kleiner, von KEINEM Element
-            // abgedeckter Abstand (--bs-dropdown-spacer, standardmäßig
-            // 0.125rem). Bewegt man die Maus langsam vom Link zum Menü,
-            // durchquert der Mauszeiger diesen "toten" Bereich als
-            // eigenen Zwischenschritt -> mouseleave feuert auf dem <li>,
-            // noch bevor der Zeiger das Menü erreicht (bei einer schnellen
-            // Bewegung überspringt der Browser diese Zwischenposition
-            // dagegen oft ganz, daher schließt sich das Menü dann nicht).
-            // Statt sofort zu schließen, wird das Schließen daher leicht
-            // verzögert und bei einem erneuten mouseenter (Zeiger im Menü
-            // angekommen) wieder verworfen - überbrückt den Abstand,
-            // unabhängig von seiner exakten Pixelgröße.
-            var closeTimer = null;
-            function cancelClose() {
-                if (closeTimer !== null) {
-                    clearTimeout(closeTimer);
-                    closeTimer = null;
-                }
-            }
-            dropdownLi.addEventListener('mouseenter', function() {
-                cancelClose();
-                dropdown.show();
-            });
-            dropdownLi.addEventListener('mouseleave', function() {
-                cancelClose();
-                closeTimer = setTimeout(function() {
-                    closeTimer = null;
-                    dropdown.hide();
-                }, 200);
-            });
+        function markActive(value) {
+            buttons.forEach(function(btn) { btn.classList.toggle('on', btn.dataset.themeChoice === value); });
         }
+        markActive(current);
 
-        toggle.addEventListener('click', function(event) {
-            var isOpen = toggle.getAttribute('aria-expanded') === 'true';
-            if (!isOpen) {
-                event.preventDefault();
-                dropdown.show();
-            }
-            // Menü war schon offen (zweiter Tipp bzw. Klick nach Hover) ->
-            // event NICHT abbrechen, href="/manage" navigiert ganz normal.
+        buttons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                markActive(btn.dataset.themeChoice);
+                window.speiseplanSetThemePreference(btn.dataset.themeChoice);
+            });
         });
-    })();
+    });
     </script>
 </body>
 </html>

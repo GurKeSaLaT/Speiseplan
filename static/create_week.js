@@ -169,7 +169,7 @@ function assignRecipeToZone(zoneElement, id, name, category) {
     if (dayInput) dayInput.value = id;
 
     const card = document.createElement('div');
-    card.className = 'p-2 bg-white rounded border draggable-recipe-card d-flex justify-content-between align-items-center animate-fade-in';
+    card.className = 'assigned-pill draggable-recipe-card';
     card.setAttribute('draggable', 'true');
     card.setAttribute('id', 'recipe-card-' + id);
     card.setAttribute('data-id', id);
@@ -177,11 +177,8 @@ function assignRecipeToZone(zoneElement, id, name, category) {
     card.setAttribute('data-category', category);
     card.ondragstart = dragStart;
     card.innerHTML = `
-        <div style="max-width: 85%;">
-            <strong class="text-dark small d-block text-truncate">${name}</strong>
-            <span class="badge badge-category" style="font-size: 0.7rem;">${category}</span>
-        </div>
-        <button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeRecipeFromZone('${id}', '${dayIndex}')">❌</button>
+        <span class="name">${name}</span>
+        <button type="button" class="x" onclick="removeRecipeFromZone('${id}', '${dayIndex}')" aria-label="Entfernen">✕</button>
     `;
     slotContainer.innerHTML = '';
     slotContainer.appendChild(card);
@@ -227,15 +224,12 @@ function assignSideToZone(zoneElement, id, name, category) {
     if (placeholder) placeholder.remove();
 
     const chip = document.createElement('div');
-    chip.className = 'p-2 bg-white rounded border side-dish-chip d-flex justify-content-between align-items-center animate-fade-in mb-1';
+    chip.className = 'side-dish-chip';
     chip.setAttribute('id', 'side-card-' + id);
     chip.setAttribute('data-id', id);
     chip.innerHTML = `
-        <div style="max-width: 85%;">
-            <strong class="text-dark small d-block text-truncate">🥗 ${name}</strong>
-            <span class="badge badge-category" style="font-size: 0.7rem;">${category}</span>
-        </div>
-        <button type="button" class="btn btn-sm text-danger border-0 p-0 fs-5" onclick="removeSideFromZone('${id}', '${dayIndex}')">❌</button>
+        <span class="text-truncate">🥗 ${name}</span>
+        <button type="button" class="x" onclick="removeSideFromZone('${id}', '${dayIndex}')" aria-label="Entfernen">✕</button>
     `;
     sideContainer.appendChild(chip);
 
@@ -262,7 +256,7 @@ function removeSideFromZone(id, dayIndex) {
     const zone = document.getElementById('day-zone-' + dayIndex);
     const sideContainer = zone && zone.querySelector('.side-slot-container');
     if (sideContainer && sideContainer.children.length === 0) {
-        sideContainer.innerHTML = '<span class="text-muted small fst-italic no-side-placeholder">Keine Beilage</span>';
+        sideContainer.innerHTML = '<span class="no-side no-side-placeholder">Keine Beilage</span>';
     }
 }
 
@@ -280,7 +274,7 @@ function clearAllDays() {
     assignedSideRecipeIds.clear();
     document.querySelectorAll('.day-dropzone').forEach(zone => {
       zone.querySelector('.recipe-slot-container').innerHTML = '';
-      zone.querySelector('.side-slot-container').innerHTML = '<span class="text-muted small fst-italic no-side-placeholder">Keine Beilage</span>';
+      zone.querySelector('.side-slot-container').innerHTML = '<span class="no-side no-side-placeholder">Keine Beilage</span>';
       const statusText = zone.querySelector('.slot-status');
       statusText.textContent = "Automatisch auffüllen";
       statusText.classList.remove('text-dark', 'fw-bold');

@@ -9,118 +9,227 @@
    (nur per Klick, siehe assignSideToZone in create_week.js). Die komplette
    Interaktionslogik (Suche, Drag-and-Drop, Ausnehmen-Button) liegt in
    static/create_week.js, nicht in dieser Datei. #}
-{% extends 'base.html' %} {% block content %} <div class="row justify-content-center">
-  <div class="col-12 col-md-10 col-lg-9">
-    <div class="card shadow-sm border-0 mb-4">
-      <div class="card-header-custom p-3 d-flex justify-content-between align-items-center">
-        <h4 class="mb-0 fw-bold d-flex align-items-center gap-2"> 📅 Wochenplan erstellen: {{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }} </h4>
-        <a href="{{ url_for('plan.week_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-light fw-bold">← Zurück</a>
-      </div>
-      <div class="card-body p-4">
-        <p class="text-muted"> Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Hauptgerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich beliebig oft zusätzlich zum Hauptgericht hinzufügen (jeweils dem Tag mit den bisher wenigsten Beilagen) und funktionieren auch an ausgenommenen Tagen - Feintuning, welche Beilage an welchem Tag landet, geht danach jederzeit auf der fertigen Plan-Seite. </p>
-        <!-- Live-Suchfeld: ALLE Rezepte werden bereits jetzt server-seitig als
-             (zunächst per style="display:none" verstecktes) Button-Element
-             mit data-*-Attributen ins DOM gerendert. static/create_week.js
-             filtert beim Tippen rein clientseitig anhand dieser
-             data-Attribute (kein Nachladen per fetch nötig, da die
-             Rezeptliste für eine Einzelnutzer-App klein genug ist, um
-             komplett im DOM zu leben). -->
-        <div class="mb-4 position-relative">
-          <div class="input-group input-group-lg shadow-sm rounded">
-            <span class="input-group-text bg-white border-end-0">🔍</span>
-            <input type="text" id="searchInput" class="form-control border-start-0 ps-0" placeholder="Gericht oder Kategorie eingeben..." autocomplete="off">
-          </div>
-          <div id="searchResults" class="list-group shadow position-absolute w-100 mt-1" style="z-index: 1050; max-height: 250px; overflow-y: auto; display: none;"> {% for recipe in recipes %} <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center search-item" style="display: none;" data-id="{{ recipe.id }}" data-name="{{ recipe.name }}" data-category="{{ recipe.category.name }}" data-is-side="{{ 'true' if recipe.is_side_dish else 'false' }}">
-              <span class="fw-bold text-dark">{{ recipe.name }}{% if recipe.is_side_dish %} 🥗{% endif %}</span>
-              <span class="badge badge-category">{{ recipe.category.name }}</span>
-            </button> {% endfor %} </div>
-        </div>
-        <!-- Formular, das beim Absenden an week_generate() (routes/plan/pages.py)
-             geht: das versteckte Hauptgericht-Feld pro Tag (day_recipe_i)
-             sowie day_excluded_i (siehe unten) werden dabei NICHT vom Nutzer
-             direkt bedient, sondern von create_week.js bei jeder Zuweisung/
-             Entfernung/Ausnahme aktuell gehalten - sie sind die tatsächliche
-             "Quelle der Wahrheit" beim Absenden, die sichtbaren Kärtchen sind
-             nur ihre Darstellung. Beilagen haben KEIN festes Feld (ein Tag
-             kann beliebig viele haben) - dafür legt create_week.js pro
-             zugewiesener Beilage ein eigenes verstecktes Feld
-             (day_side_recipes_i[]) dynamisch an, siehe assignSideToZone. -->
-        <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat()) }}" method="POST" id="planForm">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <!-- Die 7 Wochentage als Drop-Zonen -->
-          <div class="mb-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5 class="fw-bold text-dark mb-0">📌 Feste Tageszuweisung</h5>
-              <button type="button" class="btn btn-sm btn-outline-danger" style="border-radius: 0.5rem;" onclick="clearAllDays()">Alle leeren</button>
-            </div>
-            <div class="row g-3"> {% for i in range(7) %} <div class="col-12 col-md-6 col-xl-4">
-                <div class="p-3 bg-light rounded border day-dropzone" id="day-zone-{{ i }}" data-day-index="{{ i }}" ondragover="allowDrop(event)" ondrop="drop(event)">
-                  <div class="mb-2 border-bottom pb-1">
-                    <div class="d-flex justify-content-between align-items-center">
-                      <span class="fw-bold text-success">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}</span>
-                      <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size: 0.75rem; line-height: 1.4;" id="exclude-btn-{{ i }}" title="Diesen Tag von der Planung ausnehmen" onclick="toggleExcludeDay({{ i }})">🚫</button>
-                    </div>
-                    <small class="text-muted slot-status d-block" id="status-{{ i }}">Automatisch auffüllen</small>
-                  </div>
-                  <!-- Container für das zugewiesene Gericht -->
-                  <div class="recipe-slot-container" style="min-height: 54px;">
-                    <!-- Wird per JS dynamisch befüllt -->
-                  </div>
-                  <!-- Container für beliebig viele zugewiesene Zusatzgerichte/Beilagen
-                       (unabhängig vom Hauptgericht - siehe assignSideToZone/removeSideFromZone
-                       in create_week.js, die hier je zugewiesener Beilage ein eigenes
-                       Kärtchen UND ein eigenes verstecktes Formularfeld anhängen) -->
-                  <div class="side-slot-container mt-2 pt-2 border-top" id="side-slot-{{ i }}">
-                    <span class="text-muted small fst-italic no-side-placeholder">Keine Beilage</span>
-                  </div>
-                  <!-- Persistente, tag-gebundene Formularfelder (unabhängig vom Kärtchen).
-                       Für Beilagen gibt es HIER absichtlich kein festes Feld (anders als
-                       day_recipe_i) - die können 0 bis N sein, ihre Felder werden dynamisch
-                       in create_week.js angelegt (name="day_side_recipes_{{ i }}[]"). -->
-                  <input type="hidden" name="day_recipe_{{ i }}" id="day-recipe-input-{{ i }}" value="">
-                  <input type="hidden" name="day_excluded_{{ i }}" id="day-excluded-input-{{ i }}" value="0">
-                </div>
-              </div> {% endfor %} </div>
-          </div>
-          <!-- 3. ABSENDEN -->
-          <button type="submit" class="btn btn-primary-custom btn-lg w-100 py-3 shadow mt-2"> 🎲 Restliche Tage balanciert auffüllen & Plan erstellen </button>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-<!-- INLINE STYLES FÜR SMOOTH DRAG-AND-DROP VISUALS -->
-<style>
-  .day-dropzone {
-    transition: all 0.2s ease;
-  }
+{% extends 'base.html' %}
+{% block content %}
+<div style="max-width: 900px;">
 
-  .day-dropzone.drag-over {
+    <div class="page-head">
+        <div class="titles">
+            <p class="eyebrow mb-1">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</p>
+            <h1 class="page-head-title">📅 Wochenplan erstellen</h1>
+        </div>
+        <a href="{{ url_for('plan.week_view', start_date=start_date.isoformat()) }}" class="weeknav-btn">← Zurück zum Plan</a>
+    </div>
+
+    <p class="text-muted mb-4">Suche nach Gerichten. Klicke sie an, um sie automatisch dem nächsten freien Tag zuzuweisen. Ziehe Hauptgerichte per <strong>Drag-and-Drop</strong> auf andere Tage, um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem 🚫-Button kannst du das Hauptgericht eines Tages von der Planung ausnehmen. 🥗-Zusatzgerichte (Beilagen) blockieren den Tag nicht, lassen sich beliebig oft zusätzlich zum Hauptgericht hinzufügen (jeweils dem Tag mit den bisher wenigsten Beilagen) und funktionieren auch an ausgenommenen Tagen - Feintuning, welche Beilage an welchem Tag landet, geht danach jederzeit auf der fertigen Plan-Seite.</p>
+
+    <!-- Live-Suchfeld: ALLE Rezepte werden bereits jetzt server-seitig als
+         (zunächst per style="display:none" verstecktes) Button-Element mit
+         data-*-Attributen ins DOM gerendert. static/create_week.js filtert
+         beim Tippen rein clientseitig anhand dieser data-Attribute (kein
+         Nachladen per fetch nötig, da die Rezeptliste für eine
+         Einzelnutzer-App klein genug ist, um komplett im DOM zu leben). -->
+    <div class="search-wrap">
+        <div class="search-box">
+            <span class="ic">🔍</span>
+            <input type="text" id="searchInput" placeholder="Gericht oder Kategorie eingeben..." autocomplete="off">
+        </div>
+        <div id="searchResults" class="search-results">
+            {% for recipe in recipes %}
+            <button type="button" class="search-item" style="display: none;" data-id="{{ recipe.id }}" data-name="{{ recipe.name }}" data-category="{{ recipe.category.name }}" data-is-side="{{ 'true' if recipe.is_side_dish else 'false' }}">
+                <span class="fw-bold">{{ recipe.name }}{% if recipe.is_side_dish %} 🥗{% endif %}</span>
+                <span class="badge badge-category">{{ recipe.category.name }}</span>
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Formular, das beim Absenden an week_generate() (routes/plan/pages.py)
+         geht: das versteckte Hauptgericht-Feld pro Tag (day_recipe_i) sowie
+         day_excluded_i (siehe unten) werden dabei NICHT vom Nutzer direkt
+         bedient, sondern von create_week.js bei jeder Zuweisung/Entfernung/
+         Ausnahme aktuell gehalten - sie sind die tatsächliche "Quelle der
+         Wahrheit" beim Absenden, die sichtbaren Kärtchen sind nur ihre
+         Darstellung. Beilagen haben KEIN festes Feld (ein Tag kann beliebig
+         viele haben) - dafür legt create_week.js pro zugewiesener Beilage
+         ein eigenes verstecktes Feld (day_side_recipes_i[]) dynamisch an,
+         siehe assignSideToZone. -->
+    <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat()) }}" method="POST" id="planForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="create-toolbar">
+            <h2>📌 Feste Tageszuweisung</h2>
+            <button type="button" class="link-btn" onclick="clearAllDays()">Alle leeren</button>
+        </div>
+
+        <!-- Die 7 Wochentage als Drop-Zonen. .slot-status ist visuell
+             ausgeblendet (siehe unten), bleibt aber im DOM: create_week.js
+             schreibt weiterhin ihren Text/ihre Klassen bei jeder Änderung -
+             der eigentlich sichtbare Leer-/Ausgenommen-Hinweis kommt
+             stattdessen rein per CSS aus .recipe-slot-container:empty
+             (siehe <style> unten), ohne dass JS dafür angepasst werden
+             musste. -->
+        <div class="day-grid">
+            {% for i in range(7) %}
+            <div class="day-dropzone" id="day-zone-{{ i }}" data-day-index="{{ i }}" ondragover="allowDrop(event)" ondrop="drop(event)">
+                <div class="dshead">
+                    <span class="dsname">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}</span>
+                    <button type="button" class="btn exclude-btn btn-outline-secondary" id="exclude-btn-{{ i }}" title="Diesen Tag von der Planung ausnehmen" onclick="toggleExcludeDay({{ i }})">🚫</button>
+                </div>
+                <small class="slot-status" id="status-{{ i }}">Automatisch auffüllen</small>
+                <!-- Container für das zugewiesene Gericht -->
+                <div class="recipe-slot-container">
+                    <!-- Wird per JS dynamisch befüllt -->
+                </div>
+                <!-- Container für beliebig viele zugewiesene Zusatzgerichte/Beilagen
+                     (unabhängig vom Hauptgericht - siehe assignSideToZone/removeSideFromZone
+                     in create_week.js, die hier je zugewiesener Beilage ein eigenes
+                     Kärtchen UND ein eigenes verstecktes Formularfeld anhängen) -->
+                <div class="side-slot-container" id="side-slot-{{ i }}">
+                    <span class="no-side no-side-placeholder">Keine Beilage</span>
+                </div>
+                <!-- Persistente, tag-gebundene Formularfelder (unabhängig vom Kärtchen).
+                     Für Beilagen gibt es HIER absichtlich kein festes Feld (anders als
+                     day_recipe_i) - die können 0 bis N sein, ihre Felder werden dynamisch
+                     in create_week.js angelegt (name="day_side_recipes_{{ i }}[]"). -->
+                <input type="hidden" name="day_recipe_{{ i }}" id="day-recipe-input-{{ i }}" value="">
+                <input type="hidden" name="day_excluded_{{ i }}" id="day-excluded-input-{{ i }}" value="0">
+            </div>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="generate-btn">🎲 Restliche Tage balanciert auffüllen &amp; Plan erstellen</button>
+    </form>
+</div>
+
+<!-- Diese Seite hat ihre eigenen, nur hier verwendeten Bausteinklassen
+     (Suchfeld/Tages-Kärtchen/Beilagen-Chips/Absenden-Button) - genau wie
+     templates/plan.html seine .recipe-day-card-Regeln lokal hält, statt sie
+     in static/style.css zu duplizieren, obwohl dieselben Design-Tokens
+     (--card-bg/--border-subtle/--radius-main/--highlight-bg/--excluded-bg/
+     --primary-food) verwendet werden. -->
+<style>
+.search-wrap { position: relative; margin-bottom: 1.6rem; }
+.search-box {
+    display: flex; align-items: center; gap: 0.6rem;
+    background: var(--card-bg); border: 1px solid var(--border-subtle);
+    border-radius: 0.9rem; padding: 0.85rem 1.1rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+.search-box .ic { font-size: 1.05rem; color: var(--bs-secondary-color); }
+.search-box input {
+    border: none; outline: none; background: transparent; flex: 1;
+    font-family: inherit; font-size: 0.95rem; color: var(--text-dark);
+}
+.search-results {
+    position: absolute; top: calc(100% + 0.4rem); left: 0; right: 0;
+    background: var(--card-bg); border: 1px solid var(--border-subtle);
+    border-radius: 0.9rem; box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
+    z-index: 1050; max-height: 260px; overflow-y: auto; display: none;
+}
+.search-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+    width: 100%; text-align: left; background: none; border: none;
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0.65rem 1rem; cursor: pointer; font-size: 0.88rem; color: var(--text-dark);
+}
+.search-item:last-child { border-bottom: none; }
+.search-item:hover, .search-item:focus-visible { background: var(--highlight-bg); }
+
+.create-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.9rem; }
+.create-toolbar h2 { font-size: 1.05rem; font-weight: 800; margin: 0; }
+.link-btn {
+    background: none; border: none; color: var(--bs-secondary-color);
+    font-weight: 700; font-size: 0.82rem; cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+}
+
+.day-grid { display: grid; grid-template-columns: 1fr; gap: 0.9rem; margin-bottom: 1.7rem; }
+@media (min-width: 768px) { .day-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1200px) { .day-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.day-dropzone {
+    background: var(--card-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-main);
+    padding: 1rem 1.1rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+    transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+.day-dropzone.drag-over {
     background-color: var(--highlight-bg) !important;
     border-color: var(--primary-food) !important;
     border-style: dashed !important;
     transform: scale(1.02);
-  }
-
-  .day-dropzone.excluded {
+}
+.day-dropzone.excluded {
     background-color: var(--excluded-bg) !important;
-    opacity: 0.55;
-  }
-
-  .day-dropzone.excluded .recipe-slot-container {
+    opacity: 0.6;
+}
+.day-dropzone.excluded .recipe-slot-container {
     pointer-events: none;
-  }
+}
+.dshead {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-bottom: 0.6rem; margin-bottom: 0.6rem; border-bottom: 1px solid var(--border-subtle);
+}
+.dsname { font-weight: 800; font-size: 0.88rem; color: var(--primary-food); }
+.exclude-btn {
+    width: 26px; height: 26px; padding: 0; border-radius: 8px;
+    font-size: 0.78rem; line-height: 1;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
 
-  .draggable-recipe-card {
-    cursor: grab;
-    transition: transform 0.1s ease;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-  }
+/* Der Status-Text existiert weiterhin im DOM (create_week.js schreibt ihn
+   bei jeder Änderung), ist aber visuell nicht mehr nötig: sein Inhalt
+   ("Automatisch auffüllen"/"Fest verplant"/"Ausgenommen") wird stattdessen
+   direkt an Ort und Stelle über :empty::before dargestellt (siehe unten) -
+   passend zur neuen, kompakteren Kärtchen-Optik. */
+.slot-status { display: none; }
+.recipe-slot-container:empty::before {
+    content: "Wird automatisch aufgefüllt";
+    display: block;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+    font-style: italic;
+    margin-bottom: 0.5rem;
+}
+.day-dropzone.excluded .recipe-slot-container:empty::before {
+    content: "Ausgenommen – kein Hauptgericht";
+}
 
-  .draggable-recipe-card:active {
-    cursor: grabbing;
-    transform: scale(0.98);
-  }
+.assigned-pill {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+    background: var(--highlight-bg); border-radius: 0.6rem; padding: 0.5rem 0.7rem;
+    font-size: 0.83rem; font-weight: 700; margin-bottom: 0.5rem;
+    cursor: grab; color: var(--text-dark);
+}
+.assigned-pill:active { cursor: grabbing; }
+.assigned-pill .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assigned-pill .x {
+    cursor: pointer; color: var(--bs-secondary-color); font-weight: 800;
+    flex-shrink: 0; background: none; border: none; font-size: 1.1rem; line-height: 1; padding: 0;
+}
+
+.side-slot-container { padding-top: 0.5rem; border-top: 1px dashed var(--border-subtle); display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.side-dish-chip {
+    display: flex; align-items: center; gap: 0.3rem; max-width: 100%;
+    background: var(--bg-warm); border: 1px solid var(--border-subtle); border-radius: 999px;
+    padding: 0.2rem 0.6rem; font-size: 0.74rem; font-weight: 600; color: var(--text-dark);
+}
+.side-dish-chip .x {
+    color: var(--bs-secondary-color); font-weight: 800; cursor: pointer;
+    background: none; border: none; font-size: 0.9rem; line-height: 1; padding: 0; flex-shrink: 0;
+}
+.no-side { font-size: 0.74rem; color: var(--bs-secondary-color); font-style: italic; }
+
+.generate-btn {
+    width: 100%; background: linear-gradient(155deg, var(--primary-food), var(--primary-dark));
+    color: #fff; border: none; border-radius: 0.9rem; padding: 1rem;
+    font-size: 0.98rem; font-weight: 800; cursor: pointer;
+    box-shadow: 0 12px 26px rgba(46, 111, 64, 0.25);
+}
+.generate-btn:hover { filter: brightness(1.05); }
 </style>
 <script src="{{ url_for('static', filename='create_week.js') }}"></script>
 {% endblock %}
