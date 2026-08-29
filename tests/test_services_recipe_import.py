@@ -1,11 +1,14 @@
-"""Tests für services/recipe_import.py: chefkoch.de-Import (schema.org/
-Recipe-JSON-LD auslesen und in Formular-taugliche Werte umwandeln)."""
+"""Tests für services/recipe_import.py: Rezept-Import von mehreren
+deutschsprachigen Kochseiten (schema.org/Recipe-JSON-LD auslesen und in
+Formular-taugliche Werte umwandeln)."""
 import json
 from unittest.mock import Mock, patch
 
 import pytest
 
 from services.recipe_import import (
+    ALLOWED_HOSTS,
+    KNOWN_UNITS,
     RecipeImportError,
     _clean_name,
     _find_recipe_json_ld,
@@ -16,6 +19,32 @@ from services.recipe_import import (
     _parse_servings,
     fetch_recipe_from_url,
 )
+
+
+# --- ALLOWED_HOSTS ---
+
+@pytest.mark.parametrize("host", [
+    "chefkoch.de", "lecker.de", "essen-und-trinken.de", "eatsmarter.de",
+    "kuechengoetter.de", "gutekueche.de", "gutekueche.at", "daskochrezept.de",
+    "brigitte.de", "emmikochteinfach.de",
+])
+def test_allowed_hosts_covers_bare_and_www_variant(host):
+    assert host in ALLOWED_HOSTS
+    assert f"www.{host}" in ALLOWED_HOSTS
+
+
+def test_allowed_hosts_excludes_sites_without_compatible_json_ld():
+    # Manuell geprüft und bewusst NICHT unterstützt (siehe ALLOWED_HOSTS-
+    # Kommentar in services/recipe_import.py für den Grund je Seite).
+    for host in ("kochbar.de", "ichkoche.at", "springlane.de"):
+        assert host not in ALLOWED_HOSTS
+
+
+# --- KNOWN_UNITS ---
+
+@pytest.mark.parametrize("unit", ["gramm", "kilogramm", "milliliter", "liter", "esslöffel", "teelöffel"])
+def test_known_units_includes_spelled_out_variants(unit):
+    assert unit in KNOWN_UNITS
 
 
 # --- _clean_name ---
@@ -123,6 +152,13 @@ def test_parse_amount_value(raw, expected):
 def test_parse_ingredient_line_known_unit():
     result = _parse_ingredient_line("500 g Mehl")
     assert result == {"name": "Mehl", "amount": 500, "unit": "g"}
+
+
+def test_parse_ingredient_line_spelled_out_unit():
+    # brigitte.de/gutekueche.de schreiben Einheiten aus statt sie
+    # abzukürzen (anders als chefkoch.de) - siehe KNOWN_UNITS-Kommentar.
+    result = _parse_ingredient_line("250 Gramm Mehl")
+    assert result == {"name": "Mehl", "amount": 250, "unit": "Gramm"}
 
 
 def test_parse_ingredient_line_unknown_unit_becomes_part_of_name():
@@ -237,3 +273,25 @@ def test_fetch_recipe_from_url_full_success(mock_get):
         {"name": "Nudeln", "amount": 500, "unit": "g"},
         {"name": "Zwiebel(n)", "amount": 1, "unit": ""},
     ]
+
+
+@patch("services.recipe_import.requests.get")
+def test_fetch_recipe_from_url_works_for_non_chefkoch_host(mock_get):
+    """Der Parser ist bewusst NICHT chefkoch-spezifisch (siehe Moduldocstring) -
+    dieser Test belegt das anhand einer zweiten, unabhängigen Domain aus
+    ALLOWED_HOSTS mit ausgeschriebener statt abgekürzter Mengeneinheit."""
+    recipe_json = {
+        "@type": "Recipe",
+        "name": "Käsekuchen",
+        "recipeYield": "12 Stück",
+        "recipeInstructions": [{"@type": "HowToStep", "text": "Teig kneten."}],
+        "recipeIngredient": ["250 Gramm Mehl"],
+    }
+    html = f'<script type="application/ld+json">{json.dumps(recipe_json)}</script>'
+    mock_get.return_value = Mock(ok=True, url="https://www.brigitte.de/recipe", text=html)
+
+    result = fetch_recipe_from_url("https://brigitte.de/recipe")
+
+    assert result["name"] == "Käsekuchen"
+    assert result["servings"] == 12
+    assert result["ingredients"] == [{"name": "Mehl", "amount": 250, "unit": "Gramm"}]

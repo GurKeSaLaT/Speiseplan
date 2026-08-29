@@ -100,10 +100,27 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
   auf der Rezept-Erstellen-Seite befüllt damit NUR das Formular - der
   Nutzer prüft/ergänzt (insbesondere die Kategorie, die sich nicht
   automatisch zuordnen lässt) und speichert danach ganz normal. Aus
-  SSRF-Sicherheitsgründen bewusst hart auf chefkoch.de beschränkt
-  (`ALLOWED_HOSTS`) - ließe sich später um weitere schema.org/Recipe-
-  kompatible Kochseiten erweitern, da der Parser selbst nicht
-  chefkoch-spezifisch ist.
+  SSRF-Sicherheitsgründen bewusst hart auf eine Allowlist (`ALLOWED_HOSTS`)
+  beschränkt - ließe sich um weitere schema.org/Recipe-kompatible
+  Kochseiten erweitern, da der Parser selbst nicht chefkoch-spezifisch ist
+  (siehe der folgende Eintrag, der genau das umgesetzt hat).
+- **Rezept-Import auf acht weitere deutschsprachige Kochseiten
+  ausgeweitet.** `ALLOWED_HOSTS` in `services/recipe_import.py` umfasst
+  jetzt zusätzlich zu chefkoch.de: lecker.de, essen-und-trinken.de,
+  eatsmarter.de, kuechengoetter.de, gutekueche.de UND gutekueche.at (zwei
+  getrennte, baugleiche Seiten für Deutschland/Österreich), daskochrezept.de,
+  brigitte.de und emmikochteinfach.de - jede einzeln per Live-Abruf
+  geprüft, ob sie tatsächlich ein `"@type": "Recipe"`-JSON-LD-Objekt
+  einbettet, BEVOR sie aufgenommen wurde (kein reines Domain-Raten). Bewusst
+  NICHT aufgenommen: kochbar.de (Inhalte werden rein clientseitig per
+  JavaScript nachgeladen, `requests` sieht davon nichts), ichkoche.at (keine
+  JSON-LD-Daten überhaupt) und springlane.de (markiert seine Rezeptseiten
+  als `"Article"`, nicht als `"Recipe"`) - für alle drei bräuchte es
+  entweder HTML-Scraping oder eine echte Browser-Engine, beides ein
+  deutlich größerer (und brüchigerer) Umbau als das Ergänzen einer Domain.
+  `KNOWN_UNITS` (siehe `_parse_ingredient_line`) um ausgeschriebene
+  Einheiten wie "Gramm"/"Esslöffel" erweitert, die chefkoch.de kaum, andere
+  der neuen Seiten aber regelmäßig statt Abkürzungen verwenden.
 - **Hell-/Dunkelmodus.** Drei Einstellungen (System/Hell/Dunkel), Umschalter
   in der Verwaltung als `btn-check`-Radiogruppe. `templates/base.html`
   wendet die gespeicherte Einstellung (localStorage, pro Browser/Gerät) ganz
@@ -125,8 +142,9 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    (z.B. Werte je 100g an `Ingredient`/eine eigene Zutaten-Stammdaten-Tabelle)
    plus Einheiten-Umrechnung (g/ml/Stück), da `Ingredient.unit` aktuell
    Freitext ist.
-2. **Rezept-Import auf weitere Kochseiten ausweiten.** Der bestehende
-   chefkoch.de-Import (siehe oben) liest bereits Standard-schema.org/
-   Recipe-Strukturdaten - andere Kochseiten (z.B. Kptncook, Lecker.de,
-   Essen&Trinken) ließen sich vermutlich einfach durch Ergänzen ihrer
-   Domain in `ALLOWED_HOSTS` unterstützen, sofern sie dasselbe Format nutzen.
+2. **Rezept-Import auf noch mehr Kochseiten ausweiten.** Der Import
+   unterstützt inzwischen 9 Seiten (siehe "Umgesetzt" oben) - weitere
+   schema.org/Recipe-kompatible Seiten (z.B. internationale Portale, Blogs)
+   lassen sich genauso per Live-Prüfung + Domain-Ergänzung in
+   `ALLOWED_HOSTS` hinzufügen. Kptncook wäre z.B. eine App ohne
+   öffentliche Rezept-Webseiten und daher so nicht unterstützbar.

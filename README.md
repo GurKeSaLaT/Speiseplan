@@ -18,10 +18,13 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
 - **Rezeptverwaltung** – Gerichte mit Kategorie, Nährwerten (Kalorien,
   Eiweiß, Kohlenhydrate, Fett), Personenzahl, einer beliebigen Zutatenliste,
   Link und Zubereitungsanleitung anlegen, bearbeiten und löschen.
-- **Rezept-Import von chefkoch.de** – ein Link genügt: Name, Portionszahl,
-  Nährwerte (falls angegeben), Zutaten und Anleitung werden automatisch
-  ausgelesen und ins Anlegen-Formular übernommen; gespeichert wird erst
-  nach Prüfung/Ergänzung (v.a. der Kategorie) durch den Nutzer.
+- **Rezept-Import von neun deutschsprachigen Kochseiten** – chefkoch.de,
+  lecker.de, essen-und-trinken.de, EAT SMARTER, Küchengötter,
+  gutekueche.de/.at, DasKochrezept, BRIGITTE und Emmikochteinfach. Ein Link
+  genügt: Name, Portionszahl, Nährwerte (falls angegeben), Zutaten und
+  Anleitung werden automatisch ausgelesen und ins Anlegen-Formular
+  übernommen; gespeichert wird erst nach Prüfung/Ergänzung (v.a. der
+  Kategorie) durch den Nutzer.
 - **Wochenplanung per Drag-and-Drop** – Gerichte aus der Live-Suche auf
   einzelne Wochentage ziehen oder klicken, Tage per Drag-and-Drop
   komplett tauschen (auch auf der fertigen Plan-Seite, Beilagen wandern
@@ -116,7 +119,7 @@ routes/
     pages.py                    Seiten-Routen (/, /plan/<start>, .../create, .../generate)
     day_actions.py              AJAX: Hauptgericht/Beilagen würfeln/auswählen/verschieben, Tage tauschen
     shopping.py                 AJAX: manuelle Einkaufslisten-Artikel
-  recipes.py                  Rezept-CRUD + chefkoch.de-Import (Blueprint "recipes")
+  recipes.py                  Rezept-CRUD + Rezept-Import (Blueprint "recipes")
   categories.py                Kategorie-CRUD (Blueprint "categories")
   manage.py                    Verwaltungs-Startseite (Blueprint "manage")
 services/
@@ -124,7 +127,7 @@ services/
                                 Favoriten-/Wiederholungs-Gewichtung
   seasons.py                   Saison-Zuordnung (Standard-Saisons + eigene Zeiträume)
   shopping.py                  Feste Einkaufslisten-Kategorie-Reihenfolge
-  recipe_import.py             chefkoch.de-Import (schema.org/Recipe-JSON-LD auslesen)
+  recipe_import.py             Rezept-Import von 9 Kochseiten (schema.org/Recipe-JSON-LD auslesen)
 templates/                    Jinja2-Templates (Plan-Kalender, Wochenplan erstellen, Verwaltung)
 static/
   plan.js                       Plan-Seite: Zustand, Tageskarten, Hauptgericht, Tages-Tausch

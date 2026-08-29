@@ -1,5 +1,5 @@
-"""Rezept-Import von externen Kochseiten - aktuell ausschließlich
-chefkoch.de (siehe ALLOWED_HOSTS unten).
+"""Rezept-Import von externen Kochseiten - unterstützt eine feste Liste
+deutschsprachiger Kochseiten (siehe ALLOWED_HOSTS unten).
 
 Funktionsweise: fetch_recipe_from_url() lädt die Seite server-seitig
 (requests) und liest daraus NICHT das sichtbare HTML aus, sondern die
@@ -27,15 +27,31 @@ from urllib.parse import urlparse
 
 import requests
 
-# Nur chefkoch.de wird aktuell unterstützt (explizite Vorgabe) - auch aus
-# Sicherheitsgründen: fetch_recipe_from_url() lässt die App server-seitig
-# eine vom Nutzer eingegebene URL abrufen (ein Server-Side-Request-Forgery-
-# Risiko, wenn beliebige URLs erlaubt wären, z.B. Adressen im eigenen
-# Heimnetz). Die Domain-Prüfung unten VOR jedem Request schließt das
-# zuverlässig - ein Erweitern auf weitere schema.org/Recipe-kompatible
-# Seiten (die meisten großen Kochseiten unterstützen dasselbe Format) wäre
-# später einfach ein Hinzufügen weiterer Domains hier.
-ALLOWED_HOSTS = {'chefkoch.de', 'www.chefkoch.de'}
+# Feste Allowlist statt beliebiger URLs - auch aus Sicherheitsgründen:
+# fetch_recipe_from_url() lässt die App server-seitig eine vom Nutzer
+# eingegebene URL abrufen (ein Server-Side-Request-Forgery-Risiko, wenn
+# beliebige URLs erlaubt wären, z.B. Adressen im eigenen Heimnetz). Die
+# Domain-Prüfung unten VOR jedem Request schließt das zuverlässig - jede
+# hier gelistete Seite wurde manuell geprüft: sie bettet ein
+# schema.org/Recipe-JSON-LD-Objekt ein (siehe Moduldocstring), das der
+# generische, nicht seitenspezifische Parser unten auslesen kann.
+# Bewusst NICHT aufgenommen, weil beim Prüfen keine kompatiblen Daten
+# gefunden wurden: kochbar.de (lädt Inhalte rein clientseitig per
+# JavaScript nach, ohne Server-Side-Rendering im HTML), ichkoche.at (keine
+# eingebetteten JSON-LD-Daten überhaupt), springlane.de (markiert seine
+# Rezeptseiten als "Article", nicht als "Recipe").
+ALLOWED_HOSTS = {
+    'chefkoch.de', 'www.chefkoch.de',
+    'lecker.de', 'www.lecker.de',
+    'essen-und-trinken.de', 'www.essen-und-trinken.de',
+    'eatsmarter.de', 'www.eatsmarter.de',
+    'kuechengoetter.de', 'www.kuechengoetter.de',
+    'gutekueche.de', 'www.gutekueche.de',
+    'gutekueche.at', 'www.gutekueche.at',
+    'daskochrezept.de', 'www.daskochrezept.de',
+    'brigitte.de', 'www.brigitte.de',
+    'emmikochteinfach.de', 'www.emmikochteinfach.de',
+}
 
 # Eigener User-Agent statt des python-requests-Standards, den manche Seiten
 # blockieren - ein plausibler Browser-artiger String reicht dafür.
@@ -44,13 +60,16 @@ REQUEST_TIMEOUT_SECONDS = 10
 
 # Erkannte Mengeneinheiten (klein geschrieben, mit denen der jeweils erste
 # Wortteil nach der erkannten Menge verglichen wird - siehe
-# _parse_ingredient_line). Nicht erschöpfend, deckt aber die auf chefkoch.de
-# gebräuchlichen Angaben ab; ein unbekanntes Wort landet einfach als Teil
-# des Zutatennamens statt als eigene Einheit - der Import bleibt dadurch
-# immer noch benutzbar, nur die Spalten-Aufteilung ungenauer.
+# _parse_ingredient_line). Nicht erschöpfend, deckt aber die auf den in
+# ALLOWED_HOSTS gelisteten Seiten gebräuchlichen Angaben ab; ein unbekanntes
+# Wort landet einfach als Teil des Zutatennamens statt als eigene Einheit -
+# der Import bleibt dadurch immer noch benutzbar, nur die Spalten-Aufteilung
+# ungenauer. Die ausgeschriebenen Varianten (gramm, esslöffel, ...) kamen
+# beim Prüfen von brigitte.de/gutekueche.de dazu, die (anders als
+# chefkoch.de) meist ausschreiben statt abzukürzen.
 KNOWN_UNITS = {
-    'g', 'kg', 'mg', 'ml', 'l', 'cl',
-    'el', 'tl', 'msp', 'msp.', 'prise', 'prisen',
+    'g', 'gramm', 'kg', 'kilogramm', 'mg', 'ml', 'milliliter', 'l', 'liter', 'cl',
+    'el', 'essl', 'esslöffel', 'tl', 'teel', 'teelöffel', 'msp', 'msp.', 'prise', 'prisen',
     'stk', 'stk.', 'stück', 'stange', 'stangen', 'bund', 'bünde',
     'dose', 'dosen', 'päckchen', 'zehe', 'zehen', 'scheibe', 'scheiben',
     'blatt', 'blätter', 'tasse', 'tassen', 'glas', 'gläser', 'würfel',
@@ -80,7 +99,9 @@ def fetch_recipe_from_url(url):
     """
     parsed_url = urlparse(url)
     if parsed_url.scheme not in ('http', 'https') or parsed_url.hostname not in ALLOWED_HOSTS:
-        raise RecipeImportError('Der Import unterstützt aktuell nur Links von chefkoch.de.')
+        raise RecipeImportError(
+            'Diese Seite wird vom Import nicht unterstützt (siehe ALLOWED_HOSTS in services/recipe_import.py).'
+        )
 
     try:
         response = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT_SECONDS)
@@ -88,11 +109,12 @@ def fetch_recipe_from_url(url):
         raise RecipeImportError('Die Seite konnte nicht geladen werden.')
 
     # response.url ist die Adresse NACH etwaigen Redirects - wird hier
-    # erneut geprüft, damit ein chefkoch.de-Link, der (aus welchem Grund
-    # auch immer) auf eine fremde Domain umleitet, nicht stillschweigend
-    # dort landet (dieselbe SSRF-Überlegung wie beim Eingabe-Check oben).
+    # erneut geprüft, damit ein Link auf eine erlaubte Domain, der (aus
+    # welchem Grund auch immer) auf eine fremde Domain umleitet, nicht
+    # stillschweigend dort landet (dieselbe SSRF-Überlegung wie beim
+    # Eingabe-Check oben).
     if urlparse(response.url).hostname not in ALLOWED_HOSTS:
-        raise RecipeImportError('Der Link führt nicht zu einer Seite auf chefkoch.de.')
+        raise RecipeImportError('Der Link führt nicht zu einer unterstützten Seite.')
     if not response.ok:
         raise RecipeImportError(f'Die Seite konnte nicht geladen werden (Status {response.status_code}).')
 
