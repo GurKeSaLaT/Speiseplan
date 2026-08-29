@@ -92,6 +92,17 @@ docker build -t speiseplan .
 docker run -p 5000:5000 speiseplan
 ```
 
+## Tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+Läuft komplett gegen eine eigene, temporäre SQLite-Datenbank (siehe
+`tests/conftest.py` und `DATABASE_URL` in `app.py`) - `instance/speiseplan.db`
+bleibt dabei unangetastet.
+
 ## Projektstruktur
 
 ```

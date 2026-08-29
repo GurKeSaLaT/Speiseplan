@@ -30,8 +30,14 @@ from routes.categories import categories_bp
 app = Flask(__name__)
 # SQLite-Datei liegt in Flasks Standard-"instance"-Ordner (instance/speiseplan.db),
 # der beim Deployment/Docker-Betrieb als Volume gemountet wird, damit die
-# Datenbank Neustarts/Neubauten des Containers übersteht.
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(app.instance_path, 'speiseplan.db')
+# Datenbank Neustarts/Neubauten des Containers übersteht. Per DATABASE_URL
+# überschreibbar (analog zu SECRET_KEY unten) - einzig genutzt von
+# tests/conftest.py, damit Tests gegen eine eigene, temporäre SQLite-Datei
+# laufen statt gegen instance/speiseplan.db (kein App-Factory-Pattern
+# vorhanden, die Verbindung wird unten beim Modul-Import sofort aufgebaut).
+app.config['SQLALCHEMY_DATABASE_URI'] = (
+    os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(app.instance_path, 'speiseplan.db')
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 os.makedirs(app.instance_path, exist_ok=True)

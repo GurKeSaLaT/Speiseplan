@@ -133,7 +133,18 @@ def _find_recipe_json_ld(html):
         except (json.JSONDecodeError, ValueError):
             continue
 
-        candidates = data.get('@graph', []) if isinstance(data, dict) else data if isinstance(data, list) else [data]
+        # Ein Dict OHNE "@graph"-Schlüssel ist selbst der einzige Kandidat
+        # (z.B. eine Seite, die ihr Recipe-Objekt direkt als Top-Level-JSON-LD
+        # einbettet statt es in @graph zu bündeln) - data.get('@graph', [])
+        # würde diesen Fall fälschlich auf eine leere Kandidatenliste
+        # abbilden, da [] der Default nur für "@graph fehlt" ist, nicht "kein
+        # Kandidat vorhanden".
+        if isinstance(data, dict):
+            candidates = data['@graph'] if '@graph' in data else [data]
+        elif isinstance(data, list):
+            candidates = data
+        else:
+            candidates = [data]
         for candidate in candidates:
             if isinstance(candidate, dict) and candidate.get('@type') == 'Recipe':
                 return candidate
