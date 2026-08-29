@@ -93,10 +93,19 @@ python3 app.py
 ```
 
 Die App läuft danach unter `http://127.0.0.1:5000` und leitet direkt auf
-die aktuelle Kalenderwoche weiter. Die SQLite-Datenbank wird beim ersten
-Start automatisch unter `instance/speiseplan.db` inklusive
-Standardkategorien angelegt; bei späteren Updates werden fehlende
-Tabellen/Spalten automatisch nachmigriert.
+die aktuelle Kalenderwoche weiter. `instance/speiseplan.db` ist im Repo
+mit Beispieldaten (rund 100 importierte Rezepte samt Zutaten-
+Gleichsetzung) versioniert, damit sich die App nach dem Setup direkt
+sinnvoll ausprobieren lässt, statt mit einer leeren Datenbank zu starten;
+bei späteren Updates werden fehlende Tabellen/Spalten automatisch
+nachmigriert. Für das Docker-Deployment ist das irrelevant - dort wird
+`instance/` als Volume auf ein Verzeichnis außerhalb des Containers
+gemountet (siehe unten), das immer Vorrang vor dem im Image enthaltenen
+Datenbankstand hat.
+
+Standardmäßig lauscht der Server auf allen Netzwerk-Schnittstellen
+(`0.0.0.0`) - für einen rein lokalen Testlauf, der nicht aus dem
+LAN erreichbar sein soll, `HOST=127.0.0.1 python3 app.py` verwenden.
 
 ### Mit Docker
 
