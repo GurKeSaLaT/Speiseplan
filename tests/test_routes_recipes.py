@@ -103,6 +103,16 @@ def test_recipe_edit_list_view_has_auto_open_edit_script(client, make_recipe):
     assert resp.status_code == 200
     assert b"URLSearchParams(location.search).get('edit')" in resp.data
     assert b"editModal' + editId" in resp.data
+    # Muss NACH DOMContentLoaded laufen, nicht sofort: dieses Skript steht
+    # (wie der ganze Seiteninhalt) VOR bootstrap.bundle.min.js im DOM
+    # (siehe templates/base.html - das Skript wird ganz am Ende des
+    # <body> eingebunden) - ein sofortiger bootstrap.Modal-Aufruf hier
+    # träfe auf ein noch undefiniertes window.bootstrap und würde
+    # stillschweigend fehlschlagen, ohne dass sich das Modal öffnet.
+    html = resp.get_data(as_text=True)
+    dcl_index = html.index("addEventListener('DOMContentLoaded'")
+    edit_id_index = html.index("URLSearchParams(location.search).get('edit')")
+    assert dcl_index < edit_id_index < html.index("bootstrap.Modal.getOrCreateInstance(modalEl).show()")
 
 
 def test_recipe_edit_list_view_search_data_includes_category(client, make_category, make_recipe):

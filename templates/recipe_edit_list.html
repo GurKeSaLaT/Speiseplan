@@ -284,14 +284,22 @@ if (recipeFilterInput) {
 // direkt zum passenden Rezept springen soll statt nur zur allgemeinen
 // Liste. Eine unbekannte/fehlende id wird stillschweigend ignoriert (kein
 // Modal mit diesem Namen im DOM).
-(function() {
+//
+// In einen DOMContentLoaded-Handler gepackt, statt sofort auszuführen:
+// dieses Skript steht (wie der ganze Seiteninhalt) VOR
+// bootstrap.bundle.min.js im DOM (siehe templates/base.html - das Skript
+// wird ganz am Ende des <body> eingebunden), ein direkter Aufruf hier
+// träfe also auf ein noch undefiniertes window.bootstrap. DOMContentLoaded
+// feuert dagegen erst, nachdem alle synchronen Skripte der Seite (auch
+// das spätere bootstrap.bundle.min.js) bereits ausgeführt wurden.
+document.addEventListener('DOMContentLoaded', () => {
     const editId = new URLSearchParams(location.search).get('edit');
     if (!editId) return;
     const modalEl = document.getElementById('editModal' + editId);
     if (modalEl) {
         bootstrap.Modal.getOrCreateInstance(modalEl).show();
     }
-})();
+});
 
 // Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
 // Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
