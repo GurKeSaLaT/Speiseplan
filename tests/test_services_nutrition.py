@@ -207,6 +207,21 @@ def test_compute_recipe_nutrition_treats_piece_spellings_as_stk(app):
             assert result["calories"] == 156, f"Einheit {spelling!r} sollte matchen"
 
 
+def test_compute_recipe_nutrition_treats_container_units_as_stk(app):
+    """"Stk" ist bewusst breit gefasst (siehe services/nutrition.py:
+    Moduldocstring) - auch Dose/Becher/Bund/Prise/Päckchen zählen als 1 Stk,
+    kalibriert auf genau diese Zutat (z.B. "1 Stk Kidneybohnen" = 1 Dose)."""
+    from services.nutrition import compute_recipe_nutrition, set_nutrition
+
+    with app.app_context():
+        set_nutrition("Kidneybohnen", reference_unit="Stk", calories=305, protein=21, carbs=55, fat=1.2)
+        for spelling in ("Dose", "dose", "Becher", "Bund", "Prise", "Msp.", "Päckchen", "Packung"):
+            result = compute_recipe_nutrition(
+                [{"name": "Kidneybohnen", "amount": 1, "unit": spelling}], servings=1
+            )
+            assert result["calories"] == 305, f"Einheit {spelling!r} sollte matchen"
+
+
 def test_compute_recipe_nutrition_stk_reference_does_not_match_mass_unit(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 

@@ -22,20 +22,28 @@ Referenzbasis IMMER 100 g / 100 ml / 1 Stk (REFERENCE_BASES unten) - frei
 wählbare Referenzmengen (z.B. "1 Becher", "1 Dose", "1 Prise") wurden
 bewusst verworfen: sie sind weder untereinander vergleichbar noch lässt
 sich ihre Größe auf der Verwaltungsseite kompakt genug darstellen (siehe
-set_nutrition()). Für die eigentliche Berechnung (compute_recipe_nutrition)
-zählen zusätzlich stückbasierte Einheiten-Schreibweisen wie "Stück",
-"Stange" oder "Scheibe" als gleichwertig zu "Stk" (siehe _normalize_unit) -
-das ist bewusst NUR eine Lockerung für den Nährwert-Abgleich, NICHT für
-services/units.py: normalize_amount_unit(), da unterschiedliche
-Schreibweisen auf der Einkaufsliste weiterhin als eigene Posten geführt
-werden sollen.
+set_nutrition()). "Stk" ist dabei bewusst breiter gefasst als nur "ein
+Ei" oder "eine Scheibe": auch ein Becher, eine Dose, ein Bund oder eine
+Prise sind für sich genommen ein zählbares, natürliches Maß für GENAU
+DIESE Zutat - der Kalorienwert wird ja ohnehin je Zutat kalibriert (z.B.
+"1 Stk Ei" = 1 Ei, "1 Stk Kidneybohnen" = 1 Dose Kidneybohnen), nicht
+literal auf ein Stück im Sinne von Ei/Scheibe beschränkt. Für die
+eigentliche Berechnung (compute_recipe_nutrition) zählen deshalb ALLE
+stückbasierten Einheiten-Schreibweisen aus services/units.py:
+NON_CONVERTIBLE_UNITS (Stk, Stück, Stange, Zehe, Scheibe, Bund, Dose,
+Päckchen, Becher, Prise, Msp., Glas, Würfel, Kugel, Blatt, Packung, ...)
+sowie eine leere Einheit als gleichwertig zu "Stk" (siehe
+_normalize_unit) - das ist bewusst NUR eine Lockerung für den Nährwert-
+ABGLEICH, NICHT für services/units.py: normalize_amount_unit() selbst, da
+unterschiedliche Schreibweisen auf der Einkaufsliste weiterhin als eigene
+Posten geführt werden sollen.
 """
 
 from collections import Counter
 
 from models import Ingredient, IngredientAlias, IngredientNutrition, db
 from services.ingredient_aliases import normalize_ingredient_name
-from services.units import normalize_amount_unit
+from services.units import NON_CONVERTIBLE_UNITS, normalize_amount_unit
 
 # Referenzbasis je Einheit - siehe Moduldocstring. set_nutrition() erzwingt
 # reference_unit aus diesen drei Schlüsseln und leitet reference_amount
@@ -43,13 +51,11 @@ from services.units import normalize_amount_unit
 REFERENCE_BASES = {"g": 100, "ml": 100, "Stk": 1}
 
 # Einheiten-Schreibweisen, die beim Nährwert-ABGLEICH (nicht beim Speichern
-# der Zutatenzeile selbst!) als "1 Stk" zählen - deckt die auf chefkoch.de
-# gebräuchlichen Stückzahl-Angaben ab (siehe services/units.py:
-# NON_CONVERTIBLE_UNITS für die vollständige, dort maßgebliche Liste).
-_PIECE_LIKE_UNITS = {
-    '', 'stk', 'stück', 'stange', 'stangen', 'zehe', 'zehen',
-    'scheibe', 'scheiben', 'stk.',
-}
+# der Zutatenzeile selbst!) als "1 Stk" zählen - siehe Moduldocstring.
+# NON_CONVERTIBLE_UNITS ist bereits ohne abschließenden Punkt/Plural-s
+# normalisiert (siehe services/units.py: _normalize_key), "msp"/"prise"
+# decken damit auch "Msp."/"Prisen" ab.
+_PIECE_LIKE_UNITS = NON_CONVERTIBLE_UNITS | {''}
 
 
 def _normalize_unit(unit):
