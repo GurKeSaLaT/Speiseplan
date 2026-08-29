@@ -112,6 +112,20 @@ def fetch_recipe_from_url(url):
     if not response.ok:
         raise RecipeImportError(f'Die Seite konnte nicht geladen werden (Status {response.status_code}).')
 
+    # requests bestimmt response.encoding aus dem Content-Type-Header;
+    # fehlt dort ein charset-Parameter (z.B. nur "text/html" ohne
+    # ";charset=..."), fällt requests laut HTTP-Spec auf ISO-8859-1
+    # zurück - das ist bei den meisten heutigen (UTF-8-)Seiten falsch und
+    # führt zu falsch dekodierten Umlauten ("Ã¶" statt "ö"). Nur in diesem
+    # Fall auf die aus den Bytes geratene Kodierung (apparent_encoding)
+    # ausweichen: steht im Header dagegen explizit ein charset, wird ihm
+    # vertraut, auch wenn apparent_encoding etwas anderes rät (das kann
+    # bei kurzen/mehrdeutigen Seiten selbst danebenliegen, siehe
+    # chefkoch.de, das korrekt "utf-8" deklariert, aber von
+    # apparent_encoding fälschlich als "windows-1250" geraten wird).
+    if 'charset=' not in response.headers.get('Content-Type', '').lower():
+        response.encoding = response.apparent_encoding
+
     recipe_json = _find_recipe_json_ld(response.text)
     if recipe_json is None:
         raise RecipeImportError('Auf dieser Seite wurde kein Rezept gefunden.')

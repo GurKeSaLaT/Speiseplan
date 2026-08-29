@@ -243,7 +243,10 @@ def test_fetch_recipe_from_url_non_ok_status(mock_get):
 
 @patch("services.recipe_import.requests.get")
 def test_fetch_recipe_from_url_no_recipe_found(mock_get):
-    mock_get.return_value = Mock(ok=True, url="https://chefkoch.de/recipe", text="<html></html>")
+    mock_get.return_value = Mock(
+        ok=True, url="https://chefkoch.de/recipe", text="<html></html>",
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
     with pytest.raises(RecipeImportError):
         fetch_recipe_from_url("https://chefkoch.de/recipe")
 
@@ -260,7 +263,10 @@ def test_fetch_recipe_from_url_full_success(mock_get):
         "recipeIngredient": ["500 g Nudeln", "1 Zwiebel(n)"],
     }
     html = f'<script type="application/ld+json">{json.dumps(recipe_json)}</script>'
-    mock_get.return_value = Mock(ok=True, url="https://www.chefkoch.de/recipe", text=html)
+    mock_get.return_value = Mock(
+        ok=True, url="https://www.chefkoch.de/recipe", text=html,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
 
     result = fetch_recipe_from_url("https://chefkoch.de/recipe")
 
@@ -277,6 +283,54 @@ def test_fetch_recipe_from_url_full_success(mock_get):
 
 
 @patch("services.recipe_import.requests.get")
+def test_fetch_recipe_from_url_fixes_missing_charset_declaration(mock_get):
+    """Manche Seiten (z.B. emmikochteinfach.de) deklarieren im
+    Content-Type-Header kein charset, obwohl die Seite tatsächlich UTF-8
+    ist - requests würde sonst auf ISO-8859-1 zurückfallen und Umlaute
+    falsch dekodieren ("Ã¶" statt "ö", siehe Kommentar in
+    fetch_recipe_from_url). Simuliert das über echte UTF-8-Bytes, die
+    requests OHNE die Korrektur als ISO-8859-1 lesen würde."""
+    recipe_json = {
+        "@type": "Recipe", "name": "Bolognese-Rezept – das Original",
+        "recipeIngredient": ["500 g Hackfleisch"],
+    }
+    html_bytes = f'<script type="application/ld+json">{json.dumps(recipe_json)}</script>'.encode("utf-8")
+
+    mock_response = Mock(ok=True, url="https://emmikochteinfach.de/recipe", headers={"Content-Type": "text/html"})
+    mock_response.apparent_encoding = "utf-8"
+    # Wie beim echten requests.Response: .text dekodiert content anhand des
+    # aktuellen .encoding-Werts - encoding wird als normales Attribut
+    # gesetzt (kein PropertyMock nötig), .text als Property simuliert.
+    mock_response.encoding = "ISO-8859-1"
+    type(mock_response).text = property(lambda self: html_bytes.decode(self.encoding))
+    mock_get.return_value = mock_response
+
+    result = fetch_recipe_from_url("https://emmikochteinfach.de/recipe")
+    assert result["name"] == "Bolognese-Rezept – das Original"
+
+
+@patch("services.recipe_import.requests.get")
+def test_fetch_recipe_from_url_trusts_declared_charset_even_if_apparent_disagrees(mock_get):
+    """Umgekehrter Fall: steht im Header explizit ein charset, wird ihm
+    vertraut, selbst wenn apparent_encoding (die aus den Bytes geratene
+    Kodierung) etwas anderes vorschlägt - genau der bei chefkoch.de
+    beobachtete Fall (deklariert korrekt utf-8, apparent_encoding rät
+    fälschlich windows-1250, siehe Kommentar in fetch_recipe_from_url)."""
+    recipe_json = {"@type": "Recipe", "name": "Käsekuchen", "recipeIngredient": []}
+    html = f'<script type="application/ld+json">{json.dumps(recipe_json)}</script>'
+
+    mock_response = Mock(
+        ok=True, url="https://chefkoch.de/recipe", text=html,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+    mock_response.apparent_encoding = "windows-1250"  # absichtlich "falsch", darf nicht verwendet werden
+    mock_get.return_value = mock_response
+
+    result = fetch_recipe_from_url("https://chefkoch.de/recipe")
+    assert result["name"] == "Käsekuchen"
+
+
+@patch("services.recipe_import.requests.get")
 def test_fetch_recipe_from_url_works_for_non_chefkoch_host(mock_get):
     """Der Parser ist bewusst NICHT chefkoch-spezifisch (siehe Moduldocstring) -
     dieser Test belegt das anhand einer zweiten, unabhängigen Domain aus
@@ -289,7 +343,10 @@ def test_fetch_recipe_from_url_works_for_non_chefkoch_host(mock_get):
         "recipeIngredient": ["250 Gramm Mehl"],
     }
     html = f'<script type="application/ld+json">{json.dumps(recipe_json)}</script>'
-    mock_get.return_value = Mock(ok=True, url="https://www.brigitte.de/recipe", text=html)
+    mock_get.return_value = Mock(
+        ok=True, url="https://www.brigitte.de/recipe", text=html,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
 
     result = fetch_recipe_from_url("https://brigitte.de/recipe")
 
