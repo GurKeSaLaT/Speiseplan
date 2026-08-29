@@ -1,16 +1,32 @@
 """Tests für services/nutrition.py: Nährwert-Nachschlage/-Speicher-Logik
 je kanonischer Zutat sowie die automatische Rezept-Nährwert-Berechnung
-aus den Zutaten (compute_recipe_nutrition)."""
+aus den Zutaten (compute_recipe_nutrition). Kalorien werden nirgends
+gespeichert oder eingegeben, sondern immer aus Eiweiß/Kohlenhydraten/Fett
+errechnet (Atwater-Faustregel, siehe compute_calories())."""
+
+
+def test_compute_calories_applies_atwater_rule():
+    from services.nutrition import compute_calories
+
+    # 4 kcal je g Eiweiß/Kohlenhydrate, 9 kcal je g Fett.
+    assert compute_calories(10, 20, 5) == 10 * 4 + 20 * 4 + 5 * 9
+
+
+def test_compute_calories_treats_none_as_zero():
+    from services.nutrition import compute_calories
+
+    assert compute_calories(None, None, None) == 0
+    assert compute_calories(10, None, None) == 40
 
 
 def test_set_and_get_nutrition_entry(app):
     from services.nutrition import get_nutrition_entry, set_nutrition
 
     with app.app_context():
-        set_nutrition("Nudeln", reference_unit="g", calories=350, protein=12, carbs=70, fat=1.5)
+        set_nutrition("Nudeln", reference_unit="g", protein=12, carbs=70, fat=1.5)
         entry = get_nutrition_entry("Nudeln")
         assert entry is not None
-        assert entry.calories == 350
+        assert entry.protein == 12
         assert entry.reference_unit == "g"
 
 
@@ -21,13 +37,13 @@ def test_set_nutrition_forces_fixed_reference_basis(app):
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        entry_g = set_nutrition("Mehl", reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
+        entry_g = set_nutrition("Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
         assert entry_g.reference_amount == 100
 
-        entry_ml = set_nutrition("Milch", reference_unit="ml", calories=64, protein=3.3, carbs=4.8, fat=3.6)
+        entry_ml = set_nutrition("Milch", reference_unit="ml", protein=3.3, carbs=4.8, fat=3.6)
         assert entry_ml.reference_amount == 100
 
-        entry_stk = set_nutrition("Ei", reference_unit="Stk", calories=78, protein=6.5, carbs=0.6, fat=5.3)
+        entry_stk = set_nutrition("Ei", reference_unit="Stk", protein=6.5, carbs=0.6, fat=5.3)
         assert entry_stk.reference_amount == 1
 
 
@@ -37,7 +53,7 @@ def test_set_nutrition_rejects_unknown_reference_unit(app):
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        entry = set_nutrition("Joghurt", reference_unit="Becher", calories=100, protein=5, carbs=4, fat=3)
+        entry = set_nutrition("Joghurt", reference_unit="Becher", protein=5, carbs=4, fat=3)
         assert entry.reference_unit == "g"
         assert entry.reference_amount == 100
 
@@ -47,10 +63,12 @@ def test_set_nutrition_is_idempotent_per_canonical_name(app):
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        set_nutrition("Reis", reference_unit="g", calories=100, protein=1, carbs=1, fat=1)
-        set_nutrition("Reis", reference_unit="g", calories=130, protein=3, carbs=28, fat=0.3)
+        set_nutrition("Reis", reference_unit="g", protein=1, carbs=1, fat=1)
+        set_nutrition("Reis", reference_unit="g", protein=3, carbs=28, fat=0.3)
         assert IngredientNutrition.query.filter_by(canonical_name="Reis").count() == 1
-        assert IngredientNutrition.query.filter_by(canonical_name="Reis").first().calories == 130
+        entry = IngredientNutrition.query.filter_by(canonical_name="Reis").first()
+        assert entry.protein == 3
+        assert entry.carbs == 28
 
 
 def test_get_nutrition_entry_resolves_through_alias(app):
@@ -59,7 +77,7 @@ def test_get_nutrition_entry_resolves_through_alias(app):
 
     with app.app_context():
         set_alias("Spaghetti", "Nudeln")
-        set_nutrition("Nudeln", reference_unit="g", calories=350, protein=12, carbs=70, fat=1.5)
+        set_nutrition("Nudeln", reference_unit="g", protein=12, carbs=70, fat=1.5)
 
         entry = get_nutrition_entry("Spaghetti")
         assert entry is not None
@@ -74,14 +92,17 @@ def test_get_nutrition_entry_missing_returns_none(app):
 
 
 def test_get_all_nutrition_entries_shape(app):
+    """calories ist hier kein gespeicherter Wert, sondern wird für die
+    Anzeige aus protein/carbs/fat errechnet (siehe compute_calories())."""
     from services.nutrition import get_all_nutrition_entries, set_nutrition
 
     with app.app_context():
-        set_nutrition("Öl", reference_unit="ml", calories=884, protein=0, carbs=0, fat=100)
+        set_nutrition("Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
         entries = get_all_nutrition_entries()
         assert entries["Öl"] == {
             "reference_amount": 100, "reference_unit": "ml",
-            "calories": 884, "protein": 0.0, "carbs": 0.0, "fat": 100.0,
+            "calories": 900,  # 100g Fett * 9 kcal/g
+            "protein": 0.0, "carbs": 0.0, "fat": 100.0,
         }
 
 
@@ -142,20 +163,21 @@ def test_compute_recipe_nutrition_basic(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Mehl", reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
+        set_nutrition("Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
         result = compute_recipe_nutrition(
             [{"name": "Mehl", "amount": 200, "unit": "g"}], servings=2
         )
-        # 200g @350kcal/100g = 700 kcal insgesamt / 2 Portionen = 350.
-        assert result == {"calories": 350, "protein": 10.0, "carbs": 70.0, "fat": 1.0}
+        # 200g @ (10/70/1 je 100g) / 2 Portionen = 10/70/1 pro Portion.
+        # calories daraus errechnet (Atwater): (10+70)*4 + 1*9 = 329.
+        assert result == {"calories": 329, "protein": 10.0, "carbs": 70.0, "fat": 1.0}
 
 
 def test_compute_recipe_nutrition_sums_multiple_ingredients(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Mehl", reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
-        set_nutrition("Zucker", reference_unit="g", calories=400, protein=0, carbs=100, fat=0)
+        set_nutrition("Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
+        set_nutrition("Zucker", reference_unit="g", protein=0, carbs=100, fat=0)
         result = compute_recipe_nutrition(
             [
                 {"name": "Mehl", "amount": 100, "unit": "g"},
@@ -163,8 +185,8 @@ def test_compute_recipe_nutrition_sums_multiple_ingredients(app):
             ],
             servings=1,
         )
-        assert result["calories"] == 550  # 350 + 200
         assert result["carbs"] == 120.0  # 70 + 50
+        assert result["calories"] == 529  # (10+120)*4 + 1*9
 
 
 def test_compute_recipe_nutrition_skips_ingredient_without_entry(app):
@@ -184,7 +206,7 @@ def test_compute_recipe_nutrition_skips_mismatched_unit_family(app):
         # Referenz in ml (z.B. eine Flüssigkeit), Rezept nennt die Zutat
         # aber in g - bewusst konservativ übersprungen statt geraten/
         # falsch umgerechnet (siehe compute_recipe_nutrition-Docstring).
-        set_nutrition("Öl", reference_unit="ml", calories=884, protein=0, carbs=0, fat=100)
+        set_nutrition("Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
         result = compute_recipe_nutrition(
             [{"name": "Öl", "amount": 100, "unit": "g"}], servings=1
         )
@@ -199,12 +221,12 @@ def test_compute_recipe_nutrition_treats_piece_spellings_as_stk(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Ei", reference_unit="Stk", calories=78, protein=6.5, carbs=0.6, fat=5.3)
+        set_nutrition("Ei", reference_unit="Stk", protein=6.5, carbs=0.6, fat=5.3)
         for spelling in ("Stk", "stk", "Stück", "STÜCK", "", "  "):
             result = compute_recipe_nutrition(
                 [{"name": "Ei", "amount": 2, "unit": spelling}], servings=1
             )
-            assert result["calories"] == 156, f"Einheit {spelling!r} sollte matchen"
+            assert result["calories"] == 152, f"Einheit {spelling!r} sollte matchen"
 
 
 def test_compute_recipe_nutrition_treats_container_units_as_stk(app):
@@ -214,19 +236,19 @@ def test_compute_recipe_nutrition_treats_container_units_as_stk(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Kidneybohnen", reference_unit="Stk", calories=305, protein=21, carbs=55, fat=1.2)
+        set_nutrition("Kidneybohnen", reference_unit="Stk", protein=21, carbs=55, fat=1.2)
         for spelling in ("Dose", "dose", "Becher", "Bund", "Prise", "Msp.", "Päckchen", "Packung"):
             result = compute_recipe_nutrition(
                 [{"name": "Kidneybohnen", "amount": 1, "unit": spelling}], servings=1
             )
-            assert result["calories"] == 305, f"Einheit {spelling!r} sollte matchen"
+            assert result["calories"] == 315, f"Einheit {spelling!r} sollte matchen"
 
 
 def test_compute_recipe_nutrition_stk_reference_does_not_match_mass_unit(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Ei", reference_unit="Stk", calories=78, protein=6.5, carbs=0.6, fat=5.3)
+        set_nutrition("Ei", reference_unit="Stk", protein=6.5, carbs=0.6, fat=5.3)
         result = compute_recipe_nutrition(
             [{"name": "Ei", "amount": 100, "unit": "g"}], servings=1
         )
@@ -239,22 +261,22 @@ def test_compute_recipe_nutrition_resolves_alias(app):
 
     with app.app_context():
         set_alias("Spaghetti", "Nudeln")
-        set_nutrition("Nudeln", reference_unit="g", calories=350, protein=12, carbs=70, fat=1.5)
+        set_nutrition("Nudeln", reference_unit="g", protein=12, carbs=70, fat=1.5)
         result = compute_recipe_nutrition(
             [{"name": "Spaghetti", "amount": 100, "unit": "g"}], servings=1
         )
-        assert result["calories"] == 350
+        assert result["calories"] == 342
 
 
 def test_compute_recipe_nutrition_defaults_servings_to_one(app):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Mehl", reference_unit="g", calories=350, protein=10, carbs=70, fat=1)
+        set_nutrition("Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
         result = compute_recipe_nutrition(
             [{"name": "Mehl", "amount": 100, "unit": "g"}], servings=0
         )
-        assert result["calories"] == 350
+        assert result["calories"] == 329
 
 
 def test_compute_recipe_nutrition_accepts_ingredient_objects(app, make_recipe):
@@ -262,10 +284,10 @@ def test_compute_recipe_nutrition_accepts_ingredient_objects(app, make_recipe):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        set_nutrition("Reis", reference_unit="g", calories=130, protein=3, carbs=28, fat=0.3)
+        set_nutrition("Reis", reference_unit="g", protein=3, carbs=28, fat=0.3)
 
     recipe_id = make_recipe("Reisgericht", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
     with app.app_context():
         recipe = db.session.get(Recipe, recipe_id)
         result = compute_recipe_nutrition(recipe.ingredients, servings=1)
-        assert result["calories"] == 260
+        assert result["calories"] == 253

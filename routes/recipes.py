@@ -25,7 +25,7 @@ from models import db, Category, Recipe, Ingredient
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
-from services.nutrition import compute_recipe_nutrition
+from services.nutrition import compute_calories, compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.settings import get_display_units
 from services.units import convert_for_display, normalize_amount_unit
@@ -131,7 +131,11 @@ def add_recipe():
     services/nutrition.py: compute_recipe_nutrition()) statt die
     Formularfelder ungeprüft zu übernehmen - nur bei gesetztem
     nutrition_override-Häkchen (im Formular per JS deaktivierte, aber
-    weiterhin abgesendete Felder) gelten die eingetragenen Werte direkt.
+    weiterhin abgesendete Felder) gelten die eingetragenen protein/carbs/
+    fat-Werte direkt. calories wird dabei NIE aus dem Formular übernommen,
+    auch nicht im Override-Fall - es ergibt sich immer aus protein/carbs/
+    fat (services/nutrition.py: compute_calories()), um keinen
+    redundanten, potenziell widersprüchlichen Kalorienwert zu erlauben.
     Die Zutatenzeilen werden dafür VOR dem Anlegen des Recipe-Objekts
     normalisiert (Menge/Einheit), damit sowohl die Berechnung als auch
     die späteren Ingredient-Zeilen dieselben, bereits kanonischen Werte
@@ -166,10 +170,10 @@ def add_recipe():
             normalized_ingredients.append({"name": ing_names[i], "amount": amount, "unit": unit, "category": category})
 
     if nutrition_override:
-        calories = int(request.form.get('calories') or 0)
         protein = float(request.form.get('protein') or 0)
         carbs = float(request.form.get('carbs') or 0)
         fat = float(request.form.get('fat') or 0)
+        calories = compute_calories(protein, carbs, fat)
     else:
         computed = compute_recipe_nutrition(normalized_ingredients, servings)
         calories, protein, carbs, fat = computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
@@ -251,10 +255,10 @@ def edit_recipe(id):
         ))
 
     if recipe.nutrition_override:
-        recipe.calories = int(request.form.get('calories') or 0)
         recipe.protein = float(request.form.get('protein') or 0)
         recipe.carbs = float(request.form.get('carbs') or 0)
         recipe.fat = float(request.form.get('fat') or 0)
+        recipe.calories = compute_calories(recipe.protein, recipe.carbs, recipe.fat)
     else:
         computed = compute_recipe_nutrition(normalized_ingredients, recipe.servings)
         recipe.calories, recipe.protein = computed["calories"], computed["protein"]

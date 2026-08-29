@@ -15,6 +15,14 @@
    kleinen Bildschirmen den Wert (z.B. "100") sichtbar auf "1" abschneiden
    konnte.
 
+   Kcal ist bewusst KEIN eigenes Eingabefeld: es gibt sich immer aus
+   Eiweiß/Kohlenhydraten/Fett (services/nutrition.py: compute_calories(),
+   Atwater-Faustregel 4/4/9 kcal je g) - eine zusätzlich gepflegte Angabe
+   wäre nur redundant und könnte den anderen drei Werten widersprechen.
+   Die Kcal-Spalte zeigt stattdessen nur den daraus errechneten Wert an,
+   live per JS aktualisiert (siehe unten), sobald Eiweiß/Kohlenhydrate/
+   Fett geändert werden.
+
    Unaliasierte Einzelzutaten tauchen hier bewusst NICHT auf - für die
    gibt es stattdessen den Inline-Hinweis direkt beim Zutat-Eintragen
    (siehe static/ingredient_alias_hint.js). #}
@@ -45,10 +53,10 @@
                     <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2 d-none d-md-flex">
                         <div class="col-md-3">Zutat</div>
                         <div class="col-md-2">Referenz</div>
-                        <div class="col-md-2">Kcal</div>
                         <div style="flex: 0 0 auto; width: 12.5%;">Eiweiß (g)</div>
                         <div style="flex: 0 0 auto; width: 12.5%;">Kohlh. (g)</div>
                         <div class="col-md-2">Fett (g)</div>
+                        <div class="col-md-1">Kcal</div>
                     </div>
                     <div id="nutritionRows">
                         {% for row in rows %}
@@ -64,10 +72,12 @@
                                     <option value="Stk" {% if row.reference_unit == 'Stk' %}selected{% endif %}>pro 1 Stk</option>
                                 </select>
                             </div>
-                            <div class="col-6 col-md-2"><input type="number" name="calories[]" class="form-control form-control-sm" value="{{ row.calories }}" placeholder="Kcal"></div>
-                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="protein[]" class="form-control form-control-sm" value="{{ row.protein }}" placeholder="Eiweiß"></div>
-                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm" value="{{ row.carbs }}" placeholder="Kohlh."></div>
-                            <div class="col-4 col-md-2"><input type="number" step="0.1" name="fat[]" class="form-control form-control-sm" value="{{ row.fat }}" placeholder="Fett"></div>
+                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="protein[]" class="form-control form-control-sm nutrition-protein" value="{{ row.protein }}" placeholder="Eiweiß"></div>
+                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm nutrition-carbs" value="{{ row.carbs }}" placeholder="Kohlh."></div>
+                            <div class="col-4 col-md-2"><input type="number" step="0.1" name="fat[]" class="form-control form-control-sm nutrition-fat" value="{{ row.fat }}" placeholder="Fett"></div>
+                            <div class="col-6 col-md-1">
+                                <input type="text" class="form-control form-control-sm text-muted nutrition-calories-display" value="{{ row.calories }}" title="Errechnet aus Eiweiß/Kohlenhydraten/Fett" disabled>
+                            </div>
                         </div>
                         {% endfor %}
                     </div>
@@ -89,5 +99,26 @@ wireFuzzyFilter(
     document.getElementById('nutritionFilter'), '.nutrition-row',
     row => row.querySelector('input[name="canonical_name[]"]').value
 );
+
+// Kcal-Anzeige live aus Eiweiß/Kohlenhydraten/Fett nachführen (Atwater-
+// Faustregel 4/4/9 kcal je g - dieselbe Formel wie services/nutrition.py:
+// compute_calories()) - rein informativ, wird nicht mit abgeschickt (das
+// Feld ist disabled), der Server errechnet den Wert beim Anzeigen ohnehin
+// selbst neu.
+document.querySelectorAll('.nutrition-row').forEach(row => {
+    const proteinInput = row.querySelector('.nutrition-protein');
+    const carbsInput = row.querySelector('.nutrition-carbs');
+    const fatInput = row.querySelector('.nutrition-fat');
+    const caloriesDisplay = row.querySelector('.nutrition-calories-display');
+
+    function recalcCalories() {
+        const protein = parseFloat(proteinInput.value) || 0;
+        const carbs = parseFloat(carbsInput.value) || 0;
+        const fat = parseFloat(fatInput.value) || 0;
+        caloriesDisplay.value = Math.round(protein * 4 + carbs * 4 + fat * 9);
+    }
+
+    [proteinInput, carbsInput, fatInput].forEach(input => input.addEventListener('input', recalcCalories));
+});
 </script>
 {% endblock %}

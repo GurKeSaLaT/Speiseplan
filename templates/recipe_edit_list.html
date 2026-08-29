@@ -134,10 +134,10 @@
                         <div class="form-text">Ohne Häkchen werden die Nährwerte automatisch aus den Zutaten berechnet (siehe ⚙️ Einstellungen → 🍎 Nährwerte).</div>
                     </div>
                     <div class="row mb-3">
-                        <div class="col-3"><label class="small text-muted mb-0">Kcal</label><input type="number" name="calories" class="form-control form-control-sm" value="{{ recipe.calories }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Eiweiß</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm" value="{{ recipe.protein }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Kohlh.</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm" value="{{ recipe.carbs }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
-                        <div class="col-3"><label class="small text-muted mb-0">Fett</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm" value="{{ recipe.fat }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Kcal</label><input type="number" class="form-control form-control-sm nutrition-calories-display" value="{{ recipe.calories }}" title="Errechnet aus Eiweiß/Kohlenhydraten/Fett" disabled></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Eiweiß</label><input type="number" step="0.1" name="protein" class="form-control form-control-sm nutrition-protein" value="{{ recipe.protein }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Kohlh.</label><input type="number" step="0.1" name="carbs" class="form-control form-control-sm nutrition-carbs" value="{{ recipe.carbs }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
+                        <div class="col-3"><label class="small text-muted mb-0">Fett</label><input type="number" step="0.1" name="fat" class="form-control form-control-sm nutrition-fat" value="{{ recipe.fat }}" {% if not recipe.nutrition_override %}disabled{% endif %}></div>
                     </div>
 
                     <div class="mb-3">
@@ -209,16 +209,39 @@ window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 <script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_alias_hint.js') }}"></script>
 <script>
-// Pro Bearbeiten-Modal (ein Rezept = eine Checkbox) die Nährwertfelder je
-// nach "manuell überschreiben"-Häkchen sperren/entsperren - mehrere Modals
-// gleichzeitig im DOM, daher über data-recipe-id im selben Modal gesucht statt
-// global.
+// Pro Bearbeiten-Modal (ein Rezept = eine Checkbox) die Eiweiß/Kohlenhydrate/
+// Fett-Felder je nach "manuell überschreiben"-Häkchen sperren/entsperren -
+// mehrere Modals gleichzeitig im DOM, daher über data-recipe-id im selben
+// Modal gesucht statt global. Kcal bleibt IMMER gesperrt (kein
+// name-Attribut, wird nie mitgeschickt) - es gibt sich immer aus den
+// anderen drei Werten (Atwater-Faustregel, siehe services/nutrition.py:
+// compute_calories()), auch im Override-Fall.
 document.querySelectorAll('.nutrition-override-toggle').forEach(toggle => {
     toggle.addEventListener('change', function() {
         const modal = this.closest('.modal-content');
-        modal.querySelectorAll('input[name="calories"], input[name="protein"], input[name="carbs"], input[name="fat"]')
+        modal.querySelectorAll('input[name="protein"], input[name="carbs"], input[name="fat"]')
             .forEach(input => { input.disabled = !this.checked; });
     });
+});
+
+// Kcal-Anzeige je Modal live aus Eiweiß/Kohlenhydraten/Fett nachführen
+// (rein informativ, wird nicht mitgeschickt - der Server errechnet den
+// Wert beim Speichern ohnehin selbst neu).
+document.querySelectorAll('.modal-content').forEach(modal => {
+    const proteinInput = modal.querySelector('.nutrition-protein');
+    const carbsInput = modal.querySelector('.nutrition-carbs');
+    const fatInput = modal.querySelector('.nutrition-fat');
+    const caloriesDisplay = modal.querySelector('.nutrition-calories-display');
+    if (!proteinInput || !carbsInput || !fatInput || !caloriesDisplay) return;
+
+    function recalcCalories() {
+        const protein = parseFloat(proteinInput.value) || 0;
+        const carbs = parseFloat(carbsInput.value) || 0;
+        const fat = parseFloat(fatInput.value) || 0;
+        caloriesDisplay.value = Math.round(protein * 4 + carbs * 4 + fat * 9);
+    }
+
+    [proteinInput, carbsInput, fatInput].forEach(input => input.addEventListener('input', recalcCalories));
 });
 
 // categoryOptionsHtml() (Baut die <option>-Liste für eine Einkaufslisten-

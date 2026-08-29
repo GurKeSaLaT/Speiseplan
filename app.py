@@ -224,6 +224,19 @@ def init_db():
         db.session.execute(text("ALTER TABLE plan_day_side ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
 
+    # IngredientNutrition.calories entfernt: Kalorien sind aus Eiweiß/
+    # Kohlenhydraten/Fett errechenbar (siehe services/nutrition.py:
+    # compute_calories()) und wären als eigens gepflegter Wert nur
+    # redundant. Anders als bei plan_day/side_recipe_id (siehe oben) ist
+    # calories hier KEIN Fremdschlüssel - ein direktes DROP COLUMN
+    # funktioniert deshalb ohne den dortigen Tabellen-Neuaufbau-Umweg.
+    existing_ingredient_nutrition_columns = {
+        row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient_nutrition)"))
+    }
+    if 'calories' in existing_ingredient_nutrition_columns:
+        db.session.execute(text("ALTER TABLE ingredient_nutrition DROP COLUMN calories"))
+        db.session.commit()
+
     # Erststart mit komplett leerer Datenbank: ein sinnvoller Grundstock an
     # Kategorien, damit die App nicht mit einer leeren Kategorie-Liste
     # (und damit unbenutzbarer automatischer Planung) startet. Wird NUR

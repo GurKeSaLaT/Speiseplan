@@ -37,6 +37,13 @@ _normalize_unit) - das ist bewusst NUR eine Lockerung für den Nährwert-
 ABGLEICH, NICHT für services/units.py: normalize_amount_unit() selbst, da
 unterschiedliche Schreibweisen auf der Einkaufsliste weiterhin als eigene
 Posten geführt werden sollen.
+
+Kalorien werden NIRGENDS als eigener Wert gepflegt oder aufsummiert -
+weder bei IngredientNutrition noch bei Recipe.calories - sondern immer
+aus Eiweiß/Kohlenhydraten/Fett errechnet (compute_calories() unten, die
+Atwater-Faustregel: 4 kcal je g Eiweiß/Kohlenhydrate, 9 kcal je g Fett).
+Ein zusätzlich gepflegter Kalorienwert wäre nur redundant und könnte den
+drei anderen Werten widersprechen.
 """
 
 from collections import Counter
@@ -68,6 +75,15 @@ def _normalize_unit(unit):
     return 'stk' if key in _PIECE_LIKE_UNITS else key
 
 
+def compute_calories(protein, carbs, fat):
+    """Errechnet Kalorien aus Eiweiß/Kohlenhydraten/Fett nach der
+    Atwater-Faustregel (4 kcal je g Eiweiß/Kohlenhydrate, 9 kcal je g
+    Fett) - die einzige Stelle, an der Kalorien überhaupt bestimmt werden
+    (siehe Moduldocstring). None-Werte zählen als 0, damit Aufrufer nicht
+    selbst vorab absichern müssen."""
+    return round((protein or 0) * 4 + (carbs or 0) * 4 + (fat or 0) * 9)
+
+
 def get_nutrition_entry(name):
     """Liefert den Nährwert-Eintrag für eine Zutat (beliebige Schreibweise
     - wird intern über normalize_ingredient_name() auf ihre kanonische
@@ -82,17 +98,20 @@ def get_all_nutrition_entries():
     Grundlage für window.INGREDIENT_NUTRITION (siehe
     static/ingredient_alias_hint.js), damit der Inline-Hinweis beim
     Zutat-Eintragen ohne Extra-Request weiß, wofür schon ein Nährwert
-    hinterlegt ist."""
+    hinterlegt ist. calories ist dabei kein gespeicherter Wert, sondern
+    wird erst hier für die Anzeige aus protein/carbs/fat errechnet (siehe
+    compute_calories())."""
     return {
         e.canonical_name: {
             "reference_amount": e.reference_amount, "reference_unit": e.reference_unit,
-            "calories": e.calories, "protein": e.protein, "carbs": e.carbs, "fat": e.fat,
+            "calories": compute_calories(e.protein, e.carbs, e.fat),
+            "protein": e.protein, "carbs": e.carbs, "fat": e.fat,
         }
         for e in IngredientNutrition.query.all()
     }
 
 
-def set_nutrition(name, reference_unit, calories, protein, carbs, fat):
+def set_nutrition(name, reference_unit, protein, carbs, fat):
     """Legt einen Nährwert-Eintrag an oder aktualisiert ihn - name wird wie
     beim Nachschlagen auf seine kanonische Form normalisiert, damit
     "Spaghetti" und "Fusilli" (beide -> "Nudeln", falls alias-gruppiert)
@@ -102,7 +121,8 @@ def set_nutrition(name, reference_unit, calories, protein, carbs, fat):
     sich immer zwingend aus reference_unit (siehe REFERENCE_BASES/
     Moduldocstring). Ein unbekannter/leerer reference_unit-Wert fällt auf
     "g" zurück, statt einen Fehler zu werfen (z.B. bei manipulierten
-    Formulardaten)."""
+    Formulardaten). calories gibt es hier ebenfalls bewusst NICHT als
+    Parameter - es wird nirgends gespeichert, siehe Moduldocstring."""
     canonical = normalize_ingredient_name(name)
     reference_unit = (reference_unit or 'g').strip()
     if reference_unit not in REFERENCE_BASES:
@@ -114,7 +134,6 @@ def set_nutrition(name, reference_unit, calories, protein, carbs, fat):
         db.session.add(entry)
     entry.reference_amount = REFERENCE_BASES[reference_unit]
     entry.reference_unit = reference_unit
-    entry.calories = calories
     entry.protein = protein
     entry.carbs = carbs
     entry.fat = fat
@@ -169,8 +188,15 @@ def compute_recipe_nutrition(ingredient_rows, servings):
     "Stk") trägt 0 bei statt einen Fehler zu werfen - der Aufrufer sieht
     dadurch immer ein vollständiges (wenn auch ggf. unvollständiges)
     Ergebnis, nie einen Absturz wegen fehlender Daten.
+
+    calories wird NICHT separat aufsummiert (IngredientNutrition hat gar
+    keine eigene Kalorien-Spalte mehr), sondern erst ganz am Ende aus den
+    bereits fertig gerundeten protein/carbs/fat-PRO-PORTION-Werten
+    errechnet (siehe compute_calories()) - so stimmt der angezeigte
+    Kalorienwert immer exakt mit den ebenfalls angezeigten protein/carbs/
+    fat-Werten überein, statt durch getrennte Rundung leicht abzuweichen.
     """
-    totals = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+    totals = {"protein": 0.0, "carbs": 0.0, "fat": 0.0}
     for ing in ingredient_rows:
         name = ing["name"] if isinstance(ing, dict) else ing.name
         amount = ing["amount"] if isinstance(ing, dict) else ing.amount
@@ -183,15 +209,17 @@ def compute_recipe_nutrition(ingredient_rows, servings):
             continue
 
         factor = (amount or 0) / entry.reference_amount
-        totals["calories"] += factor * (entry.calories or 0)
         totals["protein"] += factor * (entry.protein or 0)
         totals["carbs"] += factor * (entry.carbs or 0)
         totals["fat"] += factor * (entry.fat or 0)
 
     servings = servings or 1
+    protein = round(totals["protein"] / servings, 1)
+    carbs = round(totals["carbs"] / servings, 1)
+    fat = round(totals["fat"] / servings, 1)
     return {
-        "calories": round(totals["calories"] / servings),
-        "protein": round(totals["protein"] / servings, 1),
-        "carbs": round(totals["carbs"] / servings, 1),
-        "fat": round(totals["fat"] / servings, 1),
+        "calories": compute_calories(protein, carbs, fat),
+        "protein": protein,
+        "carbs": carbs,
+        "fat": fat,
     }

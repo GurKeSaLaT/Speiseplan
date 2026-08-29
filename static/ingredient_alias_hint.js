@@ -135,13 +135,17 @@
                         <option value="Stk">pro 1 Stk</option>
                     </select>
                 </div>
-                <div class="col-3 col-md-2"><input type="number" class="form-control form-control-sm nutrition-calories" placeholder="Kcal"></div>
-                <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="Eiweiß"></div>
-                <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="Kohlh."></div>
-                <div class="col-3 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="Fett"></div>
+                <div class="col-4 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="Eiweiß"></div>
+                <div class="col-4 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="Kohlh."></div>
+                <div class="col-4 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="Fett"></div>
             </div>
             <button type="button" class="btn btn-sm btn-outline-danger mt-1 nutrition-set-btn">Nährwerte speichern</button>
         `;
+        // Kcal wird nirgends eingegeben, nur aus Eiweiß/Kohlenhydraten/Fett
+        // errechnet (services/nutrition.py: compute_calories()) - hier gibt
+        // es dafür also bewusst kein Eingabefeld, auch keine Live-Anzeige
+        // (die kompakte Inline-Box hat dafür keinen Platz, die berechneten
+        // Kcal sind auf der Nährwertverwaltungsseite einsehbar).
         box.querySelector('.nutrition-set-btn').addEventListener('click', () => submitNutrition(canonical, box, name, hintEl));
         wrap.appendChild(box);
     }
@@ -165,7 +169,6 @@
 
     function submitNutrition(canonicalName, box, name, hintEl) {
         const unit = box.querySelector('.nutrition-ref-unit').value;
-        const calories = parseFloat(box.querySelector('.nutrition-calories').value) || 0;
         const protein = parseFloat(box.querySelector('.nutrition-protein').value) || 0;
         const carbs = parseFloat(box.querySelector('.nutrition-carbs').value) || 0;
         const fat = parseFloat(box.querySelector('.nutrition-fat').value) || 0;
@@ -175,7 +178,7 @@
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF_TOKEN },
             body: JSON.stringify({
                 name: canonicalName, reference_unit: unit,
-                calories, protein, carbs, fat,
+                protein, carbs, fat,
             }),
         })
         .then(response => response.json().then(data => ({ ok: response.ok, data })))

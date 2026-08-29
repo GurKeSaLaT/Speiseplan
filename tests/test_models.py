@@ -116,10 +116,10 @@ def test_ingredient_nutrition_canonical_name_is_unique(app):
     from models import IngredientNutrition, db
 
     with app.app_context():
-        db.session.add(IngredientNutrition(canonical_name="Nudeln", calories=350))
+        db.session.add(IngredientNutrition(canonical_name="Nudeln", protein=12))
         db.session.commit()
 
-        db.session.add(IngredientNutrition(canonical_name="Nudeln", calories=999))
+        db.session.add(IngredientNutrition(canonical_name="Nudeln", protein=99))
         with pytest.raises(IntegrityError):
             db.session.commit()
         db.session.rollback()
@@ -135,5 +135,4 @@ def test_ingredient_nutrition_defaults(app):
 
         assert entry.reference_amount == 100
         assert entry.reference_unit == "g"
-        assert entry.calories == 0
         assert entry.protein == 0.0

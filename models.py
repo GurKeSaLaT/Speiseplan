@@ -83,9 +83,13 @@ class Recipe(db.Model):
     # Portionsanzahl gilt, diese Felder hier aber PRO Portion. Bleiben
     # trotzdem direkt beschreibbare Spalten (nicht rein berechnet/nicht
     # gespeichert): nutrition_override=True erlaubt weiterhin eine manuell
-    # eingetragene, nie automatisch überschriebene Angabe - z.B. wenn für
-    # ein Fertigprodukt nur der Nährwert auf der Packung bekannt ist, nicht
-    # aber der einzelner Zutaten.
+    # eingetragene, nie automatisch überschriebene Angabe für protein/
+    # carbs/fat - z.B. wenn für ein Fertigprodukt nur der Nährwert auf der
+    # Packung bekannt ist, nicht aber der einzelner Zutaten. calories
+    # selbst wird dabei NIE direkt eingegeben, auch nicht im Override-Fall
+    # - es ergibt sich immer aus protein/carbs/fat (services/nutrition.py:
+    # compute_calories(), Atwater-Faustregel 4/4/9 kcal je g), um die
+    # Angabe nicht redundant und potenziell widersprüchlich zu machen.
     calories = db.Column(db.Integer, default=0)
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
@@ -320,12 +324,17 @@ class IngredientNutrition(db.Model):
     abweichender Einheit zur tatsächlichen Ingredient-Zeile eines Rezepts
     (z.B. Referenz in "g" hinterlegt, aber in diesem Rezept in "Stk"
     verwendet) trägt beim Berechnen einfach 0 bei - kein Fehler, nur eine
-    unvollständige Angabe, die sich jederzeit nachtragen lässt."""
+    unvollständige Angabe, die sich jederzeit nachtragen lässt.
+
+    Bewusst KEINE eigene calories-Spalte: Kalorien lassen sich aus
+    Eiweiß/Kohlenhydraten/Fett errechnen (4 kcal/g je Eiweiß und
+    Kohlenhydrate, 9 kcal/g Fett - die Atwater-Faustregel) und wären als
+    zusätzlich gepflegter Wert nur eine redundante, potenziell
+    widersprüchliche Angabe. Siehe services/nutrition.py: compute_calories()."""
     id = db.Column(db.Integer, primary_key=True)
     canonical_name = db.Column(db.String(100), unique=True, nullable=False, index=True)
     reference_amount = db.Column(db.Float, nullable=False, default=100)
     reference_unit = db.Column(db.String(20), nullable=False, default='g')
-    calories = db.Column(db.Integer, default=0)
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)

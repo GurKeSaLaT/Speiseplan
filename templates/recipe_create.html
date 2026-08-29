@@ -98,10 +98,10 @@
                         <div class="form-text">Ohne Häkchen werden die Nährwerte automatisch aus den Zutaten berechnet (siehe ⚙️ Einstellungen → 🍎 Nährwerte) - beim Speichern, daher hier zunächst leer.</div>
                     </div>
                     <div class="row g-3 mb-4">
-                        <div class="col-3"><label class="small text-muted fw-bold">Kcal</label><input type="number" name="calories" class="form-control" disabled></div>
-                        <div class="col-3"><label class="small text-muted fw-bold">Eiweiß (g)</label><input type="number" step="0.1" name="protein" class="form-control" disabled></div>
-                        <div class="col-3"><label class="small text-muted fw-bold">Kohlh. (g)</label><input type="number" step="0.1" name="carbs" class="form-control" disabled></div>
-                        <div class="col-3"><label class="small text-muted fw-bold">Fett (g)</label><input type="number" step="0.1" name="fat" class="form-control" disabled></div>
+                        <div class="col-3"><label class="small text-muted fw-bold">Kcal</label><input type="number" id="caloriesDisplay" class="form-control" disabled title="Errechnet aus Eiweiß/Kohlenhydraten/Fett"></div>
+                        <div class="col-3"><label class="small text-muted fw-bold">Eiweiß (g)</label><input type="number" step="0.1" name="protein" id="proteinInput" class="form-control" disabled></div>
+                        <div class="col-3"><label class="small text-muted fw-bold">Kohlh. (g)</label><input type="number" step="0.1" name="carbs" id="carbsInput" class="form-control" disabled></div>
+                        <div class="col-3"><label class="small text-muted fw-bold">Fett (g)</label><input type="number" step="0.1" name="fat" id="fatInput" class="form-control" disabled></div>
                     </div>
 
                     <div class="mb-4">
@@ -171,18 +171,33 @@ window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 // eingebundenen static/ingredient_category_select.js - dieselbe Funktion
 // nutzt auch recipe_edit_list.html, daher dort nicht dupliziert gepflegt.
 
-// Nährwert-Felder sind standardmäßig deaktiviert (Nährwerte werden beim
-// Speichern automatisch aus den Zutaten berechnet, siehe
+// Eiweiß/Kohlenhydrate/Fett sind standardmäßig deaktiviert (Nährwerte
+// werden beim Speichern automatisch aus den Zutaten berechnet, siehe
 // routes/recipes.py: add_recipe()) - erst das "manuell eintragen"-
 // Häkchen schaltet sie frei. Ein DEAKTIVIERTES Feld wird beim Absenden
 // gar nicht erst mitgeschickt (siehe HTML-Spec) - der Server behandelt
 // ein fehlendes nutrition_override-Häkchen ohnehin identisch zu "immer
 // berechnen", das Deaktivieren hier ist also nur die entsprechende
-// UI-Vorwegnahme.
+// UI-Vorwegnahme. Kcal bleibt dabei IMMER deaktiviert (kein name-Attribut,
+// wird also ohnehin nie mitgeschickt) - es gibt sich immer aus den
+// anderen drei Werten (Atwater-Faustregel 4/4/9 kcal je g, siehe
+// services/nutrition.py: compute_calories()), auch im Override-Fall.
 document.getElementById('nutritionOverride')?.addEventListener('change', function() {
-    document.querySelectorAll('input[name="calories"], input[name="protein"], input[name="carbs"], input[name="fat"]')
+    document.querySelectorAll('input[name="protein"], input[name="carbs"], input[name="fat"]')
         .forEach(input => { input.disabled = !this.checked; });
 });
+
+// Live-Vorschau der errechneten Kcal, sobald Eiweiß/Kohlenhydrate/Fett
+// eingetragen werden (nur Anzeige, siehe oben - wird nicht mitgeschickt).
+function recalcCaloriesDisplay() {
+    const protein = parseFloat(document.getElementById('proteinInput').value) || 0;
+    const carbs = parseFloat(document.getElementById('carbsInput').value) || 0;
+    const fat = parseFloat(document.getElementById('fatInput').value) || 0;
+    document.getElementById('caloriesDisplay').value = Math.round(protein * 4 + carbs * 4 + fat * 9);
+}
+['proteinInput', 'carbsInput', 'fatInput'].forEach(id =>
+    document.getElementById(id).addEventListener('input', recalcCaloriesDisplay)
+);
 
 // Fügt eine weitere leere Zutaten-Zeile (Name/Menge/Einheit/Kategorie) hinzu.
 // Die name-Attribute enden bewusst auf "[]" und sind für alle Zeilen
@@ -250,10 +265,10 @@ function importRecipe() {
 // sich aus den Importdaten nicht zuverlässig ableiten lässt).
 function applyImportedRecipe(data) {
     document.querySelector('input[name="name"]').value = data.name || '';
-    document.querySelector('input[name="calories"]').value = data.calories || '';
-    document.querySelector('input[name="protein"]').value = data.protein || '';
-    document.querySelector('input[name="carbs"]').value = data.carbs || '';
-    document.querySelector('input[name="fat"]').value = data.fat || '';
+    document.getElementById('proteinInput').value = data.protein || '';
+    document.getElementById('carbsInput').value = data.carbs || '';
+    document.getElementById('fatInput').value = data.fat || '';
+    recalcCaloriesDisplay();
     document.querySelector('input[name="servings"]').value = data.servings || 2;
     document.querySelector('input[name="source_url"]').value = data.source_url || '';
     document.querySelector('textarea[name="instructions"]').value = data.instructions || '';
