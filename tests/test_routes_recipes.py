@@ -331,6 +331,48 @@ def test_recipe_edit_list_view_shows_ingredients_in_display_unit(client, app, ma
     assert b'value="kg"' in resp.data
 
 
+def test_recipe_edit_list_view_shows_alias_name_as_display_text(client, app, make_recipe):
+    """Eine Zutatenzeile mit gesetztem Alias zeigt standardmäßig den
+    aufgelösten kanonischen Namen (.ing-name-display), NICHT den
+    tatsächlich für dieses Rezept gespeicherten Namen - der bleibt
+    unangetastet im (versteckten) echten Formularfeld, damit ein
+    Speichern ohne bewusste Bearbeitung den ursprünglichen Namen nicht
+    stillschweigend durch den Alias ersetzt (siehe
+    static/ingredient_alias_hint.js: wireEditableIngredientNames)."""
+    from services.ingredient_aliases import set_alias
+
+    recipe_id = make_recipe("Pasta-Gericht", ingredients=[{"name": "Fusilli", "amount": 400, "unit": "g"}])
+    with app.app_context():
+        set_alias("Fusilli", "Nudeln")
+
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="form-control form-control-sm ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Nudeln</span>' in html
+    # Das eigentliche, editierbare Feld behält den echten gespeicherten Namen.
+    assert 'class="form-control form-control-sm ing-name-input d-none" value="Fusilli"' in html
+
+
+def test_recipe_edit_list_view_shows_own_name_when_no_alias(client, make_recipe):
+    make_recipe("Solo-Gericht", ingredients=[{"name": "Radicchio", "amount": 1, "unit": "Stk"}])
+
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Radicchio</span>' in html
+
+
+def test_recipe_edit_list_view_has_editable_name_wiring_script(client, make_recipe):
+    """static/ingredient_alias_hint.js muss eingebunden sein - es enthält
+    sowohl das Klick-zum-Bearbeiten-Verhalten als auch das initiale
+    Nachladen des Alias-/Nährwert-Hinweises für bereits ausgefüllte
+    Zutatenzeilen (siehe dortige Kommentare)."""
+    make_recipe("Irgendein Gericht", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    assert b"ingredient_alias_hint.js" in resp.data
+
+
 def test_edit_recipe_unknown_id_returns_404(client, make_category):
     cat_id = make_category()
     resp = client.post(f"/edit-recipe/999999", data=_base_recipe_form(cat_id))

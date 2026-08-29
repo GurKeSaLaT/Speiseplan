@@ -255,4 +255,57 @@
         if (!hintEl) return;
         renderHint(hintEl, titleCase(event.target.value));
     });
+
+    /** Zeigt bei bereits bestehenden Zutatenzeilen (recipe_edit_list.html)
+     * standardmäßig den aufgelösten Alias-Namen (server-seitig als
+     * .ing-name-display-<span> vorbefüllt, siehe dort) statt des
+     * tatsächlich gespeicherten Namens - erst ein Klick/Tastatur-Aktivieren
+     * blendet das eigentliche, editierbare <input> ein (dessen Wert sich
+     * dadurch NIE von selbst ändert). Verlässt man das Feld wieder (blur)
+     * OHNE dass currentTarget noch fokussiert ist, wird wieder der
+     * (ggf. neu aufgelöste) Alias-Name angezeigt. Läuft einmalig beim
+     * Skript-Laden über alle zu diesem Zeitpunkt im DOM stehenden Paare -
+     * die per addEditIngredientField() dynamisch angehängten NEUEN Zeilen
+     * haben bewusst KEIN .ing-name-display (eine noch leere neue Zutat hat
+     * nichts zum "Auflösen"), brauchen diese Verdrahtung also nicht. */
+    function wireEditableIngredientNames() {
+        document.querySelectorAll('.ing-name-display').forEach(display => {
+            const input = display.nextElementSibling;
+            if (!input || !input.matches('.ing-name-input')) return;
+
+            function showDisplay() {
+                display.textContent = ALIASES[titleCase(input.value)] || input.value;
+                display.classList.remove('d-none');
+                input.classList.add('d-none');
+            }
+            function showInput() {
+                display.classList.add('d-none');
+                input.classList.remove('d-none');
+                input.focus();
+                input.select();
+            }
+
+            display.addEventListener('click', showInput);
+            display.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); showInput(); }
+            });
+            input.addEventListener('blur', showDisplay);
+        });
+    }
+    wireEditableIngredientNames();
+
+    /** Der Alias-/Nährwert-Hinweis (renderHint, siehe oben) erscheint sonst
+     * erst, sobald in ein Namensfeld getippt wird (siehe der
+     * 'input'-Listener oben) - beim Öffnen eines Bearbeiten-Modals mit
+     * bereits ausgefüllten Zutatenzeilen (recipe_edit_list.html) stünde er
+     * dadurch trotz vorhandenem Wert zunächst leer da, inklusive des
+     * "Nährwerte nachtragen"-Kastens, den man dann faktisch nie zu sehen
+     * bekäme. Läuft deshalb einmalig für jedes bereits ausgefüllte
+     * Namensfeld beim Laden nach - identisch zu einem simulierten
+     * 'input'-Ereignis. */
+    document.querySelectorAll('input[name="ing_name[]"]').forEach(input => {
+        if (!input.value.trim()) return;
+        const hintEl = hintContainerFor(input);
+        if (hintEl) renderHint(hintEl, titleCase(input.value));
+    });
 })();

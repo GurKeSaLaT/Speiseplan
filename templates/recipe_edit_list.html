@@ -65,6 +65,18 @@
     {% endfor %}
 </datalist>
 
+<style>
+/* Anzeige-Zeile für den aufgelösten Alias-Namen einer Zutat (siehe
+   static/ingredient_alias_hint.js: wireEditableIngredientNames) - optisch
+   wie das <input> darunter, aber selbst kein Formularfeld. */
+.ing-name-display {
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+</style>
+
 <!-- MODALS FÜR DAS BEARBEITEN -->
 {% for recipe in recipes %}
 <div class="modal fade" id="editModal{{ recipe.id }}" tabindex="-1" aria-hidden="true">
@@ -153,7 +165,21 @@
                         <div class="ingredient-row mb-1">
                             <div class="row g-2">
                                 <div class="col-4">
-                                    <input type="text" name="ing_name[]" class="form-control form-control-sm" value="{{ ing.name }}" list="ingredients-datalist" autocomplete="off">
+                                    {# Zeigt standardmäßig den (über eine evtl.
+                                       bestehende Alias-Zuordnung aufgelösten)
+                                       kanonischen Namen (disp[2]) statt des
+                                       tatsächlich für DIESES Rezept
+                                       gespeicherten Namens - ein Klick
+                                       blendet stattdessen das echte,
+                                       editierbare Feld ein (siehe
+                                       static/ingredient_alias_hint.js:
+                                       wireEditableIngredientNames). Der
+                                       eigentliche Eingabewert (ing.name)
+                                       ändert sich dadurch NIE von sich aus -
+                                       nur eine bewusste Bearbeitung durch den
+                                       Nutzer überschreibt ihn. #}
+                                    <span class="form-control form-control-sm ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">{{ disp[2] }}</span>
+                                    <input type="text" name="ing_name[]" class="form-control form-control-sm ing-name-input d-none" value="{{ ing.name }}" list="ingredients-datalist" autocomplete="off">
                                 </div>
                                 <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" value="{{ disp[0] }}"></div>
                                 <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" value="{{ disp[1] }}"></div>

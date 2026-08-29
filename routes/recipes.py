@@ -27,6 +27,7 @@ from models import db, Category, Recipe, Ingredient
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
+from services.ingredient_aliases import normalize_ingredient_name
 from services.nutrition import compute_calories, compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.settings import get_display_units
@@ -81,11 +82,16 @@ def recipe_edit_list_view():
     recipe_season_info = {}
     # Zutatenmengen werden kanonisch (immer g/ml) gespeichert, aber in der
     # vom Nutzer gewählten Einheit (siehe services/settings.py) im
-    # Bearbeiten-Formular vorbefüllt - Ingredient-ID -> (amount, unit) für
-    # die Formularfelder in recipe_edit_list.html. Ein Speichern OHNE
-    # Änderung liefert über normalize_amount_unit() wieder exakt denselben
-    # kanonischen Wert (siehe services/units.py-Docstring), das Umrechnen
-    # hier ist also verlustfrei umkehrbar.
+    # Bearbeiten-Formular vorbefüllt - Ingredient-ID -> (amount, unit,
+    # canonical_name) für die Formularfelder in recipe_edit_list.html. Ein
+    # Speichern OHNE Änderung liefert über normalize_amount_unit() wieder
+    # exakt denselben kanonischen Wert (siehe services/units.py-Docstring),
+    # das Umrechnen hier ist also verlustfrei umkehrbar. canonical_name
+    # (dritter Wert) ist der über eine evtl. bestehende Alias-Zuordnung
+    # aufgelöste Name (siehe services/ingredient_aliases.py) - das Template
+    # zeigt ihn standardmäßig statt des tatsächlich gespeicherten Namens an
+    # (erst ein Klick ins Feld legt Letzteren zum Bearbeiten frei, siehe
+    # static/ingredient_alias_hint.js: wireEditableIngredientNames).
     display_units = get_display_units()
     ingredient_display = {}
     for recipe in recipes:
@@ -99,7 +105,8 @@ def recipe_edit_list_view():
             'labels': format_recipe_seasons(recipe),
         }
         for ing in recipe.ingredients:
-            ingredient_display[ing.id] = convert_for_display(ing.amount, ing.unit, display_units)
+            display_amount, display_unit = convert_for_display(ing.amount, ing.unit, display_units)
+            ingredient_display[ing.id] = (display_amount, display_unit, normalize_ingredient_name(ing.name))
 
     return render_template(
         'recipe_edit_list.html', recipes=recipes, categories=categories,
