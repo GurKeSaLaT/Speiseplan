@@ -1,10 +1,23 @@
 {# Rezept-Übersicht mit Bearbeiten/Löschen (/manage/recipe/edit-list). Jedes
-   Rezept bekommt sein EIGENES Bootstrap-Modal mit vollständig vorbefülltem
-   Bearbeiten-Formular (id "editModal<recipe.id>") - siehe routes/recipes.py:
-   recipe_edit_list_view() für recipe_season_info, das pro Rezept die
-   angehakten Saison-Presets und den ggf. eigenen Zeitraum aufbereitet.
-   Die ingredients-datalist (Zutaten-Autovervollständigung) wird nur EINMAL
-   global definiert und von allen Modals gemeinsam über list="..." referenziert. #}
+   Rezept bekommt sein vollständig vorbefülltes Bearbeiten-Formular - siehe
+   routes/recipes.py: recipe_edit_list_view() für recipe_season_info, das
+   pro Rezept die angehakten Saison-Presets und den ggf. eigenen Zeitraum
+   aufbereitet. Die ingredients-datalist (Zutaten-Autovervollständigung)
+   wird nur EINMAL global definiert und von allen Formularen gemeinsam
+   über list="..." referenziert.
+
+   WICHTIG: jedes Formular steckt in einem <template id="editModalTpl
+   <recipe.id>">, NICHT in einem eigenen, direkt aktiven .modal-div - bei
+   typischerweise 50-100+ Rezepten wären das ebenso viele voll gerenderte
+   <select>-Elemente (Kategorie je Zutatenzeile) gleichzeitig im DOM, nur
+   per CSS versteckt. Der Inhalt eines <template> ist dagegen inert: kein
+   Layout, keine Style-Berechnung, keine natives Autovervollständigen-/
+   Formular-Verhalten, bis er tatsächlich gebraucht wird - das machte sich
+   vorher als spürbares Ruckeln bemerkbar, sobald man in IRGENDEIN
+   Zutatenfeld klickte, unabhängig davon, welches Rezept gerade offen war.
+   static/recipe_edit_modal.js: openEditModal() klont den Inhalt des
+   passenden <template> beim Öffnen in das einzige, wiederverwendete
+   #editModalHost-Element und leert es beim Schließen wieder. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -36,7 +49,7 @@
                             {% endif %}
                         </div>
                         <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-warning fw-bold text-dark btn-sm px-3" data-bs-toggle="modal" data-bs-target="#editModal{{ recipe.id }}">
+                            <button type="button" class="btn btn-warning fw-bold text-dark btn-sm px-3" onclick="openEditModal({{ recipe.id }})">
                                 Bearbeiten ✏️
                             </button>
                             <button type="button" class="btn btn-outline-danger btn-sm px-3" onclick="deleteRecipeSafely({{ recipe.id }}, '{{ recipe.name }}')">
@@ -77,9 +90,16 @@
 }
 </style>
 
-<!-- MODALS FÜR DAS BEARBEITEN -->
+<!-- WIEDERVERWENDETES MODAL-GERÜST: der eigentliche Inhalt wird beim
+     Öffnen aus dem passenden <template> unten hineingeklont (siehe
+     static/recipe_edit_modal.js) und beim Schließen wieder geleert. -->
+<div class="modal fade" id="editModalHost" tabindex="-1" aria-hidden="true">
+</div>
+
+<!-- BEARBEITEN-FORMULARE, EINES PRO REZEPT (inert in <template>, siehe
+     Kommentar ganz oben in dieser Datei) -->
 {% for recipe in recipes %}
-<div class="modal fade" id="editModal{{ recipe.id }}" tabindex="-1" aria-hidden="true">
+<template id="editModalTpl{{ recipe.id }}">
     <div class="modal-dialog modal-md">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-warning text-dark">
@@ -173,7 +193,7 @@
                                        blendet stattdessen das echte,
                                        editierbare Feld ein (siehe
                                        static/ingredient_alias_hint.js:
-                                       wireEditableIngredientNames). Der
+                                       openIngredientNameField). Der
                                        eigentliche Eingabewert (ing.name)
                                        ändert sich dadurch NIE von sich aus -
                                        nur eine bewusste Bearbeitung durch den
@@ -234,7 +254,7 @@
             </form>
         </div>
     </div>
-</div>
+</template>
 {% endfor %}
 
 <script>
@@ -244,42 +264,8 @@ window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>
 <script src="{{ url_for('static', filename='ingredient_alias_hint.js') }}"></script>
+<script src="{{ url_for('static', filename='recipe_edit_modal.js') }}"></script>
 <script>
-// Pro Bearbeiten-Modal (ein Rezept = eine Checkbox) die Eiweiß/Kohlenhydrate/
-// Fett-Felder je nach "manuell überschreiben"-Häkchen sperren/entsperren -
-// mehrere Modals gleichzeitig im DOM, daher über data-recipe-id im selben
-// Modal gesucht statt global. Kcal bleibt IMMER gesperrt (kein
-// name-Attribut, wird nie mitgeschickt) - es gibt sich immer aus den
-// anderen drei Werten (Atwater-Faustregel, siehe services/nutrition.py:
-// compute_calories()), auch im Override-Fall.
-document.querySelectorAll('.nutrition-override-toggle').forEach(toggle => {
-    toggle.addEventListener('change', function() {
-        const modal = this.closest('.modal-content');
-        modal.querySelectorAll('input[name="protein"], input[name="carbs"], input[name="fat"]')
-            .forEach(input => { input.disabled = !this.checked; });
-    });
-});
-
-// Kcal-Anzeige je Modal live aus Eiweiß/Kohlenhydraten/Fett nachführen
-// (rein informativ, wird nicht mitgeschickt - der Server errechnet den
-// Wert beim Speichern ohnehin selbst neu).
-document.querySelectorAll('.modal-content').forEach(modal => {
-    const proteinInput = modal.querySelector('.nutrition-protein');
-    const carbsInput = modal.querySelector('.nutrition-carbs');
-    const fatInput = modal.querySelector('.nutrition-fat');
-    const caloriesDisplay = modal.querySelector('.nutrition-calories-display');
-    if (!proteinInput || !carbsInput || !fatInput || !caloriesDisplay) return;
-
-    function recalcCalories() {
-        const protein = parseFloat(proteinInput.value) || 0;
-        const carbs = parseFloat(carbsInput.value) || 0;
-        const fat = parseFloat(fatInput.value) || 0;
-        caloriesDisplay.value = Math.round(protein * 4 + carbs * 4 + fat * 9);
-    }
-
-    [proteinInput, carbsInput, fatInput].forEach(input => input.addEventListener('input', recalcCalories));
-});
-
 // categoryOptionsHtml() (Baut die <option>-Liste für eine Einkaufslisten-
 // Kategorie-Auswahl aus window.SHOPPING_CATEGORIES) kommt aus dem separat
 // eingebundenen static/ingredient_category_select.js - dieselbe Funktion
@@ -311,55 +297,6 @@ if (recipeFilterInput) {
     recipeFilterInput.addEventListener('input', () => {
         sessionStorage.setItem(FILTER_STORAGE_KEY, recipeFilterInput.value);
     });
-}
-
-// Öffnet automatisch das Bearbeiten-Modal eines bestimmten Rezepts, wenn
-// die Seite mit ?edit=<id> aufgerufen wird - genutzt vom "✏️ Rezept
-// bearbeiten"-Button im read-only Detail-Fenster auf der Plan-Seite
-// (siehe templates/plan.html/static/plan.js: openRecipeDetail), der
-// direkt zum passenden Rezept springen soll statt nur zur allgemeinen
-// Liste. Eine unbekannte/fehlende id wird stillschweigend ignoriert (kein
-// Modal mit diesem Namen im DOM).
-//
-// In einen DOMContentLoaded-Handler gepackt, statt sofort auszuführen:
-// dieses Skript steht (wie der ganze Seiteninhalt) VOR
-// bootstrap.bundle.min.js im DOM (siehe templates/base.html - das Skript
-// wird ganz am Ende des <body> eingebunden), ein direkter Aufruf hier
-// träfe also auf ein noch undefiniertes window.bootstrap. DOMContentLoaded
-// feuert dagegen erst, nachdem alle synchronen Skripte der Seite (auch
-// das spätere bootstrap.bundle.min.js) bereits ausgeführt wurden.
-document.addEventListener('DOMContentLoaded', () => {
-    const editId = new URLSearchParams(location.search).get('edit');
-    if (!editId) return;
-    const modalEl = document.getElementById('editModal' + editId);
-    if (modalEl) {
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    }
-});
-
-// Fügt im Bearbeiten-Modal eines bestimmten Rezepts eine weitere leere
-// Zutaten-Zeile hinzu (analog zu addIngredientField() in recipe_create.html,
-// aber pro Modal ein eigener Container, da auf dieser Seite gleichzeitig
-// mehrere Modals mit eigenen Zutatenlisten im DOM existieren).
-function addEditIngredientField(recipeId) {
-    const container = document.getElementById('edit-ingredients-container' + recipeId);
-    const div = document.createElement('div');
-    div.className = 'ingredient-row mb-1';
-    div.innerHTML = `
-        <div class="row g-2">
-            <div class="col-4">
-                <input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..." list="ingredients-datalist" autocomplete="off">
-            </div>
-            <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
-            <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
-            <div class="col-3"><select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">${categoryOptionsHtml()}</select></div>
-            <div class="col-1 d-grid">
-                <button type="button" class="btn btn-sm btn-outline-danger" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove()">✕</button>
-            </div>
-        </div>
-        <div class="ingredient-alias-hint small mt-1"></div>
-    `;
-    container.appendChild(div);
 }
 
 // Löscht ein Rezept per erzeugtem, sofort abgeschicktem POST-Formular (der

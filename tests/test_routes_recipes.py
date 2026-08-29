@@ -1,8 +1,11 @@
 """Tests für routes/recipes.py: Rezept anlegen/bearbeiten/löschen samt
 Zutaten und Saison-Zuordnung, sowie der chefkoch.de-Import-Preview-Endpunkt."""
+from pathlib import Path
 from unittest.mock import patch
 
 from services.recipe_import import RecipeImportError
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def _base_recipe_form(category_id, **overrides):
@@ -110,16 +113,24 @@ def test_recipe_edit_list_view_no_search_filter_when_empty(client):
 
 def test_recipe_edit_list_view_ingredient_row_has_delete_button(client, make_recipe):
     """Wie test_recipe_create_view_ingredient_row_has_delete_button, aber
-    für das Bearbeiten-Modal: sowohl die bestehenden Zutatenzeilen als auch
-    die leere Ausgangszeile und das addEditIngredientField()-JS-Template
-    brauchen den Löschen-Button."""
+    für das Bearbeiten-Formular: sowohl die bestehenden Zutatenzeilen als
+    auch die leere Ausgangszeile brauchen den Löschen-Button. Das
+    addEditIngredientField()-JS-Template dafür liegt (anders als beim
+    Anlegen-Formular) in der separaten static/recipe_edit_modal.js, siehe
+    test_recipe_edit_modal_js_has_delete_button_template unten."""
     make_recipe("Gericht mit Zutat", ingredients=[{"name": "Mehl", "amount": 100, "unit": "g"}])
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert html.count('class="ingredient-row') >= 2  # bestehende Zutat + leere Zeile
-    assert "div.className = 'ingredient-row" in html  # addEditIngredientField()-JS-Template
+    assert "recipe_edit_modal.js" in html
     assert "this.closest('.ingredient-row').remove()" in html
+
+
+def test_recipe_edit_modal_js_has_delete_button_template():
+    content = (STATIC_DIR / "recipe_edit_modal.js").read_text(encoding="utf-8")
+    assert "div.className = 'ingredient-row" in content  # addEditIngredientField()-JS-Template
+    assert "this.closest('.ingredient-row').remove()" in content
 
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
@@ -138,23 +149,33 @@ def test_recipe_edit_list_view_has_auto_open_edit_script(client, make_recipe):
     """Der "✏️ Rezept bearbeiten"-Button im Detail-Fenster auf der
     Plan-Seite (siehe templates/plan.html/static/plan.js:
     openRecipeDetail) verlinkt auf /manage/recipe/edit-list?edit=<id> -
-    diese Seite muss das per JS auswerten und automatisch das passende
-    Bearbeiten-Modal öffnen."""
-    make_recipe("Irgendein Gericht")
+    diese Seite muss static/recipe_edit_modal.js einbinden (das die
+    Auswertung übernimmt, siehe test_recipe_edit_modal_js_* unten) und
+    für jedes Rezept ein per openEditModal() klonbares <template> sowie
+    einen entsprechend verdrahteten "Bearbeiten"-Button bereitstellen."""
+    recipe_id = make_recipe("Irgendein Gericht")
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    assert b"URLSearchParams(location.search).get('edit')" in resp.data
-    assert b"editModal' + editId" in resp.data
-    # Muss NACH DOMContentLoaded laufen, nicht sofort: dieses Skript steht
-    # (wie der ganze Seiteninhalt) VOR bootstrap.bundle.min.js im DOM
-    # (siehe templates/base.html - das Skript wird ganz am Ende des
-    # <body> eingebunden) - ein sofortiger bootstrap.Modal-Aufruf hier
-    # träfe auf ein noch undefiniertes window.bootstrap und würde
-    # stillschweigend fehlschlagen, ohne dass sich das Modal öffnet.
     html = resp.get_data(as_text=True)
-    dcl_index = html.index("addEventListener('DOMContentLoaded'")
-    edit_id_index = html.index("URLSearchParams(location.search).get('edit')")
-    assert dcl_index < edit_id_index < html.index("bootstrap.Modal.getOrCreateInstance(modalEl).show()")
+    assert "recipe_edit_modal.js" in html
+    assert f'id="editModalTpl{recipe_id}"' in html
+    assert f'onclick="openEditModal({recipe_id})"' in html
+
+
+def test_recipe_edit_modal_js_auto_opens_after_dom_content_loaded():
+    """Der ?edit=<id>-Autostart darf erst NACH DOMContentLoaded laufen, da
+    er letztlich bootstrap.Modal aufruft (über openEditModal) - dieses
+    Skript steht (wie der ganze Seiteninhalt) VOR bootstrap.bundle.min.js
+    im DOM (siehe templates/base.html - das Bundle wird ganz am Ende des
+    <body> eingebunden), ein sofortiger Aufruf träfe also auf ein noch
+    undefiniertes window.bootstrap und würde stillschweigend
+    fehlschlagen, ohne dass sich das Modal öffnet."""
+    content = (STATIC_DIR / "recipe_edit_modal.js").read_text(encoding="utf-8")
+    assert "URLSearchParams(location.search).get('edit')" in content
+    dcl_index = content.index("addEventListener('DOMContentLoaded'")
+    edit_id_index = content.index("URLSearchParams(location.search).get('edit')")
+    open_call_index = content.index("openEditModal(editId)")
+    assert dcl_index < edit_id_index < open_call_index
 
 
 def test_recipe_edit_list_view_search_data_includes_category(client, make_category, make_recipe):

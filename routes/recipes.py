@@ -36,48 +36,59 @@ from services.units import convert_for_display, normalize_amount_unit
 recipes_bp = Blueprint('recipes', __name__)
 
 
+def _canonical_ingredient_list():
+    """Alphabetisch sortierte, über alle bestehenden Rezepte hinweg
+    EINZIGARTIGE Liste kanonischer (über eine evtl. bestehende
+    Alias-Zuordnung aufgelöster, siehe services/ingredient_aliases.py)
+    Zutatennamen - füllt in den Rezept-Formularen ein <datalist>-Element
+    (Autovervollständigung beim Tippen einer Zutat), damit z.B. "Zwiebel"
+    nicht in einem Rezept als "Zwiebeln" und im nächsten als "zwiebel"
+    landet.
+
+    Bewusst die KANONISCHEN statt der rohen, tatsächlich gespeicherten
+    Namen (deutlich weniger Einträge - ca. 240 statt über 600 bei den
+    tatsächlich vorkommenden Schreibweisen): schlägt damit von vornherein
+    den bereits gleichgesetzten Namen vor, statt weitere Varianten in die
+    Welt zu setzen, die man später erst wieder gleichsetzen müsste.
+    Nebeneffekt: ein <input list="..."> mit deutlich weniger Optionen ist
+    für den Browser beim Fokussieren auch spürbar schneller aufzubauen."""
+    existing_ingredients = db.session.query(Ingredient.name).distinct().all()
+    names = {normalize_ingredient_name(name) for (name,) in existing_ingredients if name and name.strip()}
+    return sorted(names)
+
+
 @recipes_bp.route('/manage/recipe/create')
 def recipe_create_view():
-    """Zeigt das Formular zum Anlegen eines neuen Rezepts.
-
-    Neben den Kategorien wird auch eine alphabetisch sortierte, über alle
-    bestehenden Rezepte hinweg EINZIGARTIGE Liste bereits verwendeter
-    Zutatennamen mitgeliefert (ingredient_list). Diese füllt im Formular
-    ein <datalist>-Element (Autovervollständigung beim Tippen einer neuen
-    Zutat), damit z.B. "Zwiebel" nicht in einem Rezept als "Zwiebeln" und
-    im nächsten als "zwiebel" landet.
-    """
+    """Zeigt das Formular zum Anlegen eines neuen Rezepts - siehe
+    _canonical_ingredient_list() für die Namens-Autovervollständigung."""
     categories = Category.query.all()
-    # distinct() dedupliziert auf DB-Ebene; das "if ing[0]" filtert defensiv
-    # rein leere Strings heraus, falls je ein Formular mit leerem
-    # Zutatennamen abgeschickt wurde.
-    existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
-    ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
-
-    return render_template('recipe_create.html', categories=categories, ingredient_list=ingredient_list, seasons=SEASONS)
+    return render_template(
+        'recipe_create.html', categories=categories,
+        ingredient_list=_canonical_ingredient_list(), seasons=SEASONS,
+    )
 
 
 @recipes_bp.route('/manage/recipe/edit-list')
 def recipe_edit_list_view():
-    """Zeigt die Liste aller Rezepte mit einem Bearbeiten-Modal pro Rezept
-    (siehe templates/recipe_edit_list.html - ein <div class="modal"> je
-    Rezept, per Bootstrap-Button geöffnet).
+    """Zeigt die Liste aller Rezepte mit einem Bearbeiten-Formular pro
+    Rezept (siehe templates/recipe_edit_list.html - server-seitig als
+    inertes <template>, wird per JS erst beim tatsächlichen Öffnen in das
+    eine wiederverwendete Modal geklont, siehe dortigen Kommentar und
+    static/recipe_edit_modal.js).
 
-    Da jedes Modal sein eigenes vorbefülltes Saison-Formular braucht (welche
-    Standard-Saison-Checkboxen sind angehakt, welcher eigene Zeitraum steht
-    in den Datumsfeldern), wird das für JEDES Rezept einzeln über
-    describe_recipe_seasons() aufbereitet und in recipe_season_info
-    (ein Dict, Rezept-ID -> aufbereitete Daten) an das Template gereicht.
-    Die 'custom_start'/'custom_end'-Werte bekommen dabei ein beliebiges
-    (Schaltjahr-taugliches) Platzhalterjahr vorangestellt, weil
-    <input type="date"> zwingend ein vollständiges Datum erwartet, obwohl
-    beim Speichern ohnehin nur Monat und Tag ausgewertet werden (siehe
-    services/seasons.py: parse_recipe_seasons).
+    Da jedes Formular sein eigenes vorbefülltes Saison-Formular braucht
+    (welche Standard-Saison-Checkboxen sind angehakt, welcher eigene
+    Zeitraum steht in den Datumsfeldern), wird das für JEDES Rezept
+    einzeln über describe_recipe_seasons() aufbereitet und in
+    recipe_season_info (ein Dict, Rezept-ID -> aufbereitete Daten) an das
+    Template gereicht. Die 'custom_start'/'custom_end'-Werte bekommen
+    dabei ein beliebiges (Schaltjahr-taugliches) Platzhalterjahr
+    vorangestellt, weil <input type="date"> zwingend ein vollständiges
+    Datum erwartet, obwohl beim Speichern ohnehin nur Monat und Tag
+    ausgewertet werden (siehe services/seasons.py: parse_recipe_seasons).
     """
     recipes = Recipe.query.all()
     categories = Category.query.all()
-    existing_ingredients = db.session.query(Ingredient.name).distinct().order_by(Ingredient.name).all()
-    ingredient_list = [ing[0] for ing in existing_ingredients if ing[0]]
 
     recipe_season_info = {}
     # Zutatenmengen werden kanonisch (immer g/ml) gespeichert, aber in der
@@ -91,7 +102,7 @@ def recipe_edit_list_view():
     # aufgelöste Name (siehe services/ingredient_aliases.py) - das Template
     # zeigt ihn standardmäßig statt des tatsächlich gespeicherten Namens an
     # (erst ein Klick ins Feld legt Letzteren zum Bearbeiten frei, siehe
-    # static/ingredient_alias_hint.js: wireEditableIngredientNames).
+    # static/ingredient_alias_hint.js: openIngredientNameField).
     display_units = get_display_units()
     ingredient_display = {}
     for recipe in recipes:
@@ -110,7 +121,7 @@ def recipe_edit_list_view():
 
     return render_template(
         'recipe_edit_list.html', recipes=recipes, categories=categories,
-        ingredient_list=ingredient_list, seasons=SEASONS, recipe_season_info=recipe_season_info,
+        ingredient_list=_canonical_ingredient_list(), seasons=SEASONS, recipe_season_info=recipe_season_info,
         ingredient_display=ingredient_display,
     )
 
