@@ -43,14 +43,29 @@
     // gesetzten Alias (siehe submitAlias unten) mit aktualisiert.
     let canonicalNames = new Set(Object.values(ALIASES));
 
-    /** Python-.title()-Äquivalent (grob) für einen clientseitigen
-     * Vorab-Check - muss nicht perfekt sein, da set_alias() serverseitig
-     * ohnehin die maßgebliche Normalisierung übernimmt (siehe
-     * services/ingredient_aliases.py: normalize_name). */
+    /** Python-.title()-Äquivalent für einen clientseitigen Vorab-Check -
+     * MUSS exakt dasselbe Ergebnis liefern wie Pythons str.title() (siehe
+     * services/ingredient_aliases.py: normalize_name), sonst schlagen
+     * ALIASES-Lookups für Namen mit Satzzeichen fehl (z.B. Pythons
+     * "(ca. 20 g) Ingwer".title() == "(Ca. 20 G) Ingwer" - jeder
+     * Buchstabe direkt NACH einem Nicht-Buchstaben wird groß, nicht nur
+     * der erste jedes leerzeichen-getrennten "Worts"). Eine frühere,
+     * einfachere Version hier trennte nur an Leerzeichen/Bindestrich und
+     * traf bei Klammern/Punkten wie oben die falsche Schreibweise -
+     * dadurch wurde weder der bestehende Alias gefunden noch beim
+     * Zurückklappen des Namensfelds der Alias statt des Rohnamens
+     * angezeigt. \p{L} (Unicode-"ist ein Buchstabe") statt eines festen
+     * a-z/äöü-Musters, damit das auch für Umlaute & Akzente korrekt
+     * greift wie Pythons eigene, unicode-bewusste .title(). */
     function titleCase(value) {
-        return value.trim().replace(/[^\s-]+/g, word =>
-            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-        );
+        let result = '';
+        let prevIsLetter = false;
+        for (const ch of value.trim()) {
+            const isLetter = /\p{L}/u.test(ch);
+            result += isLetter ? (prevIsLetter ? ch.toLowerCase() : ch.toUpperCase()) : ch;
+            prevIsLetter = isLetter;
+        }
+        return result;
     }
 
     function rawNamesFor(canonical) {
@@ -347,8 +362,8 @@
         input.classList.add('d-none');
     }
 
-    function revertAllOpenIngredientNames(exceptInput) {
-        document.querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
+    function revertAllOpenIngredientNames(exceptInput, scopeEl) {
+        formScopeOf(scopeEl || exceptInput || document.body).querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
             if (openInput !== exceptInput) revertIngredientNameField(openInput);
         });
     }
@@ -356,7 +371,7 @@
     function openIngredientNameField(display) {
         const input = ingNameInputFor(display);
         if (!input) return;
-        revertAllOpenIngredientNames(input);
+        revertAllOpenIngredientNames(input, input);
         display.classList.add('d-none');
         input.classList.remove('d-none');
         input.focus();
@@ -372,12 +387,17 @@
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openIngredientNameField(event.target); }
     });
     document.addEventListener('click', event => {
-        document.querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
+        // formScopeOf() statt document.querySelectorAll(...): dieser
+        // Listener feuert bei JEDEM Klick irgendwo auf der Seite (nicht
+        // nur auf Zutatenfeldern) - ungebremst über alle 50+ gleichzeitig
+        // im DOM liegenden Bearbeiten-Modals hinweg gesucht, wäre das
+        // spürbar langsam gewesen (siehe Kommentar bei formScopeOf).
+        formScopeOf(event.target).querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
             const row = openInput.closest('.ingredient-row');
             if (row && !row.contains(event.target)) revertIngredientNameField(openInput);
         });
     });
     document.body.addEventListener('focusin', event => {
-        revertAllOpenIngredientNames(event.target.matches('.ing-name-input') ? event.target : null);
+        revertAllOpenIngredientNames(event.target.matches('.ing-name-input') ? event.target : null, event.target);
     });
 })();
