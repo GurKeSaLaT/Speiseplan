@@ -197,9 +197,25 @@
                                        eigentliche Eingabewert (ing.name)
                                        ändert sich dadurch NIE von sich aus -
                                        nur eine bewusste Bearbeitung durch den
-                                       Nutzer überschreibt ihn. #}
+                                       Nutzer überschreibt ihn.
+
+                                       BEWUSST OHNE list="ingredients-datalist":
+                                       ein <input list="..."> lässt den
+                                       Browser beim ERSTEN Fokussieren offenbar
+                                       einmalig (und danach zwischengespeichert)
+                                       einen Such-Index über die komplette
+                                       Vorschlagsliste aufbauen, was genau das
+                                       spürbare Zögern verursachte, wenn man
+                                       eine BEREITS benannte Zutat zum
+                                       Bearbeiten öffnete - dort bringt eine
+                                       Vorschlagsliste ohnehin wenig (der Name
+                                       steht ja schon fest). Die neue,
+                                       zunächst leere Zutatenzeile unten
+                                       behält die Datalist, da eine
+                                       Vorschlagsliste beim Eintippen eines
+                                       KOMPLETT NEUEN Namens tatsächlich hilft. #}
                                     <span class="form-control form-control-sm ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">{{ disp[2] }}</span>
-                                    <input type="text" name="ing_name[]" class="form-control form-control-sm ing-name-input d-none" value="{{ ing.name }}" list="ingredients-datalist" autocomplete="off">
+                                    <input type="text" name="ing_name[]" class="form-control form-control-sm ing-name-input d-none" value="{{ ing.name }}" autocomplete="off">
                                 </div>
                                 <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" value="{{ disp[0] }}"></div>
                                 <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" value="{{ disp[1] }}"></div>
