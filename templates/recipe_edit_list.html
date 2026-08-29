@@ -150,38 +150,48 @@
                     <div id="edit-ingredients-container{{ recipe.id }}">
                         {% for ing in recipe.ingredients %}
                         {% set disp = ingredient_display[ing.id] %}
-                        <div class="row g-2 mb-1">
-                            <div class="col-4">
-                                <input type="text" name="ing_name[]" class="form-control form-control-sm" value="{{ ing.name }}" list="ingredients-datalist" autocomplete="off">
-                                <div class="ingredient-alias-hint small mt-1"></div>
+                        <div class="ingredient-row mb-1">
+                            <div class="row g-2">
+                                <div class="col-4">
+                                    <input type="text" name="ing_name[]" class="form-control form-control-sm" value="{{ ing.name }}" list="ingredients-datalist" autocomplete="off">
+                                </div>
+                                <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" value="{{ disp[0] }}"></div>
+                                <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" value="{{ disp[1] }}"></div>
+                                <div class="col-3">
+                                    <select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
+                                        <option value="" {% if not ing.category %}selected{% endif %}>Sonstiges</option>
+                                        {% for cat in shopping_categories %}
+                                        <option value="{{ cat }}" {% if cat == ing.category %}selected{% endif %}>{{ cat }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-1 d-grid">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove()">✕</button>
+                                </div>
                             </div>
-                            <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" value="{{ disp[0] }}"></div>
-                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" value="{{ disp[1] }}"></div>
-                            <div class="col-3">
-                                <select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
-                                    <option value="" {% if not ing.category %}selected{% endif %}>Sonstiges</option>
-                                    {% for cat in shopping_categories %}
-                                    <option value="{{ cat }}" {% if cat == ing.category %}selected{% endif %}>{{ cat }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
+                            <div class="ingredient-alias-hint small mt-1"></div>
                         </div>
                         {% endfor %}
-                        <div class="row g-2 mb-1">
-                            <div class="col-4">
-                                <input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..." list="ingredients-datalist" autocomplete="off">
-                                <div class="ingredient-alias-hint small mt-1"></div>
+                        <div class="ingredient-row mb-1">
+                            <div class="row g-2">
+                                <div class="col-4">
+                                    <input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..." list="ingredients-datalist" autocomplete="off">
+                                </div>
+                                <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
+                                <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
+                                <div class="col-3">
+                                    <select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
+                                        <option value="" selected>Sonstiges</option>
+                                        {% for cat in shopping_categories %}
+                                        <option value="{{ cat }}">{{ cat }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-1 d-grid">
+                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove()">✕</button>
+                                </div>
                             </div>
-                            <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
-                            <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
-                            <div class="col-3">
-                                <select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
-                                    <option value="" selected>Sonstiges</option>
-                                    {% for cat in shopping_categories %}
-                                    <option value="{{ cat }}">{{ cat }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
+                            <div class="ingredient-alias-hint small mt-1"></div>
                         </div>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addEditIngredientField({{ recipe.id }})">+ Zutat hinzufügen</button>
@@ -308,15 +318,20 @@ document.addEventListener('DOMContentLoaded', () => {
 function addEditIngredientField(recipeId) {
     const container = document.getElementById('edit-ingredients-container' + recipeId);
     const div = document.createElement('div');
-    div.className = 'row g-2 mb-1';
+    div.className = 'ingredient-row mb-1';
     div.innerHTML = `
-        <div class="col-4">
-            <input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..." list="ingredients-datalist" autocomplete="off">
-            <div class="ingredient-alias-hint small mt-1"></div>
+        <div class="row g-2">
+            <div class="col-4">
+                <input type="text" name="ing_name[]" class="form-control form-control-sm" placeholder="Neue Zutat..." list="ingredients-datalist" autocomplete="off">
+            </div>
+            <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
+            <div class="col-2"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
+            <div class="col-3"><select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">${categoryOptionsHtml()}</select></div>
+            <div class="col-1 d-grid">
+                <button type="button" class="btn btn-sm btn-outline-danger" title="Zutat entfernen" onclick="this.closest('.ingredient-row').remove()">✕</button>
+            </div>
         </div>
-        <div class="col-2"><input type="number" step="0.1" name="ing_amount[]" class="form-control form-control-sm" placeholder="Menge"></div>
-        <div class="col-3"><input type="text" name="ing_unit[]" class="form-control form-control-sm" placeholder="Einheit"></div>
-        <div class="col-3"><select name="ing_category[]" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">${categoryOptionsHtml()}</select></div>
+        <div class="ingredient-alias-hint small mt-1"></div>
     `;
     container.appendChild(div);
 }

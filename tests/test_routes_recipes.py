@@ -60,6 +60,34 @@ def test_recipe_create_view_embeds_ingredient_aliases_for_hint_js(client, app):
     assert "Öl".encode("utf-8") in resp.data
 
 
+def test_recipe_create_view_ingredient_row_has_delete_button(client):
+    """Jede Zutatenzeile (inkl. der leeren Ausgangszeile) braucht einen
+    kleinen Löschen-Button, der die ganze .ingredient-row entfernt - sowohl
+    server-seitig gerendert als auch im addIngredientField()-JS-Template,
+    das später hinzugefügte Zeilen baut."""
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'class="ingredient-row' in html  # server-gerendert
+    assert "div.className = 'ingredient-row" in html  # addIngredientField()-JS-Template
+    assert "this.closest('.ingredient-row').remove()" in html
+
+
+def test_recipe_create_view_alias_hint_spans_full_ingredient_row(client):
+    """Der Alias-/Nährwert-Hinweis darf nicht mehr in der schmalen
+    Namens-Spalte eingebettet sein (das machte die dortige Inline-
+    Nährwert-Eingabe unbrauchbar schmal), sondern muss NACH der kompletten
+    Feldzeile (inkl. Löschen-Button ganz rechts) als eigenes Element
+    stehen - also erst nach dem Marker für die letzte Spalte im
+    HTML-Quelltext auftauchen, nicht schon direkt hinter dem Namensfeld."""
+    resp = client.get("/manage/recipe/create")
+    html = resp.get_data(as_text=True)
+    name_field_index = html.index('name="ing_name[]"')
+    delete_btn_index = html.index("this.closest('.ingredient-row').remove()")
+    hint_index = html.index('class="ingredient-alias-hint')
+    assert name_field_index < delete_btn_index < hint_index
+
+
 def test_recipe_edit_list_view_has_search_filter(client, make_recipe):
     make_recipe("Suchbares Gericht")
     resp = client.get("/manage/recipe/edit-list")
@@ -78,6 +106,20 @@ def test_recipe_edit_list_view_has_search_filter(client, make_recipe):
 def test_recipe_edit_list_view_no_search_filter_when_empty(client):
     resp = client.get("/manage/recipe/edit-list")
     assert b'id="recipeFilter"' not in resp.data
+
+
+def test_recipe_edit_list_view_ingredient_row_has_delete_button(client, make_recipe):
+    """Wie test_recipe_create_view_ingredient_row_has_delete_button, aber
+    für das Bearbeiten-Modal: sowohl die bestehenden Zutatenzeilen als auch
+    die leere Ausgangszeile und das addEditIngredientField()-JS-Template
+    brauchen den Löschen-Button."""
+    make_recipe("Gericht mit Zutat", ingredients=[{"name": "Mehl", "amount": 100, "unit": "g"}])
+    resp = client.get("/manage/recipe/edit-list")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert html.count('class="ingredient-row') >= 2  # bestehende Zutat + leere Zeile
+    assert "div.className = 'ingredient-row" in html  # addEditIngredientField()-JS-Template
+    assert "this.closest('.ingredient-row').remove()" in html
 
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):

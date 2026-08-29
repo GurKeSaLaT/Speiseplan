@@ -126,20 +126,30 @@
         const box = document.createElement('div');
         box.className = 'mt-1 p-2 border rounded';
         box.innerHTML = `
-            <div class="text-danger small fw-bold mb-1">⚠️ Keine Nährwerte für „${escapeHtml(canonical)}" hinterlegt</div>
-            <div class="row g-1">
-                <div class="col-6 col-md-4">
+            <div class="text-danger small fw-bold mb-2">⚠️ Keine Nährwerte für „${escapeHtml(canonical)}" hinterlegt</div>
+            <div class="row g-2">
+                <div class="col-6 col-sm-3">
+                    <label class="form-label small text-muted mb-1">Bezug</label>
                     <select class="form-select form-select-sm nutrition-ref-unit">
                         <option value="g" selected>pro 100 g</option>
                         <option value="ml">pro 100 ml</option>
                         <option value="Stk">pro 1 Stk</option>
                     </select>
                 </div>
-                <div class="col-4 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="Eiweiß"></div>
-                <div class="col-4 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="Kohlh."></div>
-                <div class="col-4 col-md-2"><input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="Fett"></div>
+                <div class="col-4 col-sm-3">
+                    <label class="form-label small text-muted mb-1">Eiweiß (g)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="0">
+                </div>
+                <div class="col-4 col-sm-3">
+                    <label class="form-label small text-muted mb-1">Kohlh. (g)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="0">
+                </div>
+                <div class="col-4 col-sm-3">
+                    <label class="form-label small text-muted mb-1">Fett (g)</label>
+                    <input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="0">
+                </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-danger mt-1 nutrition-set-btn">Nährwerte speichern</button>
+            <button type="button" class="btn btn-sm btn-outline-danger mt-2 nutrition-set-btn">Nährwerte speichern</button>
         `;
         // Kcal wird nirgends eingegeben, nur aus Eiweiß/Kohlenhydraten/Fett
         // errechnet (services/nutrition.py: compute_calories()) - hier gibt
@@ -162,9 +172,28 @@
             if (!ok) { alert('Hinweis: ' + (data.error || 'Alias konnte nicht gesetzt werden.')); return; }
             ALIASES[data.raw_name] = data.canonical_name;
             canonicalNames = new Set(Object.values(ALIASES));
+            fillUnitFromNutrition(hintEl, data.canonical_name);
             renderHint(hintEl, data.raw_name);
         })
         .catch(() => alert('Hinweis: Alias konnte nicht gesetzt werden.'));
+    }
+
+    /** Übernimmt beim Setzen eines Alias automatisch die für die
+     * kanonische Zutat bereits hinterlegte Einheit (reference_unit aus
+     * window.INGREDIENT_NUTRITION) in das Einheit-Feld DIESER Zutatenzeile
+     * - nur, wenn das Feld noch leer ist (ein bereits eingetragener Wert
+     * wird nie überschrieben) und nur, wenn überhaupt schon ein
+     * Nährwert-Eintrag existiert. Verhindert genau das Problem, dass
+     * gleichgesetzte Zutaten mit uneinheitlichen Einheiten in der
+     * Einkaufsliste als mehrere Posten auftauchen (siehe
+     * services/ingredient_aliases.py). */
+    function fillUnitFromNutrition(hintEl, canonicalName) {
+        const entry = NUTRITION[canonicalName];
+        if (!entry || !entry.reference_unit) return;
+        const unitInput = hintEl.closest('.ingredient-row')?.querySelector('[name="ing_unit[]"]');
+        if (unitInput && !unitInput.value.trim()) {
+            unitInput.value = entry.reference_unit;
+        }
     }
 
     function submitNutrition(canonicalName, box, name, hintEl) {
@@ -197,7 +226,7 @@
     }
 
     function hintContainerFor(input) {
-        return input.closest('.col-4, .col-12')?.querySelector('.ingredient-alias-hint') || null;
+        return input.closest('.ingredient-row')?.querySelector('.ingredient-alias-hint') || null;
     }
 
     document.body.addEventListener('input', event => {
