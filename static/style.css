@@ -20,6 +20,13 @@
     --scrollbar-thumb: #D1D1CB;
     --highlight-bg: #E8EFEA;       /* Drag-over-/Hover-Hervorhebung */
     --excluded-bg: #eeeeee;        /* von der Planung ausgenommener Tag */
+
+    /* Seitenleiste der Verwaltungs-Übersichtsseite (templates/manage.html) -
+       ein Hauch dunkler/wärmer als --bg-warm, damit sich die feste
+       Navigationsspalte optisch vom Hauptinhalt absetzt, ohne wie eine
+       weitere Karte auf demselben Hintergrund zu wirken. */
+    --rail-bg: #EFEBE1;
+    --rail-border: #E2DCCB;
 }
 
 /* --- DUNKELMODUS ---
@@ -47,6 +54,9 @@
     --scrollbar-thumb: #4A4F4A;
     --highlight-bg: #2E3B31;
     --excluded-bg: #2A2E2B;
+
+    --rail-bg: #171916;
+    --rail-border: #262B26;
 }
 
 body {

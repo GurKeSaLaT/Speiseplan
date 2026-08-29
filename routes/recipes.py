@@ -19,6 +19,8 @@ sondern in services/seasons.py - diese Datei bleibt auf "Recipe/Ingredient
 anlegen, ändern, löschen" fokussiert.
 """
 
+from datetime import datetime, timezone
+
 from flask import Blueprint, render_template, request, redirect, url_for
 
 from models import db, Category, Recipe, Ingredient
@@ -225,6 +227,11 @@ def edit_recipe(id):
     recipe.servings = max(1, int(request.form.get('servings') or 2))
     recipe.source_url = (request.form.get('source_url') or '').strip() or None
     recipe.instructions = (request.form.get('instructions') or '').strip() or None
+    # Explizit statt über ein onupdate=... an der Spalte (siehe models.py:
+    # Recipe.updated_at) - das würde nur greifen, wenn sich mindestens ein
+    # Spaltenwert tatsächlich ändert, hier soll aber JEDES Speichern
+    # zählen, auch ein inhaltlich unverändertes.
+    recipe.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     save_recipe_seasons(recipe.id, request.form)
 

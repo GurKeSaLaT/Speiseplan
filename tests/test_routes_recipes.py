@@ -164,6 +164,21 @@ def test_add_recipe_creates_recipe_with_ingredients_and_seasons(client, app, mak
         assert len(recipe.seasons) == 1
 
 
+def test_add_recipe_sets_updated_at(client, app, make_category):
+    """Für die "Zuletzt bearbeitet"-Liste auf /manage (routes/manage.py) -
+    Recipe.updated_at wird beim Anlegen über den Spalten-Default gesetzt
+    (siehe models.py), ganz ohne dass add_recipe() es selbst pflegen muss."""
+    from models import Recipe
+
+    cat_id = make_category("Frisch")
+    form = _base_recipe_form(cat_id)
+    client.post("/add-recipe", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.updated_at is not None
+
+
 def test_add_recipe_side_dish_and_favorite_flags(client, app, make_category):
     from models import Recipe
 
@@ -215,6 +230,31 @@ def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
         recipe = db.session.get(Recipe, recipe_id)
         assert recipe.name == "Geändertes Gericht"
         assert [i.name for i in recipe.ingredients] == ["Neu"]
+
+
+def test_edit_recipe_bumps_updated_at(client, app, make_recipe):
+    """edit_recipe() setzt Recipe.updated_at explizit bei JEDEM Speichern
+    (siehe dortigen Kommentar - ein onupdate=... an der Spalte würde nur
+    greifen, wenn sich ein Wert tatsächlich ändert)."""
+    from datetime import datetime, timedelta, timezone
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Alt")
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        cat_id = recipe.category_id
+        recipe.updated_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=5)
+        db.session.commit()
+        old_updated_at = recipe.updated_at
+
+    form = _base_recipe_form(cat_id, name="Alt", **{
+        "ing_name[]": [""], "ing_amount[]": [""], "ing_unit[]": [""], "ing_category[]": [""],
+    })
+    client.post(f"/edit-recipe/{recipe_id}", data=form, follow_redirects=True)
+
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        assert recipe.updated_at > old_updated_at
 
 
 def test_edit_recipe_normalizes_ingredient_units(client, app, make_recipe):

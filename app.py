@@ -142,6 +142,16 @@ def init_db():
     if 'nutrition_override' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN nutrition_override BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
+    if 'updated_at' not in existing_columns:
+        # SQLite verweigert "DEFAULT CURRENT_TIMESTAMP" direkt im ALTER
+        # TABLE ("Cannot add a column with non-constant default") - Spalte
+        # daher ohne Default anlegen und bestehende Zeilen per separatem
+        # UPDATE auf den Migrationszeitpunkt setzen (ein sinnvoller
+        # Startwert für die "Zuletzt bearbeitet"-Liste in routes/manage.py,
+        # auch ohne echte Historie für ältere Rezepte).
+        db.session.execute(text("ALTER TABLE recipe ADD COLUMN updated_at DATETIME"))
+        db.session.execute(text("UPDATE recipe SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+        db.session.commit()
 
     # Einkaufslisten-Kategorie einer Zutat (siehe services/shopping.py) - erst
     # mit der gruppierten/sortierten Einkaufsliste hinzugekommen. Bestehende

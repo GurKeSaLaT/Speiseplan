@@ -105,6 +105,17 @@ class Recipe(db.Model):
     source_url = db.Column(db.String(500), nullable=True)
     instructions = db.Column(db.Text, nullable=True)
 
+    # Für die "Zuletzt bearbeitet"-Liste auf der Verwaltungs-Übersichtsseite
+    # (routes/manage.py) - default setzt den Zeitpunkt beim Anlegen
+    # (routes/recipes.py: add_recipe()). BEWUSST kein onupdate=...: das
+    # würde nur greifen, wenn sich mindestens ein SPALTENWERT tatsächlich
+    # ändert (SQLAlchemy markiert eine Zuweisung auf denselben Wert nicht
+    # als "dirty") - speichert ein Nutzer ein Rezept unverändert erneut
+    # (z.B. nur die Zutatenliste angefasst, alle anderen Felder identisch
+    # gelassen), würde der Zeitpunkt sonst NICHT aktualisiert. edit_recipe()
+    # setzt dieses Feld deshalb explizit bei jedem Speichern.
+    updated_at = db.Column(db.DateTime, default=db.func.now())
+
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
     # cascade="all, delete-orphan": Zutaten werden automatisch mitgelöscht,
     # sobald das Rezept gelöscht wird - es gibt keine "verwaisten" Zutaten.
