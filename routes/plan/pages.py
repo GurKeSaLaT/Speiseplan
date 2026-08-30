@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from flask import render_template, request, redirect, url_for, abort
 
 from models import db, Category, Recipe, PlanDay, PlanDaySide, ExtraShoppingItem
-from services.auth import current_plan
+from services.auth import current_plan, current_user, user_plan_memberships
 from services.planning import (
     DAY_NAMES_DE, monday_of, week_dates_for, parse_iso_date,
     assign_balanced_categories, choose_recipe, jsonify_recipe, jsonify_side
@@ -76,7 +76,9 @@ def week_view(start_date):
     zusätzlich ALLE Rezepte (unabhängig vom aktuellen Plan) in einer
     schlanken Form - Grundlage für die manuelle Rezeptauswahl
     (Such-/Auswahlbox, siehe static/plan-manual-select.js sowie deren
-    Verwendung in static/plan.js und static/plan-sides.js).
+    Verwendung in static/plan.js und static/plan-sides.js). otherPlanMeals
+    enthält je Wochentag die Hauptgerichte der ÜBRIGEN eigenen Pläne (rein
+    lesend, siehe static/plan.js: renderOtherPlanMeals).
     """
     start = parse_iso_date(start_date)
     if start is None:
@@ -86,6 +88,16 @@ def week_view(start_date):
         return redirect(url_for('plan.week_view', start_date=normalized.isoformat()))
 
     active_plan = current_plan()
+    # Seit Pläne von Accounts entkoppelt sind (services/plans.py), ist "gar
+    # kein Plan" ein normaler, erreichbarer Zustand - z.B. direkt nach dem
+    # Löschen des letzten eigenen Plans (routes/plans.py: delete()). Statt
+    # der üblichen Kalenderdaten zeigt plan.html dann nur einen Hinweis samt
+    # Formular, den ersten Plan anzulegen (templates/plan.html: {% if
+    # no_plan %}) - alle übrigen Variablen unten würden ohnehin ins Leere
+    # laufen (active_plan.id crasht z.B. sofort).
+    if active_plan is None:
+        return render_template('plan.html', no_plan=True)
+
     dates = week_dates_for(normalized)
     plan_days_by_date = {
         pd.date: pd for pd in PlanDay.query.filter(PlanDay.plan_id == active_plan.id, PlanDay.date.in_(dates)).all()
@@ -122,6 +134,37 @@ def week_view(start_date):
 
     all_recipes = visible_recipes_query(active_plan.id).all()
 
+    # Hauptgerichte der ÜBRIGEN eigenen Pläne für dieselben 7 Kalendertage -
+    # rein informativ, nicht interaktiv (siehe static/plan.js:
+    # renderOtherPlanMeals). Nur Pläne, deren Mitgliedschaft
+    # show_in_week_overview trägt (models.py: PlanMembership - individuell
+    # pro Nutzer abschaltbar, siehe routes/sharing.py: toggle_overview()),
+    # und nie der aktive Plan selbst (der steht ohnehin schon oben in der
+    # Kachel). Beilagen bleiben bewusst außen vor (nur EIN Gericht pro Plan
+    # und Tag, wie vom Nutzer beschrieben).
+    other_memberships = [
+        m for m in user_plan_memberships(current_user())
+        if m.plan_id != active_plan.id and m.show_in_week_overview
+    ]
+    other_plan_days_by_key = {}
+    if other_memberships:
+        other_plan_days = PlanDay.query.filter(
+            PlanDay.plan_id.in_([m.plan_id for m in other_memberships]),
+            PlanDay.date.in_(dates),
+        ).all()
+        other_plan_days_by_key = {(pd.plan_id, pd.date): pd for pd in other_plan_days}
+    other_plan_meals = []
+    for d in dates:
+        meals_this_day = []
+        for m in other_memberships:
+            pd = other_plan_days_by_key.get((m.plan_id, d))
+            if pd and pd.main_recipe:
+                meals_this_day.append({
+                    "planId": m.plan_id, "planName": m.plan.name,
+                    "recipeId": pd.main_recipe.id, "recipeName": pd.main_recipe.name,
+                })
+        other_plan_meals.append(meals_this_day)
+
     plan_data = {
         'weekDates': [d.isoformat() for d in dates],
         'dayLabels': day_labels,
@@ -145,6 +188,7 @@ def week_view(start_date):
             {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
             for r in all_recipes
         ],
+        'otherPlanMeals': other_plan_meals,
     }
 
     # plan/side_plan/excluded_days/servings_list/days werden NICHT mehr an

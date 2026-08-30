@@ -502,11 +502,22 @@ class PlanMembership(db.Model):
     Anwendungsebene: routes/sharing.py: star_plan() entsternt in
     DERSELBEN Transaktion zuerst alle anderen Mitgliedschaften desselben
     Nutzers, bevor die neue gesetzt wird.
+
+    show_in_week_overview steuert, analog PRO NUTZER (nicht global), ob
+    dieser Plan in DEN WOCHENPLAN-TAGESKACHELN ANDERER Pläne desselben
+    Nutzers als zusätzlicher, nur lesbarer Eintrag auftaucht (siehe
+    routes/plan/pages.py: week_view() - "otherPlanMeals"). Betrifft NICHT
+    die Ansicht des Plans selbst (der bleibt, wenn er der aktive Plan ist,
+    immer normal sichtbar) - nur, ob er bei einem GETEILTEN Plan für DIESEN
+    einen Nutzer zusätzlich in die Kacheln der übrigen eigenen Pläne
+    einfließt. Default True (neue Mitgliedschaften fließen automatisch mit
+    ein), abschaltbar über die Checkbox auf /manage/sharing.
     """
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     is_starred = db.Column(db.Boolean, default=False, nullable=False)
+    show_in_week_overview = db.Column(db.Boolean, default=True, nullable=False)
 
     __table_args__ = (db.UniqueConstraint('plan_id', 'user_id', name='uq_plan_membership_plan_id_user_id'),)
 

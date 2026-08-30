@@ -1,5 +1,7 @@
 """Tests für routes/plan/pages.py: Seiten-Routen des Wochenplan-Kalenders
 (Übersicht, Erstellen-Formular, automatisches Auffüllen+Speichern)."""
+import json
+import re
 from datetime import date, timedelta
 
 from services.planning import monday_of
@@ -7,6 +9,11 @@ from services.planning import monday_of
 
 def _make_many_recipes(make_recipe, count=7, is_side_dish=False, prefix="Gericht"):
     return [make_recipe(f"{prefix} {i}", is_side_dish=is_side_dish) for i in range(count)]
+
+
+def _extract_plan_data(resp):
+    match = re.search(r"window\.PLAN_DATA = (.*?);\n", resp.data.decode("utf-8"), re.S)
+    return json.loads(match.group(1))
 
 
 # --- index ---
@@ -245,3 +252,76 @@ def test_week_generate_rerun_replaces_previous_sides(client, app, make_recipe):
         monday_row = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()
         side_recipe_ids = {s.recipe_id for s in PlanDaySide.query.filter_by(plan_day_id=monday_row.id).all()}
         assert side_recipe_ids == {side_b}
+
+
+# --- otherPlanMeals (Wochenplan-Kachel über mehrere eigene Pläne hinweg) ---
+
+def test_other_plan_meals_shows_dish_from_second_plan_same_day(app, client, make_recipe, make_user):
+    from models import PlanDay, PlanMembership, db
+
+    monday = date(2026, 6, 15)
+    own_recipe_id = make_recipe("Eigenes Gericht")
+    other_user_id, other_plan_id = make_user("Mitbewohner")
+    other_recipe_id = make_recipe("Anderes Gericht", plan_id=other_plan_id)
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, main_recipe_id=own_recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=other_plan_id, date=monday, main_recipe_id=other_recipe_id, servings=2))
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    plan_data = _extract_plan_data(resp)
+
+    assert plan_data["plan"][0]["name"] == "Eigenes Gericht"
+    other_meals_monday = plan_data["otherPlanMeals"][0]
+    assert len(other_meals_monday) == 1
+    assert other_meals_monday[0]["recipeName"] == "Anderes Gericht"
+    assert other_meals_monday[0]["planId"] == other_plan_id
+    # Kein anderer Plan mit Gericht an den übrigen Tagen dieser Woche.
+    assert all(plan_data["otherPlanMeals"][i] == [] for i in range(1, 7))
+
+
+def test_other_plan_meals_empty_when_no_other_plan_has_a_dish(app, client, make_recipe, make_user):
+    from models import PlanMembership, db
+
+    other_user_id, other_plan_id = make_user("Mitbewohner")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    monday = date(2026, 6, 15)
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    plan_data = _extract_plan_data(resp)
+    assert plan_data["otherPlanMeals"] == [[], [], [], [], [], [], []]
+
+
+def test_other_plan_meals_respects_per_membership_overview_flag(app, client, make_recipe, make_user):
+    """show_in_week_overview gilt individuell PRO NUTZER (models.py:
+    PlanMembership) - schaltet client seine eigene Mitgliedschaft an einem
+    geteilten Plan aus der Übersicht aus, bleibt das für einen ANDEREN
+    Mitglied desselben Plans (mit unverändert eingeschaltetem Flag)
+    unbeeinflusst."""
+    from models import PlanDay, PlanMembership, db
+
+    monday = date(2026, 6, 15)
+    _, shared_plan_id = make_user("Planbesitzer")
+    shared_recipe_id = make_recipe("Geteiltes Gericht", plan_id=shared_plan_id)
+    user_b_id, user_b_own_plan_id = make_user("Nutzer B")
+
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=shared_plan_id, date=monday, main_recipe_id=shared_recipe_id, servings=2))
+        db.session.add(PlanMembership(plan_id=shared_plan_id, user_id=client.user_id, is_starred=False, show_in_week_overview=False))
+        db.session.add(PlanMembership(plan_id=shared_plan_id, user_id=user_b_id, is_starred=False, show_in_week_overview=True))
+        db.session.commit()
+
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    assert _extract_plan_data(resp)["otherPlanMeals"][0] == []
+
+    user_b_client = app.test_client()
+    with user_b_client.session_transaction() as sess:
+        sess['user_id'] = user_b_id
+        sess['active_plan_id'] = user_b_own_plan_id
+    resp_b = user_b_client.get(f"/plan/{monday.isoformat()}")
+    other_meals_b = _extract_plan_data(resp_b)["otherPlanMeals"][0]
+    assert len(other_meals_b) == 1
+    assert other_meals_b[0]["recipeName"] == "Geteiltes Gericht"

@@ -159,3 +159,41 @@ def test_reroll_repetition_weighting_ignores_other_plans_history(app, client, ma
 
     resp = client.post("/day/2026-06-15/reroll-main")
     assert resp.status_code == 200
+
+
+# --- /manage/sharing/overview-toggle (PlanMembership.show_in_week_overview) ---
+
+def test_toggle_overview_flips_own_membership(app, client):
+    from models import PlanMembership
+
+    with app.app_context():
+        membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=client.user_id).first()
+        assert membership.show_in_week_overview is True
+
+    resp = client.post(f"/manage/sharing/overview-toggle/{client.plan_id}")
+    assert resp.status_code == 302
+
+    with app.app_context():
+        membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=client.user_id).first()
+        assert membership.show_in_week_overview is False
+
+
+def test_toggle_overview_only_affects_calling_users_own_membership(app, client, make_user):
+    from models import PlanMembership, db
+
+    other_id, _ = make_user("Mitbewohner")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=client.plan_id, user_id=other_id, is_starred=False))
+        db.session.commit()
+
+    client.post(f"/manage/sharing/overview-toggle/{client.plan_id}")
+
+    with app.app_context():
+        other_membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=other_id).first()
+        assert other_membership.show_in_week_overview is True
+
+
+def test_toggle_overview_requires_own_membership(client, make_user):
+    _, other_plan_id = make_user("Fremd")
+    resp = client.post(f"/manage/sharing/overview-toggle/{other_plan_id}")
+    assert resp.status_code == 404

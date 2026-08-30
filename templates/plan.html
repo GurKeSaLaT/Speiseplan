@@ -20,6 +20,25 @@
 {% extends 'base.html' %}
 {% block content %}
 
+{% if no_plan %}
+{# Zero-Plan-Zustand (siehe routes/plan/pages.py: week_view() - z.B. direkt
+   nach dem Löschen des letzten eigenen Plans, oder ein Nutzer, der noch nie
+   einen angelegt hat). Bewusst KEIN window.PLAN_DATA/keine der plan-*.js
+   Dateien hier eingebunden - es gibt schlicht nichts, worauf sie sich
+   beziehen könnten. Eigenes, eigenständiges Formular statt Verweis auf das
+   Sidebar-Modal (templates/base.html), damit der allererste Schritt keine
+   zusätzliche Interaktion mit der Seitenleiste erfordert. #}
+<div class="card shadow-sm border-0 text-center p-5">
+    <p class="text-muted fs-5 mb-1">Du bist noch in keinem Plan Mitglied.</p>
+    <p class="text-muted mb-4">Leg dir deinen ersten Wochenplan an, um loszulegen.</p>
+    <form method="POST" action="{{ url_for('plans.create') }}" class="d-flex gap-2 mx-auto" style="max-width: 420px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="name" class="form-control" placeholder="Name des Plans" required autofocus>
+        <button type="submit" class="btn btn-primary-custom fw-bold text-nowrap">Plan erstellen</button>
+    </form>
+</div>
+{% else %}
+
 <!-- Wochen-Navigation im Seitenkopf-Stil (siehe .page-head/.weeknav in
      static/style.css): Titel links, Vorherige/Datum/Nächste rechts als
      eigene Gruppe - bricht auf schmalen Bildschirmen als Ganzes unter den
@@ -287,4 +306,5 @@ window.PLAN_DATA = {{ plan_data | tojson }};
 <script src="{{ url_for('static', filename='plan-manual-select.js') }}"></script>
 <script src="{{ url_for('static', filename='plan-sides.js') }}"></script>
 <script src="{{ url_for('static', filename='plan-shopping.js') }}"></script>
+{% endif %}
 {% endblock %}

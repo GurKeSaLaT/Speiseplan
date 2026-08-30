@@ -19,10 +19,11 @@ from sqlalchemy import text
 from flask import Flask, redirect, request, session, url_for
 from flask_wtf import CSRFProtect
 
-from models import db, Category, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
+from models import db, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
 from services.auth import current_plan, current_user, hash_password, user_plan_memberships
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
+from services.plans import seed_default_categories
 from services.seasons import SEASON_PRESETS
 from services.shopping import PANTRY_CATEGORIES, SHOPPING_CATEGORIES, UNCATEGORIZED
 from services.units import renormalize_existing_ingredients
@@ -33,6 +34,7 @@ from routes.recipes import recipes_bp
 from routes.categories import categories_bp
 from routes.settings import settings_bp
 from routes.sharing import sharing_bp
+from routes.plans import plans_bp
 
 app = Flask(__name__)
 # SQLite-Datei liegt in Flasks Standard-"instance"-Ordner (instance/speiseplan.db),
@@ -105,6 +107,7 @@ app.register_blueprint(recipes_bp)
 app.register_blueprint(categories_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(sharing_bp)
+app.register_blueprint(plans_bp)
 
 
 def init_db():
@@ -265,6 +268,17 @@ def init_db():
             db.session.flush()
             db.session.add(PlanMembership(plan_id=plan.id, user_id=user.id, is_starred=(username == "Jonas")))
             seeded_plans_by_username[username] = plan
+        db.session.commit()
+
+    # show_in_week_overview auf PlanMembership: existierte in einer
+    # früheren Version noch nicht - fehlende Spalte ergänzen. Der SQLite-
+    # Default (1) gilt automatisch auch für alle bereits bestehenden
+    # Mitgliedschaften (siehe models.py: PlanMembership.show_in_week_overview).
+    existing_plan_membership_columns = {
+        row[1] for row in db.session.execute(text("PRAGMA table_info(plan_membership)"))
+    }
+    if 'show_in_week_overview' not in existing_plan_membership_columns:
+        db.session.execute(text("ALTER TABLE plan_membership ADD COLUMN show_in_week_overview BOOLEAN NOT NULL DEFAULT 1"))
         db.session.commit()
 
     # plan_id auf PlanDay/ExtraShoppingItem: existierte in früheren
@@ -456,15 +470,13 @@ def init_db():
     # leeren Kategorie-Liste (und damit unbenutzbarer automatischer
     # Planung) startet - betrifft sowohl einen komplett frischen
     # Erststart als auch, seit Kategorien plan-gebunden sind, jeden neu
-    # angelegten Plan ohne eigene Kategorien (z.B. Elos beim Seed weiter
-    # oben mit angelegter, bis dahin aber leerer Plan). Eigene, später
-    # hinzugefügte oder umbenannte Kategorien werden dadurch nie
-    # überschrieben oder erneut angelegt - der Check ist pro Plan.
-    default_categories = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
+    # angelegten Plan ohne eigene Kategorien (siehe services/plans.py:
+    # seed_default_categories(), dieselbe Funktion nutzt auch
+    # routes/plans.py: create_plan() für künftig neu erstellte Pläne).
+    # Eigene, später hinzugefügte oder umbenannte Kategorien werden dadurch
+    # nie überschrieben oder erneut angelegt - der Check ist pro Plan.
     for plan in Plan.query.all():
-        if not Category.query.filter_by(plan_id=plan.id).first():
-            for cat_name in default_categories:
-                db.session.add(Category(plan_id=plan.id, name=cat_name))
+        seed_default_categories(plan.id)
     db.session.commit()
 
     # Bestehende Zutaten-Mengen/Einheiten (z.B. "Gramm", "kg", "gr" als
@@ -483,6 +495,17 @@ with app.app_context():
     init_db()
 
 
+# Endpunkte, die auch ganz OHNE Plan-Mitgliedschaft erreichbar bleiben
+# müssen (siehe require_login() unten, zweite Weiche) - plan.index/
+# plan.week_view zeigen in dem Fall die "Noch kein Plan"-Ansicht statt der
+# normalen Kalenderdaten (siehe routes/plan/pages.py: week_view()), BEIDE
+# müssen auf der Allowlist stehen (index() leitet auf week_view() weiter -
+# stünde nur index() hier, würde der zweite Redirect sofort wieder von
+# diesem Gate abgefangen, eine Endlosschleife). plans.create ist der
+# einzige Weg, aus dem Zero-Plan-Zustand wieder herauszukommen.
+ZERO_PLAN_ALLOWED_ENDPOINTS = {'plan.index', 'plan.week_view', 'plans.create', 'auth.logout'}
+
+
 @app.before_request
 def require_login():
     """Schützt global JEDE Route außer der Login-Seite selbst und
@@ -495,11 +518,22 @@ def require_login():
     request.endpoint ist None für nicht auflösbare Pfade (z.B. ein
     Tippfehler in der URL) - die werden hier bewusst durchgelassen, damit
     Flask seine normale 404-Antwort liefert, statt stattdessen fälschlich
-    auf /login umzuleiten."""
+    auf /login umzuleiten.
+
+    Zweite Weiche (seit Pläne von Accounts entkoppelt sind, siehe
+    services/plans.py): ein eingeloggter Nutzer OHNE jede Plan-
+    Mitgliedschaft (current_plan() ist dann None) wird auf die
+    Wochenplan-Startseite umgeleitet, AUSSER das Ziel steht bereits auf
+    ZERO_PLAN_ALLOWED_ENDPOINTS - dieselbe zentrale-Gate-Philosophie wie
+    oben, damit keine der zahlreichen plan-gebundenen Routen (Kategorien/
+    Einstellungen/Rezepte/Freigabe/Tages-Aktionen) einzeln selbst prüfen
+    muss, ob current_plan() überhaupt existiert."""
     if request.endpoint is None or request.endpoint in ('auth.login', 'static'):
         return None
     if current_user() is None:
         return redirect(url_for('auth.login', next=request.path))
+    if current_plan() is None and request.endpoint not in ZERO_PLAN_ALLOWED_ENDPOINTS:
+        return redirect(url_for('plan.index'))
     return None
 
 

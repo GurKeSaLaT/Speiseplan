@@ -53,16 +53,31 @@
                 <p class="text-muted small mb-3">Der gesternte Plan öffnet sich automatisch nach dem Login und steht oben in der Seitenleiste.</p>
                 <div class="list-group shadow-sm rounded border">
                     {% for membership in own_memberships %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center py-2">
+                    <div class="list-group-item d-flex justify-content-between align-items-center py-2 gap-2 flex-wrap">
                         <span>{{ membership.plan.name }}</span>
-                        {% if membership.is_starred %}
-                        <span class="badge bg-success px-3 py-2 rounded-pill">⭐ Standard</span>
-                        {% else %}
-                        <form method="POST" action="{{ url_for('sharing.star_plan', plan_id=membership.plan_id) }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-sm btn-outline-warning fw-bold">☆ Als Standard setzen</button>
-                        </form>
-                        {% endif %}
+                        <div class="d-flex align-items-center gap-2">
+                            {# Rein pro Mitgliedschaft geltendes Flag (siehe
+                               models.py: PlanMembership.show_in_week_overview) -
+                               steuert nur, ob DIESER Plan in den Tageskacheln
+                               der ÜBRIGEN eigenen Pläne zusätzlich auftaucht
+                               (routes/plan/pages.py: week_view()), nicht die
+                               Ansicht dieses Plans selbst. #}
+                            <form method="POST" action="{{ url_for('sharing.toggle_overview', plan_id=membership.plan_id) }}" class="form-check form-check-inline m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input class="form-check-input" type="checkbox" id="overview-{{ membership.plan_id }}"
+                                       {% if membership.show_in_week_overview %}checked{% endif %} onchange="this.form.submit()">
+                                <label class="form-check-label small text-muted" for="overview-{{ membership.plan_id }}" title="In den Tageskacheln der anderen eigenen Pläne mit anzeigen">In Übersicht</label>
+                            </form>
+                            {% if membership.is_starred %}
+                            <span class="badge bg-success px-3 py-2 rounded-pill">⭐ Standard</span>
+                            {% else %}
+                            <form method="POST" action="{{ url_for('sharing.star_plan', plan_id=membership.plan_id) }}" class="m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-warning fw-bold">☆ Als Standard setzen</button>
+                            </form>
+                            {% endif %}
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-plan-id="{{ membership.plan_id }}" data-plan-name="{{ membership.plan.name }}" onclick="openDeletePlanModal(this)">Löschen 🗑️</button>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -70,4 +85,42 @@
         </div>
     </div>
 </div>
+
+{# Bestätigungs-Modal fürs endgültige Löschen eines ganzen Plans - EIN
+   gemeinsames Modal statt eines pro Plan-Zeile (analog zum Rezept-Detail-
+   Fenster in templates/plan.html), per JS mit Plan-ID/-Name befüllt.
+   data-plan-id/data-plan-name statt eines inline onclick("...", "...") mit
+   direkt eingebettetem Namen (wie es recipe_edit_list.html für
+   deleteRecipeSafely() noch macht) - Jinja escaped Attributwerte
+   automatisch, ein Plan-Name mit Anführungszeichen kann so kein
+   JavaScript aufbrechen. #}
+<div class="modal fade" id="deletePlanModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" id="deletePlanForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold">🗑️ Plan löschen</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Soll der Plan <strong id="deletePlanName"></strong> wirklich unwiderruflich gelöscht werden?</p>
+                    <p class="text-muted small mb-0">Alle nur diesem Plan gehörenden Rezepte, Kategorien und Einstellungen werden mitgelöscht. Rezepte, die zusätzlich in einen anderen Plan eingebunden sind, bleiben dort erhalten und bekommen automatisch einen neuen Eigentümer.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                    <button type="submit" class="btn btn-danger fw-bold">Endgültig löschen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openDeletePlanModal(button) {
+    document.getElementById('deletePlanName').textContent = button.getAttribute('data-plan-name');
+    document.getElementById('deletePlanForm').action = '/plan/' + button.getAttribute('data-plan-id') + '/delete';
+    new bootstrap.Modal(document.getElementById('deletePlanModal')).show();
+}
+</script>
 {% endblock %}

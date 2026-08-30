@@ -81,6 +81,22 @@ def remove_member(user_id):
     return redirect(url_for('sharing.sharing_view'))
 
 
+@sharing_bp.route('/manage/sharing/overview-toggle/<int:plan_id>', methods=['POST'])
+def toggle_overview(plan_id):
+    """Schaltet PlanMembership.show_in_week_overview für die EIGENE
+    Mitgliedschaft an plan_id um (siehe models.py-Docstring dort - ein rein
+    pro Nutzer geltendes Flag, analog zu is_starred) - wirkt nie auf die
+    Mitgliedschaft eines anderen Nutzers desselben, ggf. geteilten Plans."""
+    user = current_user()
+    membership = PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first()
+    if membership is None:
+        abort(404)
+
+    membership.show_in_week_overview = not membership.show_in_week_overview
+    db.session.commit()
+    return redirect(request.referrer or url_for('sharing.sharing_view'))
+
+
 @sharing_bp.route('/manage/sharing/star/<int:plan_id>', methods=['POST'])
 def star_plan(plan_id):
     """Markiert plan_id als den einen gesternten Plan des eingeloggten

@@ -151,10 +151,11 @@
                aktuelle Woche. Der gesternte steht immer zuerst (siehe
                app.py: inject_current_user_and_plans) und ist zusätzlich
                optisch als "aktiv" markiert, wenn er gerade der
-               tatsächlich aktive Plan ist. Nur sichtbar mit mehr als
-               einem Plan - mit nur einem einzigen (der Normalfall ohne
-               Freigaben) wäre ein Umschalter ohne Alternative sinnlos. #}
-            {% if nav_user_plans and nav_user_plans|length > 1 %}
+               tatsächlich aktive Plan ist. Seit Pläne von Accounts
+               entkoppelt sind (services/plans.py), IMMER sichtbar (auch
+               mit nur einem einzigen Plan oder gar keinem) - der
+               "+ Neuer Plan"-Eintrag gehört immer mit rein, nicht nur der
+               Umschalter. #}
             <div class="rail-section">
                 <div class="rail-label">Meine Pläne</div>
                 {% for membership in nav_user_plans %}
@@ -165,8 +166,38 @@
                     </button>
                 </form>
                 {% endfor %}
+                <button type="button" class="rail-link w-100 text-start border-0 bg-transparent" data-bs-toggle="modal" data-bs-target="#createPlanModal">
+                    <span class="ic">➕</span>Neuer Plan
+                </button>
             </div>
-            {% endif %}
+
+            {# Modal zum Anlegen eines weiteren eigenen Plans - von jeder
+               Seite aus erreichbar (lebt deshalb hier in base.html statt in
+               einer einzelnen Unterseite), gleiches Muster wie das
+               Rezept-Detail-Fenster in templates/plan.html. Erfolgreiches
+               Absenden wechselt sofort auf den neuen Plan (siehe
+               routes/plans.py: create()). #}
+            <div class="modal fade" id="createPlanModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-sm">
+                    <div class="modal-content border-0 shadow">
+                        <form method="POST" action="{{ url_for('plans.create') }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <div class="modal-header">
+                                <h5 class="modal-title fw-bold">➕ Neuer Plan</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <label class="form-label small text-muted" for="createPlanName">Name des Plans</label>
+                                <input type="text" id="createPlanName" name="name" class="form-control" required autofocus>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                                <button type="submit" class="btn btn-primary-custom fw-bold">Erstellen</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
 
             <div class="rail-section">
                 <div class="rail-label">Rezepte</div>
