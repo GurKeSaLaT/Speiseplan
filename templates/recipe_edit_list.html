@@ -32,49 +32,61 @@
                 {% if recipes %}
                 <input type="text" id="recipeFilter" class="form-control mb-3" placeholder="🔍 Rezept oder Kategorie suchen..." autocomplete="off">
                 {% endif %}
-                <div class="list-group shadow-sm rounded border" id="recipeList">
+                {# Kachel-Raster statt der früheren .list-group-Zeilen - einheitliche
+                   Tag-"Chips" (.chip, siehe static/style.css) statt gemischter
+                   bg-secondary/bg-info/bg-light-Badges, Knöpfe teilen sich per
+                   .rc-actions/flex:1 immer zu gleichen Teilen die Kartenbreite, und
+                   .rc-spacer schiebt sie unabhängig von der Tag-Anzahl an die
+                   Unterkante - mit dem Nutzer abgestimmtes Mockup. #}
+                {% if recipes %}
+                <div class="recipe-grid" id="recipeList">
                     {% for recipe in recipes %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center py-3 recipe-list-row" data-search="{{ recipe.name|lower }} {{ recipe.category.name|lower }}">
-                        <div>
-                            <strong class="d-block fs-5 text-dark">{{ recipe.name }}{% if recipe.is_favorite %} ⭐{% endif %}</strong>
-                            <span class="badge bg-secondary px-2 py-1 font-monospace" style="font-size: 0.75rem;">{{ recipe.category.name }}</span>
-                            <span class="badge bg-secondary px-2 py-1 font-monospace" style="font-size: 0.75rem;">👥 {{ recipe.servings }}</span>
+                    <div class="recipe-card recipe-list-row" data-search="{{ recipe.name|lower }} {{ recipe.category.name|lower }}">
+                        <div class="rc-head">
+                            <span class="rc-name">{{ recipe.name }}</span>
+                            {% if recipe.is_favorite %}<span class="rc-star" title="Favorit">⭐</span>{% endif %}
+                        </div>
+                        <div class="rc-tags">
+                            <span class="chip chip-fact">{{ recipe.category.name }}</span>
+                            <span class="chip chip-fact">👥 {{ recipe.servings }}</span>
                             {% if recipe.is_side_dish %}
-                            <span class="badge bg-info text-dark px-2 py-1" style="font-size: 0.75rem;">🥗 Beilage</span>
+                            <span class="chip chip-flag">🥗 Beilage</span>
                             {% endif %}
                             {% if recipe.owner_plan_id != own_plan_id %}
-                            <span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;" title="Aus einem anderen Plan eingebunden">🔗 Verknüpft</span>
+                            <span class="chip chip-linked" title="Aus einem anderen Plan eingebunden">🔗 Verknüpft</span>
                             {% endif %}
                             {% for label in recipe_labels[recipe.id] %}
-                            <span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;">{{ label }}</span>
+                            <span class="chip chip-flag">{{ label }}</span>
                             {% endfor %}
                             {% if recipe.source_url %}
-                            <a href="{{ recipe.source_url }}" target="_blank" rel="noopener noreferrer" class="badge bg-light text-dark border px-2 py-1 text-decoration-none" style="font-size: 0.75rem;" title="Quelle öffnen">🔗 Quelle</a>
+                            <a href="{{ recipe.source_url }}" target="_blank" rel="noopener noreferrer" class="chip chip-linked text-decoration-none" title="Quelle öffnen">🔗 Quelle</a>
                             {% endif %}
                         </div>
-                        <div class="d-flex gap-2">
-                            <a href="{{ url_for('recipes.recipe_edit_view', id=recipe.id, plan_id=plan_id) }}" class="btn btn-warning fw-bold text-dark btn-sm px-3">
+                        <div class="rc-spacer"></div>
+                        <div class="rc-actions">
+                            <a href="{{ url_for('recipes.recipe_edit_view', id=recipe.id, plan_id=plan_id) }}" class="rc-btn-edit">
                                 Bearbeiten ✏️
                             </a>
                             {% if recipe.owner_plan_id == own_plan_id %}
-                            <button type="button" class="btn btn-outline-danger btn-sm px-3" onclick="deleteRecipeSafely({{ recipe.id }}, '{{ recipe.name }}')">
+                            <button type="button" class="rc-btn-delete" onclick="deleteRecipeSafely({{ recipe.id }}, '{{ recipe.name }}')">
                                 Löschen 🗑️
                             </button>
                             {% else %}
-                            <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=own_plan_id) }}" class="m-0">
+                            <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=own_plan_id) }}" class="m-0 flex-fill">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="plan_id" value="{{ plan_id }}">
-                                <button type="submit" class="btn btn-outline-secondary btn-sm px-3" title="Nur aus diesem Plan entfernen, das Rezept bleibt in seinem Ursprungsplan erhalten">
+                                <button type="submit" class="rc-btn-unlink w-100" title="Nur aus diesem Plan entfernen, das Rezept bleibt in seinem Ursprungsplan erhalten">
                                     Entfernen 🔗
                                 </button>
                             </form>
                             {% endif %}
                         </div>
                     </div>
-                    {% else %}
-                    <div class="text-center p-5 text-muted">Noch keine Essen eingetragen.</div>
                     {% endfor %}
                 </div>
+                {% else %}
+                <div class="text-center p-5 text-muted">Noch keine Essen eingetragen.</div>
+                {% endif %}
             </div>
         </div>
     </div>
