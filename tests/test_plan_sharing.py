@@ -51,7 +51,7 @@ def test_invite_is_not_starred_for_invitee(app, client, make_user):
         membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=other_id).first()
         assert membership.is_starred is False
         # Der eigene Plan bleibt weiterhin gesternt - siehe app.py:
-        # init_db()-Kommentar zum selben Prinzip bei Jonas/Elo.
+        # init_db()-Kommentar zum selben Prinzip bei den Seed-Konten.
         own_membership = PlanMembership.query.filter_by(plan_id=own_plan_id, user_id=other_id).first()
         assert own_membership.is_starred is True
 

@@ -143,7 +143,7 @@ def init_db():
     # lässt sich per ALTER TABLE nicht entfernen - wie bei den früheren
     # category-/ingredient_alias-Migrationen daher ein einmaliger
     # Tabellen-Neuaufbau. Platzhalter-E-Mail je Bestandskonto nach dem
-    # Schema <name-klein>@example.com (z.B. "Jonas" -> jonas@example.com) -
+    # Schema <name-klein>@example.com (z.B. "Nutzer1" -> nutzer1@example.com) -
     # ergibt sich automatisch aus dem bisherigen username, keine
     # Sonderbehandlung einzelner Namen nötig; im Testbetrieb ist ein Login
     # mit diesen Platzhaltern ausdrücklich erlaubt.
@@ -279,27 +279,28 @@ def init_db():
         db.session.commit()
 
     # --- Nutzerverwaltung: Login + eigene/geteilte Wochenpläne ---
-    # Erststart (noch kein einziger Nutzer vorhanden): legt die beiden
-    # aktuell vorgesehenen Konten an (siehe models.py: User) - es gibt
-    # keine eigene Registrierungsseite, neue Nutzer kommen bislang nur über
-    # diese Stelle hinzu. Jeder bekommt sofort einen eigenen Plan (siehe
-    # models.py: Plan/PlanMembership); NUR Jonas' eigener Plan wird dabei
-    # direkt gesternt - er wird gleich unten zum "legacy_plan", dem die
-    # komplette bisherige Planungs-Historie zugeordnet wird, und Elo
-    # bekommt IHREN Stern dort (nicht auf ihrem eigenen, leeren Plan) -
-    # so hat jeder Nutzer durchgehend genau einen gesternten Plan, und
-    # beide landen nach dem allerersten Login auf demselben, bereits
-    # vorhandenen Plan.
+    # Erststart (noch kein einziger Nutzer vorhanden): legt zwei generische
+    # Demo-Konten an (siehe models.py: User), damit die App nach einem
+    # frischen Klonen ohne die versionierte instance/speiseplan.db (siehe
+    # README.md: Setup) direkt nutzbar ist - reale Registrierung läuft
+    # normalerweise über routes/auth.py: register(). Jeder bekommt sofort
+    # einen eigenen Plan (siehe models.py: Plan/PlanMembership); NUR
+    # Nutzer1s eigener Plan wird dabei direkt gesternt - er wird gleich
+    # unten zum "legacy_plan", dem die komplette bisherige Planungs-
+    # Historie zugeordnet wird, und Nutzer2 bekommt SEINEN Stern dort
+    # (nicht auf seinem eigenen, leeren Plan) - so hat jeder Nutzer
+    # durchgehend genau einen gesternten Plan, und beide landen nach dem
+    # allerersten Login auf demselben, bereits vorhandenen Plan.
     seeded_plans_by_username = {}
     if not User.query.first():
-        for username in ("Jonas", "Elo"):
+        for username in ("Nutzer1", "Nutzer2"):
             user = User(name=username, email=f"{username.lower()}@example.com", password_hash=hash_password(username))
             db.session.add(user)
             db.session.flush()
             plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)
             db.session.add(plan)
             db.session.flush()
-            db.session.add(PlanMembership(plan_id=plan.id, user_id=user.id, is_starred=(username == "Jonas")))
+            db.session.add(PlanMembership(plan_id=plan.id, user_id=user.id, is_starred=(username == "Nutzer1")))
             seeded_plans_by_username[username] = plan
         db.session.commit()
 
@@ -318,17 +319,18 @@ def init_db():
     # Versionen der App noch nicht (der Kalender war global, ein einziger
     # von allen geteilter Plan) - fehlt die Spalte, wird sie ergänzt und
     # ALLE bestehenden Zeilen (die komplette bisherige Planungs-Historie)
-    # werden Jonas' neu angelegtem Plan zugeordnet; Elo wird zusätzlich
-    # (gesternt) als Mitglied dieses Plans eingetragen - so sehen nach
-    # dieser einmaligen Migration BEIDE exakt denselben, bereits
-    # vorhandenen Plan, ganz ohne dass jemand manuell etwas einladen müsste.
+    # werden Nutzer1s neu angelegtem Plan zugeordnet; Nutzer2 wird
+    # zusätzlich (gesternt) als Mitglied dieses Plans eingetragen - so
+    # sehen nach dieser einmaligen Migration BEIDE exakt denselben,
+    # bereits vorhandenen Plan, ganz ohne dass jemand manuell etwas
+    # einladen müsste.
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'plan_id' not in existing_plan_day_columns:
-        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        legacy_plan = seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
         if legacy_plan is not None:
-            elo = User.query.filter_by(name="Elo").first()
-            if elo is not None and not PlanMembership.query.filter_by(plan_id=legacy_plan.id, user_id=elo.id).first():
-                db.session.add(PlanMembership(plan_id=legacy_plan.id, user_id=elo.id, is_starred=True))
+            second_user = User.query.filter_by(name="Nutzer2").first()
+            if second_user is not None and not PlanMembership.query.filter_by(plan_id=legacy_plan.id, user_id=second_user.id).first():
+                db.session.add(PlanMembership(plan_id=legacy_plan.id, user_id=second_user.id, is_starred=True))
                 db.session.commit()
 
             db.session.execute(text("ALTER TABLE plan_day ADD COLUMN plan_id INTEGER"))
@@ -369,7 +371,7 @@ def init_db():
         row[1] for row in db.session.execute(text("PRAGMA table_info(extra_shopping_item)"))
     }
     if 'plan_id' not in existing_extra_item_columns:
-        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        legacy_plan = seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
         if legacy_plan is not None:
             db.session.execute(text("ALTER TABLE extra_shopping_item ADD COLUMN plan_id INTEGER"))
             db.session.execute(
@@ -394,7 +396,7 @@ def init_db():
         existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
         if column in existing_columns:
             return
-        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        legacy_plan = seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
         if legacy_plan is None:
             return
         db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER"))
@@ -426,7 +428,7 @@ def init_db():
         existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
         if 'plan_id' in existing_columns:
             return
-        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        legacy_plan = seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
         if legacy_plan is None:
             return
         db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN plan_id INTEGER"))

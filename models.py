@@ -449,9 +449,9 @@ class User(db.Model):
     routes/auth.py: login()/register()) - name ist reiner Anzeigename OHNE
     Eindeutigkeit, zwei Nutzer dürfen also gleich heißen. Registrierung
     läuft über routes/auth.py: register() (Button auf der Login-Seite);
-    beim App-Start in app.py: init_db() werden zusätzlich weiterhin
-    "Jonas"/"Elo" als Bestandskonten gesät (Platzhalter-E-Mails nach dem
-    Schema <name>@example.com, siehe dort)."""
+    beim App-Start in app.py: init_db() werden zusätzlich weiterhin zwei
+    generische Demo-Konten ("Nutzer1"/"Nutzer2") gesät (Platzhalter-
+    E-Mails nach dem Schema <name>@example.com, siehe dort)."""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)

@@ -69,10 +69,10 @@ def test_login_is_case_insensitive_on_email(app):
 
 
 def test_seeded_users_can_log_in_with_placeholder_email(app):
-    """app.py: init_db() legt beim allerersten Start Jonas/Jonas und
-    Elo/Elo mit Platzhalter-E-Mails (<name>@example.com) an - hier wird nur
-    die Login-FUNKTION geprüft (eigener, frisch angelegter Nutzer mit
-    denselben Anmeldedaten), nicht die Migration selbst (die läuft nur
+    """app.py: init_db() legt beim allerersten Start Nutzer1/Nutzer1 und
+    Nutzer2/Nutzer2 mit Platzhalter-E-Mails (<name>@example.com) an - hier
+    wird nur die Login-FUNKTION geprüft (eigener, frisch angelegter Nutzer
+    mit denselben Anmeldedaten), nicht die Migration selbst (die läuft nur
     einmalig gegen eine echte, dauerhafte Datenbank, nicht gegen die pro
     Testlauf frische SQLite-Datei - siehe tests/conftest.py: app_module).
     Login mit der example.com-Platzhalteradresse ist im Testbetrieb
@@ -81,10 +81,10 @@ def test_seeded_users_can_log_in_with_placeholder_email(app):
     from models import User, db
 
     with app.app_context():
-        db.session.add(User(name="Jonas", email="jonas@example.com", password_hash=hash_password("Jonas")))
+        db.session.add(User(name="Nutzer1", email="nutzer1@example.com", password_hash=hash_password("Nutzer1")))
         db.session.commit()
 
-    resp = app.test_client().post("/login", data={"email": "jonas@example.com", "password": "Jonas"})
+    resp = app.test_client().post("/login", data={"email": "nutzer1@example.com", "password": "Nutzer1"})
     assert resp.status_code == 302
     assert "/login" not in resp.headers["Location"]
 
