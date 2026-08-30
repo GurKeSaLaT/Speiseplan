@@ -134,6 +134,37 @@ def init_db():
     """
     db.create_all()
 
+    # user.username -> user.name (kein Login-Feld mehr, reiner Anzeigename,
+    # ab jetzt NICHT mehr eindeutig) + neue, eindeutige user.email-Spalte
+    # (Login läuft jetzt über E-Mail, siehe routes/auth.py: login()). Das
+    # alte inline UNIQUE auf username (aus der ursprünglichen CREATE TABLE)
+    # lässt sich per ALTER TABLE nicht entfernen - wie bei den früheren
+    # category-/ingredient_alias-Migrationen daher ein einmaliger
+    # Tabellen-Neuaufbau. Platzhalter-E-Mail je Bestandskonto nach dem
+    # Schema <name-klein>@example.com (z.B. "Jonas" -> jonas@example.com) -
+    # ergibt sich automatisch aus dem bisherigen username, keine
+    # Sonderbehandlung einzelner Namen nötig; im Testbetrieb ist ein Login
+    # mit diesen Platzhaltern ausdrücklich erlaubt.
+    existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
+    if 'email' not in existing_user_columns:
+        db.session.execute(text("""
+            CREATE TABLE user_new (
+                id INTEGER NOT NULL PRIMARY KEY,
+                name VARCHAR(50) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at DATETIME,
+                UNIQUE(email)
+            )
+        """))
+        db.session.execute(text("""
+            INSERT INTO user_new (id, name, email, password_hash, created_at)
+            SELECT id, username, LOWER(username) || '@example.com', password_hash, created_at FROM user
+        """))
+        db.session.execute(text("DROP TABLE user"))
+        db.session.execute(text("ALTER TABLE user_new RENAME TO user"))
+        db.session.commit()
+
     existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}
     if 'is_side_dish' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_side_dish BOOLEAN NOT NULL DEFAULT 0"))
@@ -260,7 +291,7 @@ def init_db():
     seeded_plans_by_username = {}
     if not User.query.first():
         for username in ("Jonas", "Elo"):
-            user = User(username=username, password_hash=hash_password(username))
+            user = User(name=username, email=f"{username.lower()}@example.com", password_hash=hash_password(username))
             db.session.add(user)
             db.session.flush()
             plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)
@@ -293,7 +324,7 @@ def init_db():
     if 'plan_id' not in existing_plan_day_columns:
         legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
         if legacy_plan is not None:
-            elo = User.query.filter_by(username="Elo").first()
+            elo = User.query.filter_by(name="Elo").first()
             if elo is not None and not PlanMembership.query.filter_by(plan_id=legacy_plan.id, user_id=elo.id).first():
                 db.session.add(PlanMembership(plan_id=legacy_plan.id, user_id=elo.id, is_starred=True))
                 db.session.commit()
@@ -508,8 +539,8 @@ ZERO_PLAN_ALLOWED_ENDPOINTS = {'plan.index', 'plan.week_view', 'plans.create', '
 
 @app.before_request
 def require_login():
-    """Schützt global JEDE Route außer der Login-Seite selbst und
-    statischen Dateien (CSS/JS/Bilder) - ein einzelner Gate-Punkt statt
+    """Schützt global JEDE Route außer der Login-/Registrierungsseite
+    selbst und statischen Dateien (CSS/JS/Bilder) - ein einzelner Gate-Punkt statt
     eines @login_required-Decorators an jeder der bestehenden Routen
     (siehe services/auth.py: login_required() für die Decorator-Variante,
     die aktuell nirgends im Routing eingesetzt wird), damit keine Route
@@ -528,7 +559,7 @@ def require_login():
     oben, damit keine der zahlreichen plan-gebundenen Routen (Kategorien/
     Einstellungen/Rezepte/Freigabe/Tages-Aktionen) einzeln selbst prüfen
     muss, ob current_plan() überhaupt existiert."""
-    if request.endpoint is None or request.endpoint in ('auth.login', 'static'):
+    if request.endpoint is None or request.endpoint in ('auth.login', 'auth.register', 'static'):
         return None
     if current_user() is None:
         return redirect(url_for('auth.login', next=request.path))

@@ -15,8 +15,8 @@ eigene Kategorien.
 
 from models import (
     Category, ExtraShoppingItem, IngredientAlias, IngredientNutrition,
-    AppSettings, Plan, PlanDay, PlanDaySide, PlanMembership, Recipe,
-    RecipePlanLink, db,
+    AppSettings, PendingPlanInvite, Plan, PlanDay, PlanDaySide, PlanMembership,
+    Recipe, RecipePlanLink, db,
 )
 
 # Ein sinnvoller Grundstock an Kategorien, damit ein neuer Plan nicht mit
@@ -101,4 +101,25 @@ def delete_plan(plan):
 
     PlanMembership.query.filter_by(plan_id=plan.id).delete()
     db.session.delete(plan)
+    db.session.commit()
+
+
+def accept_pending_invites(user):
+    """Wandelt jede noch offene PendingPlanInvite für user.email (siehe
+    models.py-Docstring dort) in eine echte PlanMembership um - aufgerufen
+    direkt nach dem Anlegen eines neuen Kontos (routes/auth.py: register()),
+    damit eine Registrierung über einen Einladungs-Link sofort zur
+    Plan-Mitgliedschaft führt, ohne dass der Einladende ein zweites Mal
+    tätig werden muss.
+
+    is_starred nach demselben Kriterium wie create_plan() oben: gesternt,
+    wenn es die ERSTE Mitgliedschaft des Nutzers überhaupt ist - bei
+    mehreren offenen Einladungen bekommt nur die zuerst verarbeitete den
+    Stern, der Rest bleibt unbesternt (analog zu einem manuell über
+    invite_member() eingeladenen Mitglied)."""
+    for invite in PendingPlanInvite.query.filter_by(email=user.email).all():
+        if not PlanMembership.query.filter_by(plan_id=invite.plan_id, user_id=user.id).first():
+            is_first = PlanMembership.query.filter_by(user_id=user.id).first() is None
+            db.session.add(PlanMembership(plan_id=invite.plan_id, user_id=user.id, is_starred=is_first))
+        db.session.delete(invite)
     db.session.commit()

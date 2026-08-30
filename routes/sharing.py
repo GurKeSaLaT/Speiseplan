@@ -9,56 +9,97 @@ Mitgliedschaft (wer gehört dazu) und der pro-Nutzer-Stern (welcher Plan
 ist gerade "der eigene").
 """
 
+import re
+
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
-from models import PlanMembership, User, db
+from models import PendingPlanInvite, PlanMembership, User, db
 from services.auth import current_plan, current_user
+from services.mail import send_invite_email
 
 sharing_bp = Blueprint('sharing', __name__)
+
+# Dieselbe grobe Formprüfung wie bei der Registrierung selbst (siehe
+# routes/auth.py: EMAIL_PATTERN) - keine echte Zustellbarkeitsprüfung.
+EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 @sharing_bp.route('/manage/sharing')
 def sharing_view():
     """Zeigt die Mitglieder des aktuell aktiven Plans (mit Entfernen-Option,
-    außer für dessen Eigentümer - siehe remove_member()), ein Dropdown zum
-    Einladen weiterer bekannter Nutzer, und die Liste ALLER Pläne des
+    außer für dessen Eigentümer - siehe remove_member()), ein E-Mail-Feld
+    zum Einladen (siehe invite_member()), die noch offenen Einladungen an
+    noch unregistrierte Adressen, und die Liste ALLER Pläne des
     eingeloggten Nutzers mit Stern-Umschalter."""
     plan = current_plan()
     if plan is None:
         abort(404)
 
     member_ids = {m.user_id for m in PlanMembership.query.filter_by(plan_id=plan.id).all()}
-    members = User.query.filter(User.id.in_(member_ids)).order_by(User.username).all() if member_ids else []
-    invitable_users = User.query.filter(~User.id.in_(member_ids)).order_by(User.username).all() if member_ids else User.query.order_by(User.username).all()
+    members = User.query.filter(User.id.in_(member_ids)).order_by(User.name).all() if member_ids else []
+    pending_invites = PendingPlanInvite.query.filter_by(plan_id=plan.id).order_by(PendingPlanInvite.invited_at).all()
 
     user = current_user()
     own_memberships = PlanMembership.query.filter_by(user_id=user.id).all()
     own_memberships.sort(key=lambda m: (not m.is_starred, m.plan.name))
 
     return render_template(
-        'sharing.html', plan=plan, members=members, invitable_users=invitable_users,
+        'sharing.html', plan=plan, members=members, pending_invites=pending_invites,
         own_memberships=own_memberships,
     )
 
 
 @sharing_bp.route('/manage/sharing/invite', methods=['POST'])
 def invite_member():
-    """Fügt einen bekannten Nutzer sofort (ohne Einladungs-/Bestätigungs-
-    Workflow - es gibt kein Benachrichtigungssystem) als Mitglied des
-    aktuell aktiven Plans hinzu, mit vollem Zugriff wie jedes andere
-    Mitglied. Nicht gesternt: der eingeladene Nutzer entscheidet selbst
-    (auf seiner eigenen /manage/sharing-Seite), ob er sich diesen Plan zu
-    seinem Standard-Plan macht."""
+    """Teilt den aktuell aktiven Plan mit einer eingegebenen E-Mail-Adresse:
+    existiert dazu bereits ein Konto, wird sofort (ohne Einladungs-/
+    Bestätigungs-Workflow) eine PlanMembership mit vollem Zugriff wie jedes
+    andere Mitglied angelegt. Existiert noch keins, entsteht stattdessen
+    eine PendingPlanInvite (siehe models.py-Docstring dort) und eine
+    Einladung wird "verschickt" (services/mail.py: send_invite_email() -
+    aktuell nur geloggt, der Link steht zusätzlich direkt auf dieser Seite,
+    siehe templates/sharing.html: "Ausstehende Einladungen"). Nicht
+    gesternt bzw. erst beim Registrieren ggf. gesternt (services/plans.py:
+    accept_pending_invites()) - der eingeladene Nutzer entscheidet sonst
+    selbst, ob er sich diesen Plan zu seinem Standard-Plan macht."""
     plan = current_plan()
     if plan is None:
         abort(404)
 
-    user_id = request.form.get('user_id', type=int)
-    invited = User.query.get(user_id) if user_id else None
-    if invited and not PlanMembership.query.filter_by(plan_id=plan.id, user_id=invited.id).first():
-        db.session.add(PlanMembership(plan_id=plan.id, user_id=invited.id, is_starred=False))
-        db.session.commit()
+    email = (request.form.get('email') or '').strip().lower()
+    if not email or not EMAIL_PATTERN.match(email):
+        return redirect(url_for('sharing.sharing_view'))
 
+    existing = User.query.filter_by(email=email).first()
+    if existing:
+        if not PlanMembership.query.filter_by(plan_id=plan.id, user_id=existing.id).first():
+            db.session.add(PlanMembership(plan_id=plan.id, user_id=existing.id, is_starred=False))
+            db.session.commit()
+    else:
+        if not PendingPlanInvite.query.filter_by(plan_id=plan.id, email=email).first():
+            db.session.add(PendingPlanInvite(plan_id=plan.id, email=email))
+            db.session.commit()
+        send_invite_email(email, plan.name, url_for('auth.register', email=email, _external=True))
+
+    return redirect(url_for('sharing.sharing_view'))
+
+
+@sharing_bp.route('/manage/sharing/invite/<int:invite_id>/cancel', methods=['POST'])
+def cancel_invite(invite_id):
+    """Zieht eine noch offene Einladung an eine unregistrierte E-Mail-
+    Adresse zurück - Gegenstück zu remove_member() für echte Mitglieder.
+    Muss zum aktuell aktiven Plan gehören, sonst 404 (gleiches Muster wie
+    die übrigen Besitz-Checks in dieser App)."""
+    plan = current_plan()
+    if plan is None:
+        abort(404)
+
+    invite = PendingPlanInvite.query.get_or_404(invite_id)
+    if invite.plan_id != plan.id:
+        abort(404)
+
+    db.session.delete(invite)
+    db.session.commit()
     return redirect(url_for('sharing.sharing_view'))
 
 

@@ -221,7 +221,7 @@
             <div class="rail-theme">
                 {% if nav_current_user %}
                 <div class="theme-row d-flex justify-content-between align-items-center">
-                    <span class="lbl">👤 {{ nav_current_user.username }}</span>
+                    <span class="lbl">👤 {{ nav_current_user.name }}</span>
                     <form method="POST" action="{{ url_for('auth.logout') }}" class="d-inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">Abmelden</button>

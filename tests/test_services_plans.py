@@ -31,7 +31,7 @@ def test_create_plan_stars_a_users_very_first_membership(app):
     from services.plans import create_plan
 
     with app.app_context():
-        user = User(username="Blanko", password_hash=hash_password("test"))
+        user = User(name="Blanko", email="blanko@test.local", password_hash=hash_password("test"))
         db.session.add(user)
         db.session.commit()
 

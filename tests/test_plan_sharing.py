@@ -11,6 +11,12 @@ def _login_as(app, user_id):
     return test_client
 
 
+def _email_for(app, user_id):
+    from models import User
+    with app.app_context():
+        return User.query.get(user_id).email
+
+
 def test_sharing_view_lists_owner_as_member(client):
     resp = client.get("/manage/sharing")
     assert resp.status_code == 200
@@ -22,7 +28,7 @@ def test_invite_member_grants_full_access(app, client, make_user):
     Zugriff - kann z.B. direkt einen Tag im Plan befüllen."""
     other_id, _ = make_user("Mitbewohner")
 
-    resp = client.post("/manage/sharing/invite", data={"user_id": other_id})
+    resp = client.post("/manage/sharing/invite", data={"email": _email_for(app, other_id)})
     assert resp.status_code == 302
 
     from models import PlanMembership
@@ -38,7 +44,7 @@ def test_invite_member_grants_full_access(app, client, make_user):
 
 def test_invite_is_not_starred_for_invitee(app, client, make_user):
     other_id, own_plan_id = make_user("Mitbewohner")
-    client.post("/manage/sharing/invite", data={"user_id": other_id})
+    client.post("/manage/sharing/invite", data={"email": _email_for(app, other_id)})
 
     from models import PlanMembership
     with app.app_context():
@@ -52,7 +58,7 @@ def test_invite_is_not_starred_for_invitee(app, client, make_user):
 
 def test_remove_member_removes_access(app, client, make_user):
     other_id, _ = make_user("Mitbewohner")
-    client.post("/manage/sharing/invite", data={"user_id": other_id})
+    client.post("/manage/sharing/invite", data={"email": _email_for(app, other_id)})
 
     resp = client.post(f"/manage/sharing/remove/{other_id}")
     assert resp.status_code == 302
@@ -197,3 +203,87 @@ def test_toggle_overview_requires_own_membership(client, make_user):
     _, other_plan_id = make_user("Fremd")
     resp = client.post(f"/manage/sharing/overview-toggle/{other_plan_id}")
     assert resp.status_code == 404
+
+
+# --- Einladung per E-Mail an eine NOCH NICHT registrierte Adresse ---
+
+def test_invite_unknown_email_creates_pending_invite_not_membership(app, client):
+    from models import PendingPlanInvite, PlanMembership
+
+    resp = client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
+    assert resp.status_code == 302
+
+    with app.app_context():
+        invite = PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first()
+        assert invite is not None
+        assert PlanMembership.query.filter_by(plan_id=client.plan_id).count() == 1  # nur client selbst
+
+
+def test_invite_unknown_email_shows_up_as_pending_on_sharing_page(client):
+    client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
+    resp = client.get("/manage/sharing")
+    assert b"neu@test.local" in resp.data
+    assert b"/register" in resp.data
+
+
+def test_invite_rejects_malformed_email(app, client):
+    from models import PendingPlanInvite
+
+    resp = client.post("/manage/sharing/invite", data={"email": "keine-email"})
+    assert resp.status_code == 302
+    with app.app_context():
+        assert PendingPlanInvite.query.count() == 0
+
+
+def test_registering_with_invited_email_auto_joins_plan(app, client):
+    """Der eigentliche Kern des Einladungs-Flows: registriert sich später
+    jemand mit GENAU der eingeladenen E-Mail, entsteht sofort die
+    PlanMembership - ohne dass client noch einmal tätig werden muss."""
+    client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
+
+    test_client = app.test_client()
+    resp = test_client.post("/register", data={"name": "Neu", "email": "neu@test.local", "password": "geheim123"})
+    assert resp.status_code == 302
+
+    from models import PendingPlanInvite, PlanMembership, User
+    with app.app_context():
+        user = User.query.filter_by(email="neu@test.local").first()
+        membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=user.id).first()
+        assert membership is not None
+        # Erste (und einzige) Mitgliedschaft des neuen Nutzers -> gesternt,
+        # siehe services/plans.py: accept_pending_invites().
+        assert membership.is_starred is True
+        assert PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first() is None
+
+    # Direkt eingeloggt und landet im eingeladenen Plan.
+    resp = test_client.get("/")
+    assert resp.status_code == 302
+    resp = test_client.get(resp.headers["Location"])
+    assert b"noch in keinem Plan Mitglied" not in resp.data
+
+
+def test_cancel_invite_removes_pending_invite(app, client):
+    client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
+    from models import PendingPlanInvite
+    with app.app_context():
+        invite_id = PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first().id
+
+    resp = client.post(f"/manage/sharing/invite/{invite_id}/cancel")
+    assert resp.status_code == 302
+    with app.app_context():
+        assert PendingPlanInvite.query.get(invite_id) is None
+
+
+def test_cancel_invite_requires_own_plan(app, client, make_user):
+    _, other_plan_id = make_user("Fremd")
+    from models import PendingPlanInvite, db
+    with app.app_context():
+        invite = PendingPlanInvite(plan_id=other_plan_id, email="fremd@test.local")
+        db.session.add(invite)
+        db.session.commit()
+        invite_id = invite.id
+
+    resp = client.post(f"/manage/sharing/invite/{invite_id}/cancel")
+    assert resp.status_code == 404
+    with app.app_context():
+        assert PendingPlanInvite.query.get(invite_id) is not None

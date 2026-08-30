@@ -62,7 +62,7 @@ def make_user(app):
             counter["n"] += 1
             username = f"Testnutzer{counter['n']}"
         with app.app_context():
-            user = User(username=username, password_hash=hash_password(password))
+            user = User(name=username, email=f"{username.lower()}@test.local", password_hash=hash_password(password))
             db.session.add(user)
             db.session.flush()
             plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)

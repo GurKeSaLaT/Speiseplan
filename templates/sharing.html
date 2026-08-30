@@ -16,7 +16,7 @@
                 <div class="list-group shadow-sm rounded border mb-4">
                     {% for member in members %}
                     <div class="list-group-item d-flex justify-content-between align-items-center py-2">
-                        <span>{{ member.username }}{% if member.id == plan.owner_user_id %} <span class="badge bg-light text-dark border">Eigentümer</span>{% endif %}</span>
+                        <span>{{ member.name }}{% if member.id == plan.owner_user_id %} <span class="badge bg-light text-dark border">Eigentümer</span>{% endif %}</span>
                         {% if member.id != plan.owner_user_id %}
                         <form method="POST" action="{{ url_for('sharing.remove_member', user_id=member.id) }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -27,20 +27,31 @@
                     {% endfor %}
                 </div>
 
-                {% if invitable_users %}
-                <h6 class="fw-bold text-muted mb-2">Nutzer einladen</h6>
+                <h6 class="fw-bold text-muted mb-2">Per E-Mail einladen</h6>
                 <form method="POST" action="{{ url_for('sharing.invite_member') }}" class="d-flex gap-2 mb-2">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <select name="user_id" class="form-select" required>
-                        {% for u in invitable_users %}
-                        <option value="{{ u.id }}">{{ u.username }}</option>
-                        {% endfor %}
-                    </select>
+                    <input type="email" name="email" class="form-control" placeholder="E-Mail-Adresse" required>
                     <button type="submit" class="btn btn-success fw-bold text-nowrap">Einladen</button>
                 </form>
-                <div class="form-text">Eingeladene Nutzer haben vollen Zugriff auf diesen Plan - würfeln, tauschen, Portionen ändern, alles wie ein Eigentümer.</div>
-                {% else %}
-                <div class="text-muted small">Alle bekannten Nutzer sind bereits Mitglied.</div>
+                <div class="form-text">Existiert dazu bereits ein Konto, ist der Plan sofort geteilt. Sonst wird eine Einladung zum Registrieren "verschickt" (siehe unten) - eingeladene Nutzer haben vollen Zugriff auf diesen Plan, alles wie ein Eigentümer.</div>
+
+                {% if pending_invites %}
+                <h6 class="fw-bold text-muted mb-2 mt-4">Ausstehende Einladungen</h6>
+                <div class="list-group shadow-sm rounded border">
+                    {% for invite in pending_invites %}
+                    <div class="list-group-item py-2">
+                        <div class="d-flex justify-content-between align-items-center gap-2">
+                            <span>{{ invite.email }}</span>
+                            <form method="POST" action="{{ url_for('sharing.cancel_invite', invite_id=invite.id) }}" class="m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">Zurückziehen</button>
+                            </form>
+                        </div>
+                        {# Noch kein echter Mail-Versand (services/mail.py) - der Link steht deshalb hier direkt zum Kopieren/Weiterleiten. #}
+                        <input type="text" class="form-control form-control-sm mt-1" readonly onclick="this.select()" value="{{ url_for('auth.register', email=invite.email, _external=True) }}">
+                    </div>
+                    {% endfor %}
+                </div>
                 {% endif %}
             </div>
         </div>

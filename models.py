@@ -445,12 +445,16 @@ class User(db.Model):
     Login über werkzeug.security.check_password_hash(), ohne das
     Passwort selbst je wieder rekonstruieren zu können.
 
-    Aktuell gibt es keine eigene Registrierungsseite: neue Nutzer werden
-    ausschließlich beim App-Start in app.py: init_db() eingetragen (siehe
-    dort - momentan "Jonas"/"Elo").
-    """
+    Login erfolgt über email (immer klein geschrieben gespeichert, siehe
+    routes/auth.py: login()/register()) - name ist reiner Anzeigename OHNE
+    Eindeutigkeit, zwei Nutzer dürfen also gleich heißen. Registrierung
+    läuft über routes/auth.py: register() (Button auf der Login-Seite);
+    beim App-Start in app.py: init_db() werden zusätzlich weiterhin
+    "Jonas"/"Elo" als Bestandskonten gesät (Platzhalter-E-Mails nach dem
+    Schema <name>@example.com, siehe dort)."""
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.now())
 
@@ -523,3 +527,26 @@ class PlanMembership(db.Model):
 
     plan = db.relationship('Plan')
     user = db.relationship('User')
+
+
+class PendingPlanInvite(db.Model):
+    """Eine per E-Mail ausgesprochene Plan-Einladung an eine NOCH NICHT
+    registrierte Adresse (siehe routes/sharing.py: invite_member() - für
+    eine bereits existierende E-Mail entsteht stattdessen sofort eine
+    echte PlanMembership, keine Zeile hier).
+
+    Registriert sich später jemand mit genau dieser E-Mail (klein
+    geschrieben, siehe routes/auth.py: register()), wird die Einladung
+    automatisch in eine echte PlanMembership umgewandelt und diese Zeile
+    dabei gelöscht (services/plans.py: accept_pending_invites()) - bis
+    dahin bleibt sie hier als sichtbarer "ausstehend"-Eintrag auf
+    /manage/sharing stehen (samt erneut abrufbarem Einladungs-Link, da noch
+    kein echter Mail-Versand angebunden ist, siehe services/mail.py)."""
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    invited_at = db.Column(db.DateTime, default=db.func.now())
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'email', name='uq_pending_plan_invite_plan_id_email'),)
+
+    plan = db.relationship('Plan')
