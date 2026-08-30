@@ -30,8 +30,8 @@ def test_update_ingredient_aliases_creates_grouping(client, app, make_recipe):
     assert resp.status_code == 302
 
     with app.app_context():
-        assert normalize_ingredient_name("Spaghetti") == "Nudeln"
-        assert normalize_ingredient_name("Fusilli") == "Nudeln"
+        assert normalize_ingredient_name(client.plan_id, "Spaghetti") == "Nudeln"
+        assert normalize_ingredient_name(client.plan_id, "Fusilli") == "Nudeln"
 
 
 def test_update_ingredient_aliases_unchanged_row_stays_unaliased(client, app, make_recipe):
@@ -44,7 +44,7 @@ def test_update_ingredient_aliases_unchanged_row_stays_unaliased(client, app, ma
         "canonical_name[]": ["Reis"],
     })
     with app.app_context():
-        assert get_all_aliases() == {}
+        assert get_all_aliases(client.plan_id) == {}
 
 
 def test_ingredient_aliases_view_prefills_existing_alias(client, app, make_recipe):
@@ -52,7 +52,7 @@ def test_ingredient_aliases_view_prefills_existing_alias(client, app, make_recip
 
     make_recipe("A", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
     with app.app_context():
-        set_alias("Spaghetti", "Nudeln")
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
 
     resp = client.get("/manage/ingredient-aliases")
     assert b'value="Nudeln"' in resp.data
@@ -71,7 +71,7 @@ def test_api_set_ingredient_alias_creates_mapping(client, app):
     assert data == {"ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl", "category": None}
 
     with app.app_context():
-        assert normalize_ingredient_name("Olivenöl") == "Öl"
+        assert normalize_ingredient_name(client.plan_id, "Olivenöl") == "Öl"
 
 
 def test_api_set_ingredient_alias_normalizes_input(client, app):
@@ -82,7 +82,7 @@ def test_api_set_ingredient_alias_normalizes_input(client, app):
     data = resp.get_json()
     assert data == {"ok": True, "raw_name": "Fusilli", "canonical_name": "Nudeln", "category": None}
     with app.app_context():
-        assert normalize_ingredient_name("Fusilli") == "Nudeln"
+        assert normalize_ingredient_name(client.plan_id, "Fusilli") == "Nudeln"
 
 
 def test_api_set_ingredient_alias_returns_inferred_category(client, app, make_recipe):

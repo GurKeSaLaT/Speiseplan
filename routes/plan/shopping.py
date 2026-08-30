@@ -55,14 +55,15 @@ def add_shopping_item(start_date):
     if amount is not None and unit is not None:
         amount, unit = normalize_amount_unit(amount, unit)
 
+    plan = current_plan()
     item = ExtraShoppingItem(
-        plan_id=current_plan().id, week_start=start, name=name, amount=amount, unit=unit, category=category
+        plan_id=plan.id, week_start=start, name=name, amount=amount, unit=unit, category=category
     )
     db.session.add(item)
     db.session.commit()
 
     display_amount, display_unit = (
-        convert_for_display(amount, unit, get_display_units()) if amount is not None else (None, unit)
+        convert_for_display(amount, unit, get_display_units(plan.id)) if amount is not None else (None, unit)
     )
     return {"id": item.id, "name": item.name, "amount": display_amount, "unit": display_unit, "category": item.category}
 

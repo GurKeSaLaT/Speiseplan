@@ -53,7 +53,7 @@ def test_add_shopping_item_response_uses_display_unit(client, app):
     from services.settings import update_display_units
 
     with app.app_context():
-        update_display_units("kg", "ml")
+        update_display_units(client.plan_id, "kg", "ml")
 
     resp = client.post("/plan/2026-06-15/shopping-item/add", json={
         "name": "Zucker", "amount": 2000, "unit": "g",

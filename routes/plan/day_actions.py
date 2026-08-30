@@ -22,6 +22,7 @@ from services.planning import (
     parse_iso_date, week_neighbor_exclude_ids, week_side_recipe_ids,
     choose_recipe, jsonify_recipe, jsonify_side
 )
+from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
 
 
@@ -84,10 +85,10 @@ def reroll_day(day_date):
     if plan_day.main_recipe_id:
         exclude_ids.add(plan_day.main_recipe_id)
 
-    all_categories = Category.query.all()
+    all_categories = Category.query.filter_by(plan_id=plan.id).all()
     all_cat_ids = [c.id for c in all_categories]
 
-    other_recipes = Recipe.query.filter(Recipe.id.in_(exclude_ids)).all()
+    other_recipes = visible_recipes_query(plan.id).filter(Recipe.id.in_(exclude_ids)).all()
     other_cat_counts = {cid: 0 for cid in all_cat_ids}
     for r in other_recipes:
         other_cat_counts[r.category_id] = other_cat_counts.get(r.category_id, 0) + 1
@@ -97,7 +98,7 @@ def reroll_day(day_date):
         neighbor_day = PlanDay.query.filter_by(plan_id=plan.id, date=neighbor_date).first()
         if neighbor_day and neighbor_day.main_recipe_id:
             neighbor_ids.append(neighbor_day.main_recipe_id)
-    neighbor_categories = {r.category_id for r in Recipe.query.filter(Recipe.id.in_(neighbor_ids)).all()}
+    neighbor_categories = {r.category_id for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(neighbor_ids)).all()}
 
     # Sortierschlüssel wie in assign_balanced_categories(): erst
     # Nicht-Nachbar-Kategorien (False < True), dann die bislang seltenste.
@@ -125,7 +126,7 @@ def reroll_day(day_date):
     # bereits als gekocht markiert war.
     plan_day.cooked = False
     db.session.commit()
-    return jsonify_recipe(chosen)
+    return jsonify_recipe(chosen, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/set-main', methods=['POST'])
@@ -159,7 +160,7 @@ def set_main_day(day_date):
     except (TypeError, ValueError):
         return {"error": "Ungültiges Rezept"}, 400
 
-    recipe = Recipe.query.filter_by(id=recipe_id, is_side_dish=False).first()
+    recipe = visible_recipes_query(plan.id).filter_by(id=recipe_id, is_side_dish=False).first()
     if not recipe:
         return {"error": "Rezept nicht gefunden."}, 400
 
@@ -174,7 +175,7 @@ def set_main_day(day_date):
     # Definition noch nicht gekocht.
     plan_day.cooked = False
     db.session.commit()
-    return jsonify_recipe(recipe)
+    return jsonify_recipe(recipe, plan.id)
 
 
 def _get_or_create_plan_day(target_date, plan_id):
@@ -227,7 +228,7 @@ def add_side(day_date):
             recipe_id = int(raw_recipe_id)
         except (TypeError, ValueError):
             return {"error": "Ungültiges Rezept"}, 400
-        chosen = Recipe.query.filter_by(id=recipe_id, is_side_dish=True).first()
+        chosen = visible_recipes_query(plan.id).filter_by(id=recipe_id, is_side_dish=True).first()
         if not chosen:
             return {"error": "Rezept nicht gefunden."}, 400
     else:
@@ -239,7 +240,7 @@ def add_side(day_date):
     plan_day_side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=chosen.id)
     db.session.add(plan_day_side)
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/reroll', methods=['POST'])
@@ -273,7 +274,7 @@ def reroll_one_side(day_date, side_id):
     # Siehe reroll_day() oben - eine neu gewürfelte Beilage ist noch nicht gekocht.
     plan_day_side.cooked = False
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/set', methods=['POST'])
@@ -299,7 +300,7 @@ def set_one_side(day_date, side_id):
     except (TypeError, ValueError):
         return {"error": "Ungültiges Rezept"}, 400
 
-    recipe = Recipe.query.filter_by(id=recipe_id, is_side_dish=True).first()
+    recipe = visible_recipes_query(plan.id).filter_by(id=recipe_id, is_side_dish=True).first()
     if not recipe:
         return {"error": "Rezept nicht gefunden."}, 400
 
@@ -307,7 +308,7 @@ def set_one_side(day_date, side_id):
     # Siehe reroll_day() oben - eine manuell gewählte Beilage ist noch nicht gekocht.
     plan_day_side.cooked = False
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/remove', methods=['POST'])
@@ -361,7 +362,7 @@ def move_one_side(day_date, side_id, target_date_str):
     target_plan_day = _get_or_create_plan_day(target_date, plan.id)
     plan_day_side.plan_day_id = target_plan_day.id
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/servings', methods=['POST'])

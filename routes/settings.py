@@ -20,10 +20,18 @@ statt eines eigenen Pakets, da alle drei Bereiche klein sind):
    Nährwert-Referenz je kanonischer Zutat (siehe services/nutrition.py),
    aus der Rezept-Nährwerte automatisch berechnet werden (siehe
    routes/recipes.py: add_recipe()/edit_recipe()).
+
+Alle drei Bereiche sind pro PLAN getrennt (siehe models.py: AppSettings.
+plan_id/IngredientAlias.plan_id/IngredientNutrition.plan_id) - jede Seite
+zeigt bei Zugriff auf mehr als einen Plan einen Tab-Umschalter (siehe
+services/auth.py: selected_plan_id/user_plan_memberships) und wirkt auf
+den GERADE ausgewählten Plan, nicht zwingend den sonst aktiven
+(current_plan()).
 """
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
+from services.auth import current_plan, current_user, selected_plan_id, user_plan_memberships
 from services.ingredient_aliases import (
     get_all_aliases, list_known_ingredient_names, normalize_ingredient_name, normalize_name, set_alias,
 )
@@ -39,42 +47,49 @@ settings_bp = Blueprint('settings', __name__)
 
 @settings_bp.route('/manage/units')
 def units_view():
-    """Zeigt die aktuell gewählten Anzeige-Einheiten sowie die jeweils
-    verfügbaren Optionen (DISPLAY_UNIT_CHOICES) - das Template baut daraus
-    die beiden Radio-Gruppen."""
-    settings = get_settings()
+    """Zeigt die aktuell gewählten Anzeige-Einheiten des ausgewählten Plans
+    sowie die jeweils verfügbaren Optionen (DISPLAY_UNIT_CHOICES) - das
+    Template baut daraus die beiden Radio-Gruppen."""
+    user = current_user()
+    plan_id = selected_plan_id(request.args, user)
+    settings = get_settings(plan_id)
     return render_template(
-        'units_manage.html', settings=settings,
+        'units_manage.html', settings=settings, plan_id=plan_id, user_plans=user_plan_memberships(user),
         mass_choices=DISPLAY_UNIT_CHOICES[MASS], volume_choices=DISPLAY_UNIT_CHOICES[VOLUME],
     )
 
 
 @settings_bp.route('/update-units', methods=['POST'])
 def update_units():
-    """Speichert die im Formular gewählten Anzeige-Einheiten. Ein
-    ungültiger Wert (z.B. durch manipulierte Formulardaten) wird von
-    update_display_units() abgelehnt - die Einstellung bleibt dann
-    unverändert, statt einen 500er zu werfen oder einen unsinnigen Wert
-    zu speichern."""
+    """Speichert die im Formular gewählten Anzeige-Einheiten für den
+    ausgewählten Plan. Ein ungültiger Wert (z.B. durch manipulierte
+    Formulardaten) wird von update_display_units() abgelehnt - die
+    Einstellung bleibt dann unverändert, statt einen 500er zu werfen oder
+    einen unsinnigen Wert zu speichern."""
+    plan_id = selected_plan_id(request.form, current_user())
     mass_unit = request.form.get('mass_unit', '')
     volume_unit = request.form.get('volume_unit', '')
-    update_display_units(mass_unit, volume_unit)
-    return redirect(url_for('settings.units_view'))
+    update_display_units(plan_id, mass_unit, volume_unit)
+    return redirect(url_for('settings.units_view', plan_id=plan_id))
 
 
 @settings_bp.route('/manage/ingredient-aliases')
 def ingredient_aliases_view():
-    """Zeigt JEDEN aktuell in irgendeinem Rezept verwendeten Zutatennamen
-    als eigene Zeile mit einem editierbaren "gilt als"-Feld, vorbefüllt
-    mit dem gepflegten kanonischen Namen oder (ohne bestehenden Alias) dem
-    Namen selbst - so lässt sich auf einen Blick erkennen, welche Namen
-    bereits einer Gruppe zugeordnet sind."""
-    aliases = get_all_aliases()
+    """Zeigt JEDEN im ausgewählten Plan aktuell in irgendeinem sichtbaren
+    Rezept verwendeten Zutatennamen als eigene Zeile mit einem editierbaren
+    "gilt als"-Feld, vorbefüllt mit dem gepflegten kanonischen Namen oder
+    (ohne bestehenden Alias) dem Namen selbst - so lässt sich auf einen
+    Blick erkennen, welche Namen bereits einer Gruppe zugeordnet sind."""
+    user = current_user()
+    plan_id = selected_plan_id(request.args, user)
+    aliases = get_all_aliases(plan_id)
     rows = [
         {"raw_name": name, "canonical_name": aliases.get(name, name)}
-        for name in list_known_ingredient_names()
+        for name in list_known_ingredient_names(plan_id)
     ]
-    return render_template('ingredient_aliases_manage.html', rows=rows)
+    return render_template(
+        'ingredient_aliases_manage.html', rows=rows, plan_id=plan_id, user_plans=user_plan_memberships(user),
+    )
 
 
 @settings_bp.route('/update-ingredient-aliases', methods=['POST'])
@@ -85,11 +100,12 @@ def update_ingredient_aliases():
     hunderten Zutatennamen wäre ein einzelner Rundtrip pro Zeile
     unpraktisch. set_alias() löscht einen Alias automatisch wieder, wenn
     der eingetragene Name mit dem Original übereinstimmt (siehe dort)."""
+    plan_id = selected_plan_id(request.form, current_user())
     raw_names = request.form.getlist('raw_name[]')
     canonical_names = request.form.getlist('canonical_name[]')
     for raw_name, canonical_name in zip(raw_names, canonical_names):
-        set_alias(raw_name, canonical_name)
-    return redirect(url_for('settings.ingredient_aliases_view'))
+        set_alias(plan_id, raw_name, canonical_name)
+    return redirect(url_for('settings.ingredient_aliases_view', plan_id=plan_id))
 
 
 @settings_bp.route('/api/ingredient-alias/set', methods=['POST'])
@@ -98,7 +114,10 @@ def api_set_ingredient_alias():
     EINEN Alias sofort beim Eintragen einer Zutat in recipe_form.html/
     recipe_edit_list.html, ohne die Seite zu verlassen (siehe
     static/ingredient_alias_hint.js - der "Alias setzen"-Button dort, der
-    beim Fall "weder Alias noch Grundzutat" erscheint).
+    beim Fall "weder Alias noch Grundzutat" erscheint). Gilt immer für den
+    aktuell AKTIVEN Plan (current_plan(), nicht selected_plan_id() - diese
+    AJAX-Aktion kommt von einer Rezept-Seite, nicht von einer der
+    Tab-fähigen Einstellungsseiten).
 
     Erwartet einen JSON-Body {"raw_name": str, "canonical_name": str}.
     Gibt die NORMALISIERTEN Werte zurück, damit das Frontend seine lokale
@@ -112,19 +131,20 @@ def api_set_ingredient_alias():
     in derselben Kategorie landen, statt je nach Rezept unterschiedlich
     einsortiert zu sein. None (noch keine bestehende Zeile kategorisiert)
     lässt das Frontend-Feld unangetastet."""
+    plan = current_plan()
     data = request.get_json() or {}
     raw_name = (data.get('raw_name') or '').strip()
     canonical_name = (data.get('canonical_name') or '').strip()
     if not raw_name or not canonical_name:
         return {"error": "Name und Alias dürfen nicht leer sein."}, 400
 
-    set_alias(raw_name, canonical_name)
-    resolved_canonical = normalize_ingredient_name(raw_name)
+    set_alias(plan.id, raw_name, canonical_name)
+    resolved_canonical = normalize_ingredient_name(plan.id, raw_name)
     return {
         "ok": True,
         "raw_name": normalize_name(raw_name),
         "canonical_name": resolved_canonical,
-        "category": infer_category(resolved_canonical),
+        "category": infer_category(plan.id, resolved_canonical),
     }
 
 
@@ -159,18 +179,20 @@ def api_set_ingredient_nutrition():
     static/ingredient_alias_hint.js): trägt sofort einen Nährwert für eine
     Zutat nach, ohne die Rezept-Seite zu verlassen - genau dann angeboten,
     wenn window.INGREDIENT_NUTRITION für die aufgelöste kanonische Zutat
-    noch keinen Eintrag hat.
+    noch keinen Eintrag hat. Wie api_set_ingredient_alias() oben immer für
+    den aktuell AKTIVEN Plan (current_plan()).
 
     Erwartet einen JSON-Body {"name": str, "reference_unit": "g"|"ml"|"Stk",
     "protein"/"carbs"/"fat": Zahl}. calories in der Antwort ist rein
     informativ (aus protein/carbs/fat errechnet), kein gespeicherter Wert."""
+    plan = current_plan()
     data = request.get_json() or {}
     name = (data.get('name') or '').strip()
     if not name:
         return {"error": "Zutatenname darf nicht leer sein."}, 400
 
     values = _parse_nutrition_form_values(data)
-    entry = set_nutrition(name, **values)
+    entry = set_nutrition(plan.id, name, **values)
     return {
         "ok": True,
         "canonical_name": entry.canonical_name,
@@ -185,25 +207,27 @@ def api_set_ingredient_nutrition():
 
 @settings_bp.route('/manage/ingredient-nutrition')
 def ingredient_nutrition_view():
-    """Zeigt NUR die tatsächlichen Alias-Zielnamen (services/nutrition.py:
-    list_alias_canonical_names() - z.B. "Nudeln", "Öl", NICHT jede
-    unaliasierte Einzelzutat) mit editierbaren Nährwert-Feldern, vorbefüllt
-    mit dem gepflegten Eintrag oder (ohne bestehenden Eintrag) mit
-    sinnvollen Standardwerten (Referenzmenge 100, Referenzeinheit anhand
-    der tatsächlich verwendeten Zutat-Zeilen geraten, siehe
-    infer_reference_unit()) - unaliasierte Einzelzutaten bekommen ihren
-    Nährwert stattdessen direkt beim Zutat-Eintragen nachgetragen (siehe
-    api_set_ingredient_nutrition oben)."""
-    entries = get_all_nutrition_entries()
+    """Zeigt NUR die tatsächlichen Alias-Zielnamen des ausgewählten Plans
+    (services/nutrition.py: list_alias_canonical_names() - z.B. "Nudeln",
+    "Öl", NICHT jede unaliasierte Einzelzutat) mit editierbaren
+    Nährwert-Feldern, vorbefüllt mit dem gepflegten Eintrag oder (ohne
+    bestehenden Eintrag) mit sinnvollen Standardwerten (Referenzmenge 100,
+    Referenzeinheit anhand der tatsächlich verwendeten Zutat-Zeilen
+    geraten, siehe infer_reference_unit()) - unaliasierte Einzelzutaten
+    bekommen ihren Nährwert stattdessen direkt beim Zutat-Eintragen
+    nachgetragen (siehe api_set_ingredient_nutrition oben)."""
+    user = current_user()
+    plan_id = selected_plan_id(request.args, user)
+    entries = get_all_nutrition_entries(plan_id)
     rows = []
-    for name in list_alias_canonical_names():
+    for name in list_alias_canonical_names(plan_id):
         entry = entries.get(name)
         protein = entry["protein"] if entry else 0
         carbs = entry["carbs"] if entry else 0
         fat = entry["fat"] if entry else 0
         rows.append({
             "canonical_name": name,
-            "reference_unit": entry["reference_unit"] if entry else infer_reference_unit(name),
+            "reference_unit": entry["reference_unit"] if entry else infer_reference_unit(plan_id, name),
             # Nur zur Anzeige (siehe ingredient_nutrition_manage.html) -
             # kein editierbares/gespeichertes Feld, ergibt sich immer aus
             # protein/carbs/fat.
@@ -213,7 +237,9 @@ def ingredient_nutrition_view():
             "fat": fat,
             "has_entry": entry is not None,
         })
-    return render_template('ingredient_nutrition_manage.html', rows=rows)
+    return render_template(
+        'ingredient_nutrition_manage.html', rows=rows, plan_id=plan_id, user_plans=user_plan_memberships(user),
+    )
 
 
 @settings_bp.route('/update-ingredient-nutrition', methods=['POST'])
@@ -221,6 +247,7 @@ def update_ingredient_nutrition():
     """Speichert ALLE Zeilen des Formulars auf einmal (parallele Listen,
     analog zu update_ingredient_aliases() oben) statt eines Buttons pro
     Zeile."""
+    plan_id = selected_plan_id(request.form, current_user())
     names = request.form.getlist('canonical_name[]')
     reference_units = request.form.getlist('reference_unit[]')
     protein_list = request.form.getlist('protein[]')
@@ -234,6 +261,6 @@ def update_ingredient_nutrition():
             "carbs": carbs_list[i] if i < len(carbs_list) else None,
             "fat": fat_list[i] if i < len(fat_list) else None,
         })
-        set_nutrition(name, **values)
+        set_nutrition(plan_id, name, **values)
 
-    return redirect(url_for('settings.ingredient_nutrition_view'))
+    return redirect(url_for('settings.ingredient_nutrition_view', plan_id=plan_id))

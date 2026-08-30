@@ -20,7 +20,7 @@ from flask import Flask, redirect, request, session, url_for
 from flask_wtf import CSRFProtect
 
 from models import db, Category, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
-from services.auth import current_plan, current_user, hash_password
+from services.auth import current_plan, current_user, hash_password, user_plan_memberships
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
 from services.seasons import SEASON_PRESETS
@@ -330,6 +330,114 @@ def init_db():
             )
             db.session.commit()
 
+    # --- Rezepte/Kategorien/Zutaten-Gleichsetzung/Nährwerte/Einheiten:
+    # ebenfalls an EINEN Plan gebunden statt (wie bisher) global geteilt -
+    # jeder Plan pflegt sein eigenes Kochbuch und seine eigenen
+    # Einstellungen (siehe models.py: Plan-Docstring).
+    #
+    # _add_plan_id_column() ist ein kleiner, nur hier gebrauchter Helfer für
+    # Tabellen OHNE mit plan_id kollidierenden Alt-Constraint (recipe/
+    # app_settings hatten vorher keine unique-Bedingung, die einen neuen
+    # zusammengesetzten Index behindern würde) - Spalte ergänzen,
+    # bestehende Zeilen dem Legacy-Plan zuordnen, optional ein eigenständiger
+    # "CREATE UNIQUE INDEX" (SQLite erlaubt zwar kein nachträgliches ALTER
+    # TABLE ... ADD CONSTRAINT, wohl aber einen unabhängig erzeugten
+    # Unique-Index mit derselben Wirkung, ganz ohne Tabellen-Kopie).
+    def _add_plan_id_column(table, column, unique_index_sql=None):
+        existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+        if column in existing_columns:
+            return
+        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        if legacy_plan is None:
+            return
+        db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER"))
+        db.session.execute(
+            text(f"UPDATE {table} SET {column} = :pid WHERE {column} IS NULL"), {"pid": legacy_plan.id}
+        )
+        db.session.commit()
+        if unique_index_sql:
+            db.session.execute(text(unique_index_sql))
+            db.session.commit()
+
+    _add_plan_id_column("recipe", "owner_plan_id")
+    _add_plan_id_column(
+        "app_settings", "plan_id",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_app_settings_plan_id ON app_settings (plan_id)"
+    )
+
+    # category/ingredient_alias/ingredient_nutrition hatten VORHER je ein
+    # einzelnes globales UNIQUE auf genau die Spalte, die jetzt nur noch
+    # zusammen mit plan_id eindeutig sein soll (name/raw_name/
+    # canonical_name) - das alte, in der Tabelle selbst fest verdrahtete
+    # Constraint ließe sich mit dem einfachen ADD-COLUMN+INDEX-Trick oben
+    # NICHT los werden (ein zweiter, neuer Index ändert nichts am
+    # weiterhin bestehenden alten). Wie schon bei der früheren
+    # side_recipe_id-/plan_id-Migration für plan_day wird die Tabelle
+    # daher jeweils einmalig mit dem kompletten Zielschema (inkl. IDs, an
+    # denen z.B. recipe.category_id weiterhin hängt) neu aufgebaut.
+    def _add_plan_id_with_rebuild(table, create_new_table_sql, copy_columns):
+        existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+        if 'plan_id' in existing_columns:
+            return
+        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        if legacy_plan is None:
+            return
+        db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN plan_id INTEGER"))
+        db.session.execute(text(f"UPDATE {table} SET plan_id = :pid WHERE plan_id IS NULL"), {"pid": legacy_plan.id})
+        db.session.commit()
+
+        db.session.execute(text(create_new_table_sql))
+        db.session.execute(text(f"INSERT INTO {table}_new ({copy_columns}) SELECT {copy_columns} FROM {table}"))
+        db.session.execute(text(f"DROP TABLE {table}"))
+        db.session.execute(text(f"ALTER TABLE {table}_new RENAME TO {table}"))
+        db.session.commit()
+
+    _add_plan_id_with_rebuild(
+        "category",
+        """
+        CREATE TABLE category_new (
+            id INTEGER NOT NULL PRIMARY KEY,
+            plan_id INTEGER NOT NULL,
+            name VARCHAR(50) NOT NULL,
+            FOREIGN KEY(plan_id) REFERENCES plan (id),
+            UNIQUE(plan_id, name)
+        )
+        """,
+        "id, plan_id, name",
+    )
+    _add_plan_id_with_rebuild(
+        "ingredient_alias",
+        """
+        CREATE TABLE ingredient_alias_new (
+            id INTEGER NOT NULL PRIMARY KEY,
+            plan_id INTEGER NOT NULL,
+            raw_name VARCHAR(100) NOT NULL,
+            canonical_name VARCHAR(100) NOT NULL,
+            FOREIGN KEY(plan_id) REFERENCES plan (id),
+            UNIQUE(plan_id, raw_name)
+        )
+        """,
+        "id, plan_id, raw_name, canonical_name",
+    )
+    _add_plan_id_with_rebuild(
+        "ingredient_nutrition",
+        """
+        CREATE TABLE ingredient_nutrition_new (
+            id INTEGER NOT NULL PRIMARY KEY,
+            plan_id INTEGER NOT NULL,
+            canonical_name VARCHAR(100) NOT NULL,
+            reference_amount FLOAT NOT NULL,
+            reference_unit VARCHAR(20) NOT NULL,
+            protein FLOAT,
+            carbs FLOAT,
+            fat FLOAT,
+            FOREIGN KEY(plan_id) REFERENCES plan (id),
+            UNIQUE(plan_id, canonical_name)
+        )
+        """,
+        "id, plan_id, canonical_name, reference_amount, reference_unit, protein, carbs, fat",
+    )
+
     # IngredientNutrition.calories entfernt: Kalorien sind aus Eiweiß/
     # Kohlenhydraten/Fett errechenbar (siehe services/nutrition.py:
     # compute_calories()) und wären als eigens gepflegter Wert nur
@@ -343,17 +451,21 @@ def init_db():
         db.session.execute(text("ALTER TABLE ingredient_nutrition DROP COLUMN calories"))
         db.session.commit()
 
-    # Erststart mit komplett leerer Datenbank: ein sinnvoller Grundstock an
-    # Kategorien, damit die App nicht mit einer leeren Kategorie-Liste
-    # (und damit unbenutzbarer automatischer Planung) startet. Wird NUR
-    # angelegt, wenn noch keine einzige Kategorie existiert - eigene,
-    # später hinzugefügte oder umbenannte Kategorien werden dadurch nie
-    # überschrieben oder erneut angelegt.
-    if not Category.query.first():
-        default_categories = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
-        for cat_name in default_categories:
-            db.session.add(Category(name=cat_name))
-        db.session.commit()
+    # Ein sinnvoller Grundstock an Kategorien für JEDEN Plan, der noch
+    # keine einzige eigene hat, damit ein neuer Plan nicht mit einer
+    # leeren Kategorie-Liste (und damit unbenutzbarer automatischer
+    # Planung) startet - betrifft sowohl einen komplett frischen
+    # Erststart als auch, seit Kategorien plan-gebunden sind, jeden neu
+    # angelegten Plan ohne eigene Kategorien (z.B. Elos beim Seed weiter
+    # oben mit angelegter, bis dahin aber leerer Plan). Eigene, später
+    # hinzugefügte oder umbenannte Kategorien werden dadurch nie
+    # überschrieben oder erneut angelegt - der Check ist pro Plan.
+    default_categories = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
+    for plan in Plan.query.all():
+        if not Category.query.filter_by(plan_id=plan.id).first():
+            for cat_name in default_categories:
+                db.session.add(Category(plan_id=plan.id, name=cat_name))
+    db.session.commit()
 
     # Bestehende Zutaten-Mengen/Einheiten (z.B. "Gramm", "kg", "gr" als
     # reiner Text aus der Zeit vor der Einheiten-Vereinheitlichung) einmalig
@@ -460,12 +572,10 @@ def inject_current_user_and_plans():
     if user is None:
         return {'nav_current_user': None, 'nav_current_plan': None, 'nav_user_plans': []}
 
-    memberships = PlanMembership.query.filter_by(user_id=user.id).all()
-    memberships.sort(key=lambda m: (not m.is_starred, m.plan.name))
     return {
         'nav_current_user': user,
         'nav_current_plan': current_plan(),
-        'nav_user_plans': memberships,
+        'nav_user_plans': user_plan_memberships(user),
     }
 
 
@@ -489,24 +599,31 @@ def inject_shopping_categories():
 
 @app.context_processor
 def inject_ingredient_aliases():
-    """Stellt allen Templates die gepflegten Zutaten-Alias-Zuordnungen zur
-    Verfügung (siehe services/ingredient_aliases.py) - genutzt wird das
-    aktuell nur von recipe_form.html
-    (window.INGREDIENT_ALIASES, siehe static/ingredient_alias_hint.js),
-    global als Context Processor aber genauso einfach wie
-    inject_shopping_categories() oben gehalten statt die Abfrage in jeder
-    einzelnen Route zu wiederholen."""
-    return {'ingredient_aliases': get_all_aliases()}
+    """Stellt allen Templates die für den AKTIVEN Plan gepflegten
+    Zutaten-Alias-Zuordnungen zur Verfügung (siehe
+    services/ingredient_aliases.py) - genutzt wird das aktuell nur von
+    recipe_form.html (window.INGREDIENT_ALIASES, siehe
+    static/ingredient_alias_hint.js), global als Context Processor aber
+    genauso einfach wie inject_shopping_categories() oben gehalten statt
+    die Abfrage in jeder einzelnen Route zu wiederholen.
+
+    Läuft für JEDEN Seitenaufruf, auch die Login-Seite (kein eingeloggter
+    Nutzer, current_plan() also None) - liefert dann einfach ein leeres
+    Dict, statt mit einem Fehler abzubrechen."""
+    plan = current_plan()
+    return {'ingredient_aliases': get_all_aliases(plan.id) if plan else {}}
 
 
 @app.context_processor
 def inject_ingredient_nutrition():
-    """Stellt allen Templates die gepflegten Nährwert-Referenzen je
-    Alias-Zielzutat zur Verfügung (siehe services/nutrition.py) - genutzt
-    von recipe_form.html (window.INGREDIENT_NUTRITION,
-    siehe static/ingredient_alias_hint.js), analog zu
-    inject_ingredient_aliases() oben."""
-    return {'ingredient_nutrition': get_all_nutrition_entries()}
+    """Stellt allen Templates die für den AKTIVEN Plan gepflegten
+    Nährwert-Referenzen je Alias-Zielzutat zur Verfügung (siehe
+    services/nutrition.py) - genutzt von recipe_form.html
+    (window.INGREDIENT_NUTRITION, siehe static/ingredient_alias_hint.js),
+    analog zu inject_ingredient_aliases() oben (inkl. desselben
+    Login-Seiten-Sonderfalls)."""
+    plan = current_plan()
+    return {'ingredient_nutrition': get_all_nutrition_entries(plan.id) if plan else {}}
 
 
 if __name__ == '__main__':

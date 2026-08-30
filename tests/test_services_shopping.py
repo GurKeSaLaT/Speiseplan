@@ -52,20 +52,20 @@ def test_pantry_categories_injected_into_templates(client):
     assert b"Verbrauchsartikel" in resp.data
 
 
-def test_infer_category_returns_none_without_existing_rows(app):
+def test_infer_category_returns_none_without_existing_rows(app, test_plan_id):
     with app.app_context():
-        assert infer_category("Nudeln") is None
+        assert infer_category(test_plan_id, "Nudeln") is None
 
 
-def test_infer_category_returns_existing_category(app, make_recipe):
+def test_infer_category_returns_existing_category(app, test_plan_id, make_recipe):
     make_recipe("Nudelgericht", ingredients=[
         {"name": "Spaghetti", "amount": 500, "unit": "g", "category": "Teigwaren"},
     ])
     with app.app_context():
-        assert infer_category("Spaghetti") == "Teigwaren"
+        assert infer_category(test_plan_id, "Spaghetti") == "Teigwaren"
 
 
-def test_infer_category_resolves_via_alias(app, make_recipe):
+def test_infer_category_resolves_via_alias(app, test_plan_id, make_recipe):
     """Eine Zutat-Zeile bleibt in der DB unter ihrem ursprünglichen Namen
     ("Spaghetti") gespeichert - infer_category muss sie trotzdem finden,
     wenn nach der ALIAS-ZIEL-Kategorie ("Nudeln") gefragt wird, da es
@@ -76,19 +76,19 @@ def test_infer_category_resolves_via_alias(app, make_recipe):
         {"name": "Spaghetti", "amount": 500, "unit": "g", "category": "Teigwaren"},
     ])
     with app.app_context():
-        set_alias("Spaghetti", "Nudeln")
-        assert infer_category("Nudeln") == "Teigwaren"
+        set_alias(test_plan_id, "Spaghetti", "Nudeln")
+        assert infer_category(test_plan_id, "Nudeln") == "Teigwaren"
 
 
-def test_infer_category_ignores_uncategorized_rows(app, make_recipe):
+def test_infer_category_ignores_uncategorized_rows(app, test_plan_id, make_recipe):
     make_recipe("Nudelgericht", ingredients=[
         {"name": "Fusilli", "amount": 300, "unit": "g", "category": None},
     ])
     with app.app_context():
-        assert infer_category("Fusilli") is None
+        assert infer_category(test_plan_id, "Fusilli") is None
 
 
-def test_infer_category_majority_wins(app, make_recipe):
+def test_infer_category_majority_wins(app, test_plan_id, make_recipe):
     make_recipe("Erstes Gericht", ingredients=[
         {"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren"},
     ])
@@ -99,4 +99,13 @@ def test_infer_category_majority_wins(app, make_recipe):
         {"name": "Nudeln", "amount": 100, "unit": "g", "category": "Konserven"},
     ])
     with app.app_context():
-        assert infer_category("Nudeln") == "Teigwaren"
+        assert infer_category(test_plan_id, "Nudeln") == "Teigwaren"
+
+
+def test_infer_category_ignores_other_plans_recipes(app, test_plan_id, make_recipe, make_user):
+    _, other_plan_id = make_user("Andere")
+    make_recipe("Fremdes Gericht", plan_id=other_plan_id, ingredients=[
+        {"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren"},
+    ])
+    with app.app_context():
+        assert infer_category(test_plan_id, "Nudeln") is None

@@ -48,7 +48,7 @@ def test_recipe_create_view_embeds_ingredient_aliases_for_hint_js(client, app):
     from services.ingredient_aliases import set_alias
 
     with app.app_context():
-        set_alias("Olivenöl", "Öl")
+        set_alias(client.plan_id, "Olivenöl", "Öl")
 
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
@@ -336,7 +336,7 @@ def test_recipe_edit_view_shows_ingredients_in_display_unit(client, app, make_re
         "Kilo-Anzeige", ingredients=[{"name": "Zucker", "amount": 1500, "unit": "g"}]
     )
     with app.app_context():
-        update_display_units("kg", "ml")
+        update_display_units(client.plan_id, "kg", "ml")
 
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
@@ -356,7 +356,7 @@ def test_recipe_edit_view_shows_alias_name_as_display_text(client, app, make_rec
 
     recipe_id = make_recipe("Pasta-Gericht", ingredients=[{"name": "Fusilli", "amount": 400, "unit": "g"}])
     with app.app_context():
-        set_alias("Fusilli", "Nudeln")
+        set_alias(client.plan_id, "Fusilli", "Nudeln")
 
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
@@ -435,7 +435,7 @@ def test_import_recipe_preview_converts_ingredients_to_display_unit(mock_fetch, 
     from services.settings import update_display_units
 
     with app.app_context():
-        update_display_units("kg", "l")
+        update_display_units(client.plan_id, "kg", "l")
 
     mock_fetch.return_value = {
         "name": "Importiert", "servings": 4,
@@ -459,7 +459,7 @@ def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_catego
     cat_id = make_category("Berechnet")
     with app.app_context():
         # 10g Eiweiß/70g Kohlenhydrate/1g Fett je 100g Mehl.
-        set_nutrition("Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
+        set_nutrition(client.plan_id, "Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
 
     form = _base_recipe_form(cat_id, servings="2", **{
         "nutrition_override": "",
@@ -505,7 +505,7 @@ def test_add_recipe_override_ignores_computed_nutrition(client, app, make_catego
 
     cat_id = make_category("Überschrieben")
     with app.app_context():
-        set_nutrition("Nudeln", reference_unit="g", protein=1, carbs=1, fat=1)
+        set_nutrition(client.plan_id, "Nudeln", reference_unit="g", protein=1, carbs=1, fat=1)
 
     # _base_recipe_form() setzt nutrition_override="1" und feste
     # protein/carbs/fat-Werte per Default - diese müssen trotz vorhandener
@@ -528,7 +528,7 @@ def test_edit_recipe_recomputes_nutrition_when_ingredients_change(client, app, m
     recipe_id = make_recipe("Neu berechnen", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
     with app.app_context():
         cat_id = db.session.get(Recipe, recipe_id).category_id
-        set_nutrition("Reis", reference_unit="g", protein=3, carbs=28, fat=0.3)
+        set_nutrition(client.plan_id, "Reis", reference_unit="g", protein=3, carbs=28, fat=0.3)
 
     form = _base_recipe_form(cat_id, servings="1", **{
         "nutrition_override": "",
@@ -571,7 +571,7 @@ def test_recipe_create_view_embeds_ingredient_nutrition_for_hint_js(client, app)
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        set_nutrition("Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
+        set_nutrition(client.plan_id, "Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
 
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200

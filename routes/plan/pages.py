@@ -16,6 +16,7 @@ from services.planning import (
     DAY_NAMES_DE, monday_of, week_dates_for, parse_iso_date,
     assign_balanced_categories, choose_recipe, jsonify_recipe, jsonify_side
 )
+from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
 from routes.plan import plan_bp
@@ -119,7 +120,7 @@ def week_view(start_date):
         .order_by(ExtraShoppingItem.id).all()
     )
 
-    all_recipes = Recipe.query.all()
+    all_recipes = visible_recipes_query(active_plan.id).all()
 
     plan_data = {
         'weekDates': [d.isoformat() for d in dates],
@@ -127,14 +128,14 @@ def week_view(start_date):
         'excludedDays': [i in excluded_days for i in range(7)],
         'servingsList': servings_list,
         'cookedMain': cooked_main,
-        'plan': [jsonify_recipe(r) if r else None for r in plan],
-        'sidePlan': [[jsonify_side(s) for s in sides] for sides in side_plan],
+        'plan': [jsonify_recipe(r, active_plan.id) if r else None for r in plan],
+        'sidePlan': [[jsonify_side(s, active_plan.id) for s in sides] for sides in side_plan],
         'extraItems': [
             {
                 "id": it.id, "name": it.name,
                 **dict(zip(
                     ("amount", "unit"),
-                    convert_for_display(it.amount, it.unit, get_display_units()) if it.amount is not None else (None, it.unit)
+                    convert_for_display(it.amount, it.unit, get_display_units(active_plan.id)) if it.amount is not None else (None, it.unit)
                 )),
                 "category": it.category,
             }
@@ -180,9 +181,10 @@ def week_create_view(start_date):
     if start is None:
         abort(404)
     start = monday_of(start)
+    plan = current_plan()
 
-    recipes = Recipe.query.all()
-    categories = Category.query.all()
+    recipes = visible_recipes_query(plan.id).all()
+    categories = Category.query.filter_by(plan_id=plan.id).order_by(Category.name).all()
 
     return render_template(
         'create_week.html', recipes=recipes, categories=categories,
@@ -255,7 +257,7 @@ def week_generate(start_date):
     dates = week_dates_for(start)
     plan = current_plan()
 
-    all_categories = Category.query.all()
+    all_categories = Category.query.filter_by(plan_id=plan.id).all()
 
     # 1. Formulardaten pro Tag auslesen: feste Zuweisung + Ausnahme-Status
     excluded_days = set()
@@ -283,7 +285,7 @@ def week_generate(start_date):
 
     if day_recipe_ids:
         unique_ids = list(set(day_recipe_ids.values()))
-        recipes_by_id = {str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_ids)).all()}
+        recipes_by_id = {str(r.id): r for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(unique_ids)).all()}
         for day_index, rid in day_recipe_ids.items():
             recipe = recipes_by_id.get(rid)
             if recipe:
@@ -297,7 +299,7 @@ def week_generate(start_date):
     if day_side_recipe_ids:
         unique_side_ids = list({rid for rids in day_side_recipe_ids.values() for rid in rids})
         side_recipes_by_id = {
-            str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_side_ids)).all()
+            str(r.id): r for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(unique_side_ids)).all()
         }
         for day_index, rids in day_side_recipe_ids.items():
             for rid in rids:

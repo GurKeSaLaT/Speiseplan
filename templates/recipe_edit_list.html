@@ -31,6 +31,9 @@
                             {% if recipe.is_side_dish %}
                             <span class="badge bg-info text-dark px-2 py-1" style="font-size: 0.75rem;">🥗 Beilage</span>
                             {% endif %}
+                            {% if recipe.owner_plan_id != own_plan_id %}
+                            <span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;" title="Aus einem anderen Plan eingebunden">🔗 Verknüpft</span>
+                            {% endif %}
                             {% for label in recipe_labels[recipe.id] %}
                             <span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;">{{ label }}</span>
                             {% endfor %}
@@ -42,9 +45,18 @@
                             <a href="/manage/recipe/edit/{{ recipe.id }}" class="btn btn-warning fw-bold text-dark btn-sm px-3">
                                 Bearbeiten ✏️
                             </a>
+                            {% if recipe.owner_plan_id == own_plan_id %}
                             <button type="button" class="btn btn-outline-danger btn-sm px-3" onclick="deleteRecipeSafely({{ recipe.id }}, '{{ recipe.name }}')">
                                 Löschen 🗑️
                             </button>
+                            {% else %}
+                            <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=own_plan_id) }}" class="m-0">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm px-3" title="Nur aus diesem Plan entfernen, das Rezept bleibt in seinem Ursprungsplan erhalten">
+                                    Entfernen 🔗
+                                </button>
+                            </form>
+                            {% endif %}
                         </div>
                     </div>
                     {% else %}

@@ -83,6 +83,50 @@ def current_plan():
     return g._current_plan
 
 
+def user_plan_memberships(user):
+    """Alle Pläne, auf die user Zugriff hat (eigener + eingeladene, siehe
+    models.py: PlanMembership) - gesternter Plan zuerst, danach
+    alphabetisch nach Plan-Name. Gemeinsam genutzt von app.py:
+    inject_current_user_and_plans() (Seitenleisten-Navigation) und den
+    Tab-Umschaltern der "Einstellungen"-Seiten (routes/categories.py,
+    routes/settings.py) - beide sollen exakt dieselbe Reihenfolge zeigen."""
+    memberships = PlanMembership.query.filter_by(user_id=user.id).all()
+    memberships.sort(key=lambda m: (not m.is_starred, m.plan.name))
+    return memberships
+
+
+def user_has_plan_access(user, plan_id):
+    """Ob user Mitglied von plan_id ist (siehe models.py: PlanMembership) -
+    der schlichte Besitz-Check für Routen, die ein Objekt anhand seiner
+    eigenen plan_id (statt eines Query-Parameters wie selected_plan_id()
+    unten) gegen den Zugriff des Nutzers prüfen müssen, z.B. bevor eine
+    Kategorie/ein Rezept anhand seiner ID gelöscht/verändert wird."""
+    return PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first() is not None
+
+
+def selected_plan_id(request_args, user):
+    """Löst auf, welcher Plan für eine EINZELNE Anfrage der "Einstellungen"-
+    Seiten (Kategorien/Einheiten/Zutaten gleichsetzen/Nährwerte) angezeigt/
+    bearbeitet werden soll - unabhängig vom sonst aktiven Plan
+    (current_plan()), da diese Seiten einen eigenen Tab-Umschalter haben
+    (siehe templates: der Tab-Streifen verlinkt mit ?plan_id=<id>).
+
+    Nimmt request_args (ein Mapping wie flask.request.args) entgegen statt
+    flask.request direkt zu importieren, damit diese Funktion unabhängig
+    vom Request-Kontext testbar bleibt. Ein fehlender/ungültiger/fremder
+    plan_id-Parameter fällt auf den aktiven Plan zurück (services/auth.py:
+    current_plan()) - ein manipulierter Query-Parameter kann so nie Zugriff
+    auf einen Plan verschaffen, in dem der Nutzer nicht ohnehin schon
+    Mitglied ist."""
+    requested = request_args.get('plan_id', type=int)
+    if requested is not None:
+        membership = PlanMembership.query.filter_by(plan_id=requested, user_id=user.id).first()
+        if membership is not None:
+            return requested
+    plan = current_plan()
+    return plan.id if plan else None
+
+
 def login_required(view):
     """Nicht aktiv im Routing eingesetzt (siehe Modul-Docstring - app.py:
     require_login() übernimmt das global) - als eigenständiger Decorator

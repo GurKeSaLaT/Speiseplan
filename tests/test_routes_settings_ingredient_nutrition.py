@@ -18,8 +18,8 @@ def test_ingredient_nutrition_view_lists_only_alias_targets(client, app):
     from services.ingredient_aliases import set_alias
 
     with app.app_context():
-        set_alias("Spaghetti", "Nudeln")
-        set_alias("Fusilli", "Nudeln")
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+        set_alias(client.plan_id, "Fusilli", "Nudeln")
 
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
@@ -36,8 +36,8 @@ def test_ingredient_nutrition_view_prefills_existing_entry(client, app):
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        set_alias("Olivenöl", "Öl")
-        set_nutrition("Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
+        set_alias(client.plan_id, "Olivenöl", "Öl")
+        set_nutrition(client.plan_id, "Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
 
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
@@ -52,7 +52,7 @@ def test_ingredient_nutrition_view_infers_reference_unit_for_new_entry(client, a
     from services.ingredient_aliases import set_alias
 
     with app.app_context():
-        set_alias("Fusilli", "Nudeln")
+        set_alias(client.plan_id, "Fusilli", "Nudeln")
 
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
@@ -66,8 +66,8 @@ def test_update_ingredient_nutrition_saves_all_rows(client, app):
     from services.nutrition import get_nutrition_entry
 
     with app.app_context():
-        set_alias("Spaghetti", "Nudeln")
-        set_alias("Olivenöl", "Öl")
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+        set_alias(client.plan_id, "Olivenöl", "Öl")
 
     resp = client.post("/update-ingredient-nutrition", data={
         "canonical_name[]": ["Nudeln", "Öl"],
@@ -79,10 +79,10 @@ def test_update_ingredient_nutrition_saves_all_rows(client, app):
     assert resp.status_code == 302
 
     with app.app_context():
-        nudeln = get_nutrition_entry("Nudeln")
+        nudeln = get_nutrition_entry(client.plan_id, "Nudeln")
         assert nudeln.protein == 12
         assert nudeln.reference_amount == 100
-        oel = get_nutrition_entry("Öl")
+        oel = get_nutrition_entry(client.plan_id, "Öl")
         assert oel.fat == 100
         assert oel.reference_unit == "ml"
         assert oel.reference_amount == 100
@@ -93,7 +93,7 @@ def test_update_ingredient_nutrition_stk_basis_gets_amount_one(client, app):
     from services.nutrition import get_nutrition_entry
 
     with app.app_context():
-        set_alias("Freilandei", "Ei")
+        set_alias(client.plan_id, "Freilandei", "Ei")
 
     client.post("/update-ingredient-nutrition", data={
         "canonical_name[]": ["Ei"],
@@ -104,7 +104,7 @@ def test_update_ingredient_nutrition_stk_basis_gets_amount_one(client, app):
     })
 
     with app.app_context():
-        entry = get_nutrition_entry("Ei")
+        entry = get_nutrition_entry(client.plan_id, "Ei")
         assert entry.reference_unit == "Stk"
         assert entry.reference_amount == 1
 
@@ -114,7 +114,7 @@ def test_update_ingredient_nutrition_invalid_values_default_to_zero(client, app)
     from services.nutrition import get_nutrition_entry
 
     with app.app_context():
-        set_alias("Spaghetti", "Nudeln")
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
 
     client.post("/update-ingredient-nutrition", data={
         "canonical_name[]": ["Nudeln"],
@@ -125,7 +125,7 @@ def test_update_ingredient_nutrition_invalid_values_default_to_zero(client, app)
     })
 
     with app.app_context():
-        entry = get_nutrition_entry("Nudeln")
+        entry = get_nutrition_entry(client.plan_id, "Nudeln")
         assert entry.protein == 0
         assert entry.reference_amount == 100
         assert entry.reference_unit == "g"
@@ -147,14 +147,14 @@ def test_api_set_ingredient_nutrition_creates_entry(client, app):
         "reference_unit": "g", "calories": 127, "protein": 3.0, "carbs": 28.0, "fat": 0.3,
     }
     with app.app_context():
-        assert get_nutrition_entry("Reis").protein == 3
+        assert get_nutrition_entry(client.plan_id, "Reis").protein == 3
 
 
 def test_api_set_ingredient_nutrition_resolves_through_alias(client, app):
     from services.ingredient_aliases import set_alias
 
     with app.app_context():
-        set_alias("Spaghetti", "Nudeln")
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
 
     resp = client.post("/api/ingredient-nutrition/set", json={
         "name": "Spaghetti", "reference_unit": "g",

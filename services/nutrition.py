@@ -50,6 +50,7 @@ from collections import Counter
 
 from models import Ingredient, IngredientAlias, IngredientNutrition, db
 from services.ingredient_aliases import normalize_ingredient_name
+from services.recipe_visibility import visible_recipe_ids_subquery
 from services.units import NON_CONVERTIBLE_UNITS, normalize_amount_unit
 
 # Referenzbasis je Einheit - siehe Moduldocstring. set_nutrition() erzwingt
@@ -84,17 +85,17 @@ def compute_calories(protein, carbs, fat):
     return round((protein or 0) * 4 + (carbs or 0) * 4 + (fat or 0) * 9)
 
 
-def get_nutrition_entry(name):
-    """Liefert den Nährwert-Eintrag für eine Zutat (beliebige Schreibweise
-    - wird intern über normalize_ingredient_name() auf ihre kanonische
-    Form aufgelöst) oder None, falls noch keiner hinterlegt ist."""
-    canonical = normalize_ingredient_name(name)
-    return IngredientNutrition.query.filter_by(canonical_name=canonical).first()
+def get_nutrition_entry(plan_id, name):
+    """Liefert den Nährwert-Eintrag EINES Plans für eine Zutat (beliebige
+    Schreibweise - wird intern über normalize_ingredient_name() auf ihre
+    kanonische Form aufgelöst) oder None, falls noch keiner hinterlegt ist."""
+    canonical = normalize_ingredient_name(plan_id, name)
+    return IngredientNutrition.query.filter_by(plan_id=plan_id, canonical_name=canonical).first()
 
 
-def get_all_nutrition_entries():
-    """Alle gepflegten Nährwert-Referenzen als Dict {kanonischer Name:
-    {reference_amount, reference_unit, calories, protein, carbs, fat}} -
+def get_all_nutrition_entries(plan_id):
+    """Alle für plan_id gepflegten Nährwert-Referenzen als Dict {kanonischer
+    Name: {reference_amount, reference_unit, calories, protein, carbs, fat}} -
     Grundlage für window.INGREDIENT_NUTRITION (siehe
     static/ingredient_alias_hint.js), damit der Inline-Hinweis beim
     Zutat-Eintragen ohne Extra-Request weiß, wofür schon ein Nährwert
@@ -107,15 +108,15 @@ def get_all_nutrition_entries():
             "calories": compute_calories(e.protein, e.carbs, e.fat),
             "protein": e.protein, "carbs": e.carbs, "fat": e.fat,
         }
-        for e in IngredientNutrition.query.all()
+        for e in IngredientNutrition.query.filter_by(plan_id=plan_id).all()
     }
 
 
-def set_nutrition(name, reference_unit, protein, carbs, fat):
-    """Legt einen Nährwert-Eintrag an oder aktualisiert ihn - name wird wie
-    beim Nachschlagen auf seine kanonische Form normalisiert, damit
-    "Spaghetti" und "Fusilli" (beide -> "Nudeln", falls alias-gruppiert)
-    denselben Eintrag treffen.
+def set_nutrition(plan_id, name, reference_unit, protein, carbs, fat):
+    """Legt einen Nährwert-Eintrag für plan_id an oder aktualisiert ihn -
+    name wird wie beim Nachschlagen auf seine kanonische Form normalisiert,
+    damit "Spaghetti" und "Fusilli" (beide -> "Nudeln", falls
+    alias-gruppiert) denselben Eintrag treffen.
 
     reference_amount gibt es hier bewusst NICHT als Parameter - sie ergibt
     sich immer zwingend aus reference_unit (siehe REFERENCE_BASES/
@@ -123,14 +124,14 @@ def set_nutrition(name, reference_unit, protein, carbs, fat):
     "g" zurück, statt einen Fehler zu werfen (z.B. bei manipulierten
     Formulardaten). calories gibt es hier ebenfalls bewusst NICHT als
     Parameter - es wird nirgends gespeichert, siehe Moduldocstring."""
-    canonical = normalize_ingredient_name(name)
+    canonical = normalize_ingredient_name(plan_id, name)
     reference_unit = (reference_unit or 'g').strip()
     if reference_unit not in REFERENCE_BASES:
         reference_unit = 'g'
 
-    entry = IngredientNutrition.query.filter_by(canonical_name=canonical).first()
+    entry = IngredientNutrition.query.filter_by(plan_id=plan_id, canonical_name=canonical).first()
     if not entry:
-        entry = IngredientNutrition(canonical_name=canonical)
+        entry = IngredientNutrition(plan_id=plan_id, canonical_name=canonical)
         db.session.add(entry)
     entry.reference_amount = REFERENCE_BASES[reference_unit]
     entry.reference_unit = reference_unit
@@ -141,29 +142,32 @@ def set_nutrition(name, reference_unit, protein, carbs, fat):
     return entry
 
 
-def list_alias_canonical_names():
+def list_alias_canonical_names(plan_id):
     """Alle kanonischen Namen, auf die MINDESTENS eine Zutat per
-    IngredientAlias verweist (die eigentlichen Alias-Zielnamen wie
-    "Nudeln"/"Öl", NICHT jede einzelne unaliasierte Einzelzutat) -
-    genau die Menge, die die Nährwertverwaltungsseite auflisten soll."""
-    rows = db.session.query(IngredientAlias.canonical_name).distinct().all()
+    IngredientAlias INNERHALB von plan_id verweist (die eigentlichen
+    Alias-Zielnamen wie "Nudeln"/"Öl", NICHT jede einzelne unaliasierte
+    Einzelzutat) - genau die Menge, die die Nährwertverwaltungsseite
+    auflisten soll."""
+    rows = db.session.query(IngredientAlias.canonical_name).filter_by(plan_id=plan_id).distinct().all()
     return sorted({r[0] for r in rows})
 
 
-def infer_reference_unit(canonical_name):
+def infer_reference_unit(plan_id, canonical_name):
     """Rät eine sinnvolle Standard-Referenzeinheit (g/ml/Stk, siehe
     REFERENCE_BASES) für einen NEUEN Nährwert-Eintrag: welche der drei
-    Familien unter dieser kanonischen Zutat am häufigsten tatsächlich
-    verwendet wird. Jede Zutatenzeile wird dafür über
-    services/units.py: normalize_amount_unit() auf ihre Masse-/Volumen-
-    Familie geprüft (deckt z.B. "kg" oder "EL" korrekt als Masse/Volumen
-    ab, nicht nur die bereits kanonischen "g"/"ml") - alles andere
+    Familien unter dieser kanonischen Zutat (unter den für plan_id
+    SICHTBAREN Rezepten, siehe services/recipe_visibility.py) am
+    häufigsten tatsächlich verwendet wird. Jede Zutatenzeile wird dafür
+    über services/units.py: normalize_amount_unit() auf ihre Masse-/
+    Volumen-Familie geprüft (deckt z.B. "kg" oder "EL" korrekt als Masse/
+    Volumen ab, nicht nur die bereits kanonischen "g"/"ml") - alles andere
     (Stk, Bund, Dose, Prise, eine leere Einheit, ...) zählt als "Stk",
     da es sich für eine 100g/100ml-Referenz ohnehin nicht eignet.
     Fällt auf "g" zurück, wenn dazu noch gar keine Zutat-Zeile existiert."""
     families = []
-    for ing in Ingredient.query.all():
-        if normalize_ingredient_name(ing.name) != canonical_name:
+    visible_ingredients = Ingredient.query.filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
+    for ing in visible_ingredients:
+        if normalize_ingredient_name(plan_id, ing.name) != canonical_name:
             continue
         _, unit = normalize_amount_unit(1, ing.unit)
         families.append(unit if unit in ('g', 'ml') else 'Stk')
@@ -172,11 +176,14 @@ def infer_reference_unit(canonical_name):
     return Counter(families).most_common(1)[0][0]
 
 
-def compute_recipe_nutrition(ingredient_rows, servings):
+def compute_recipe_nutrition(plan_id, ingredient_rows, servings):
     """Berechnet die Nährwerte PRO PORTION aus einer Liste von Zutaten-
     Zeilen (Dicts/Objekte mit .name/.amount/.unit, z.B. die gerade im
     Formular abgeschickten oder recipe.ingredients eines bestehenden
-    Rezepts).
+    Rezepts) anhand der Nährwert-Referenzen VON plan_id - bei einem per
+    RecipePlanLink eingebundenen Rezept gelten also die Referenzen des
+    Plans, in dem gerade gespeichert wird, nicht die seines
+    Eigentümer-Plans.
 
     Ingredient.amount gilt laut Modell-Dokumentation für die GANZE
     Portionsanzahl (servings), Recipe.calories/.protein/.carbs/.fat
@@ -202,7 +209,7 @@ def compute_recipe_nutrition(ingredient_rows, servings):
         amount = ing["amount"] if isinstance(ing, dict) else ing.amount
         unit = ing["unit"] if isinstance(ing, dict) else ing.unit
 
-        entry = get_nutrition_entry(name)
+        entry = get_nutrition_entry(plan_id, name)
         if not entry or not entry.reference_amount:
             continue
         if _normalize_unit(unit) != _normalize_unit(entry.reference_unit):

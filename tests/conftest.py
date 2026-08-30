@@ -42,11 +42,25 @@ def app(app_module):
 @pytest.fixture()
 def make_user(app):
     """Legt einen User samt eigenem, gesternten Plan an (analog zu
-    make_category/make_recipe unten) und gibt (user_id, plan_id) zurück."""
+    make_category/make_recipe unten) und gibt (user_id, plan_id) zurück.
+
+    Ein OHNE explizites username aufgerufenes _make() bekommt einen
+    automatisch durchnummerierten Namen ("Testnutzer2", "Testnutzer3", ...)
+    statt immer denselben "Testnutzer" - sonst würde ein zweiter bare
+    make_user()-Aufruf im selben Test (oder einer, der zusätzlich die
+    client-Fixture nutzt, die bereits intern "Testnutzer" anlegt, siehe
+    default_plan) mit einer UNIQUE-Constraint-Verletzung auf User.username
+    kollidieren. Bei EXPLIZIT übergebenem Namen bleibt das Verhalten
+    unverändert."""
     from models import Plan, PlanMembership, User, db
     from services.auth import hash_password
 
-    def _make(username="Testnutzer", password="test"):
+    counter = {"n": 1}
+
+    def _make(username=None, password="test"):
+        if username is None:
+            counter["n"] += 1
+            username = f"Testnutzer{counter['n']}"
         with app.app_context():
             user = User(username=username, password_hash=hash_password(password))
             db.session.add(user)
@@ -62,7 +76,30 @@ def make_user(app):
 
 
 @pytest.fixture()
-def client(app, make_user):
+def default_plan(make_user):
+    """EIN Nutzer+Plan-Paar, lazy/einmalig pro Test von pytest zwischen-
+    gespeichert (Standard-Fixture-Semantik: alle Fixtures, die
+    default_plan in DEMSELBEN Test anfordern, bekommen dasselbe Ergebnis) -
+    gemeinsame Grundlage für client/make_category/make_recipe unten, damit
+    ein ohne explizites plan_id angelegtes Rezept/eine Kategorie
+    automatisch im selben Plan landet, in den der Testclient eingeloggt
+    ist (genau das erwarten die allermeisten Tests, die client UND
+    make_recipe/make_category zusammen benutzen)."""
+    user_id, plan_id = make_user("Testnutzer")
+    return {"user_id": user_id, "plan_id": plan_id}
+
+
+@pytest.fixture()
+def test_plan_id(default_plan):
+    """Kurzform für Tests, die nur die plan_id brauchen (z.B. direkte
+    Unit-Tests von services/*.py-Funktionen, die jetzt ein plan_id-
+    Argument verlangen) - dasselbe zwischengespeicherte Ergebnis wie
+    default_plan, nur ohne das Dict drumherum."""
+    return default_plan['plan_id']
+
+
+@pytest.fixture()
+def client(app, default_plan):
     """Ein bereits eingeloggter Testclient: seit der Nutzerverwaltung
     verlangt app.py: require_login() für praktisch jede Route eine
     aktive Session, ganz unabhängig davon, was der jeweilige Test
@@ -74,13 +111,12 @@ def client(app, make_user):
     explizit das NICHT eingeloggte Verhalten prüfen wollen (Redirect auf
     /login), bauen sich stattdessen direkt über app.test_client() einen
     eigenen, bewusst anonymen Client (siehe tests/test_auth.py)."""
-    user_id, plan_id = make_user("Testnutzer")
     test_client = app.test_client()
     with test_client.session_transaction() as sess:
-        sess['user_id'] = user_id
-        sess['active_plan_id'] = plan_id
-    test_client.user_id = user_id
-    test_client.plan_id = plan_id
+        sess['user_id'] = default_plan['user_id']
+        sess['active_plan_id'] = default_plan['plan_id']
+    test_client.user_id = default_plan['user_id']
+    test_client.plan_id = default_plan['plan_id']
     return test_client
 
 
@@ -106,15 +142,19 @@ def _clean_tables(app_module):
 
 
 @pytest.fixture()
-def make_category(app):
+def make_category(app, default_plan):
     """Legt eine Category an und gibt ihre id zurück (kein ORM-Objekt -
     das würde nach Ende des with-Blocks als "detached" gelten, sobald
-    Flask-SQLAlchemy die Session beim Schließen des App-Kontexts entfernt)."""
+    Flask-SQLAlchemy die Session beim Schließen des App-Kontexts entfernt).
+    Landet ohne explizites plan_id im selben Plan wie die client-Fixture
+    (siehe default_plan) - ein Test, der eine Kategorie bewusst einem
+    ANDEREN Plan zuordnen will (z.B. für Isolations-Tests), übergibt
+    plan_id explizit."""
     from models import Category, db
 
-    def _make(name="Testkategorie"):
+    def _make(name="Testkategorie", plan_id=None):
         with app.app_context():
-            cat = Category(name=name)
+            cat = Category(plan_id=plan_id or default_plan['plan_id'], name=name)
             db.session.add(cat)
             db.session.commit()
             return cat.id
@@ -123,15 +163,22 @@ def make_category(app):
 
 
 @pytest.fixture()
-def make_recipe(app, make_category):
-    def _make(name="Testgericht", category_id=None, is_side_dish=False, ingredients=None, **kwargs):
+def make_recipe(app, default_plan, make_category):
+    """Wie make_category oben: ohne explizites plan_id landet das Rezept
+    (als Eigentümer, Recipe.owner_plan_id) im selben Plan wie die
+    client-Fixture."""
+    def _make(name="Testgericht", category_id=None, is_side_dish=False, ingredients=None, plan_id=None, **kwargs):
         from models import Ingredient, Recipe, db
 
+        owner_plan_id = plan_id or default_plan['plan_id']
         if category_id is None:
-            category_id = make_category(f"Kategorie für {name}")
+            category_id = make_category(f"Kategorie für {name}", plan_id=owner_plan_id)
 
         with app.app_context():
-            recipe = Recipe(name=name, category_id=category_id, is_side_dish=is_side_dish, **kwargs)
+            recipe = Recipe(
+                name=name, owner_plan_id=owner_plan_id, category_id=category_id,
+                is_side_dish=is_side_dish, **kwargs
+            )
             db.session.add(recipe)
             db.session.flush()
             for ing in ingredients or []:

@@ -17,13 +17,7 @@ def test_protected_route_redirects_to_login_without_session(app):
 
 
 def test_login_success_redirects_to_plan(app, make_user):
-    from services.auth import hash_password
-    from models import User, db
-
-    with app.app_context():
-        user = User(username="Anna", password_hash=hash_password("geheim"))
-        db.session.add(user)
-        db.session.commit()
+    make_user("Anna", "geheim")
 
     test_client = app.test_client()
     resp = test_client.post("/login", data={"username": "Anna", "password": "geheim"})

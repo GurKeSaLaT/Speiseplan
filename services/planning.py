@@ -36,6 +36,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 from models import db, Recipe, PlanDay, PlanDaySide
+from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
 from services.ingredient_aliases import normalize_ingredient_name
 from services.settings import get_display_units
@@ -322,10 +323,12 @@ def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_s
     verwendetes Rezept aus der Datenbank aus. Wird sowohl beim Erstellen
     einer kompletten Woche als auch bei jedem Einzel-Reroll aufgerufen.
 
-    plan_id wird ausschließlich an recent_usage_counts() (siehe unten)
-    durchgereicht - Rezepte/Kategorien selbst sind weiterhin GLOBAL (nicht
-    pro Plan), nur die Wiederholungs-Gewichtung soll sich an der Historie
-    des richtigen Plans orientieren, nicht an einem anderen, geteilten.
+    plan_id grenzt den Auswahl-Pool auf die für DIESEN Plan sichtbaren
+    Rezepte ein (Eigentümer ODER per RecipePlanLink eingebunden, siehe
+    services/recipe_visibility.py) und wird zusätzlich an
+    recent_usage_counts() (siehe unten) durchgereicht, damit sich auch die
+    Wiederholungs-Gewichtung an der Historie GENAU dieses Plans orientiert,
+    nicht an der eines anderen, komplett unabhängigen Plans.
 
     Filterreihenfolge:
     1. is_side_dish trennt strikt zwischen Hauptgericht- und Beilagen-Pool -
@@ -370,7 +373,7 @@ def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_s
     ein einfaches random.choice()), sodass Favoriten und selten verwendete
     Rezepte unter den verbliebenen Kandidaten bevorzugt gezogen werden.
     """
-    base_query = Recipe.query.filter(
+    base_query = visible_recipes_query(plan_id).filter(
         Recipe.is_side_dish.is_(is_side_dish),
         ~Recipe.id.in_(exclude_ids)
     )
@@ -393,7 +396,7 @@ def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_s
     return weighted_recipe_choice(candidates, usage_counts)
 
 
-def jsonify_recipe(recipe):
+def jsonify_recipe(recipe, plan_id):
     """Serialisiert ein Recipe-ORM-Objekt in ein einfaches Dict, das sich
     sowohl direkt als Flask-JSON-Response zurückgeben lässt (Flask
     konvertiert ein zurückgegebenes Dict automatisch zu einer
@@ -431,8 +434,15 @@ def jsonify_recipe(recipe):
     Aggregation nach "Name+Einheit" in rebuildShoppingList() weiterhin ohne
     eigene Umrechnung korrekt gleichnamige Zutaten über mehrere Rezepte
     hinweg zusammenfasst.
+
+    plan_id bestimmt, wessen Zutaten-Gleichsetzung/Anzeige-Einheiten gelten
+    (services/ingredient_aliases.py: normalize_ingredient_name(),
+    services/settings.py: get_display_units()) - bei einem per
+    RecipePlanLink eingebundenen Rezept IMMER die des GERADE AKTIVEN
+    Plans, nicht die seines Eigentümer-Plans, damit ein Nutzer auf seiner
+    eigenen Einkaufsliste konsistent seine eigenen Einstellungen sieht.
     """
-    display_units = get_display_units()
+    display_units = get_display_units(plan_id)
     return {
         "id": recipe.id,
         "name": recipe.name,
@@ -448,7 +458,7 @@ def jsonify_recipe(recipe):
         "instructions": recipe.instructions,
         "ingredients": [
             {
-                "name": normalize_ingredient_name(ing.name),
+                "name": normalize_ingredient_name(plan_id, ing.name),
                 **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
                 "category": ing.category,
             }
@@ -457,7 +467,7 @@ def jsonify_recipe(recipe):
     }
 
 
-def jsonify_side(plan_day_side):
+def jsonify_side(plan_day_side, plan_id):
     """Wie jsonify_recipe(), aber für eine PlanDaySide-Zeile: hängt an das
     serialisierte Rezept-Dict zusätzlich side_id an - die ID der
     PlanDaySide-Zeile selbst, NICHT des Rezepts. static/plan-sides.js
@@ -470,7 +480,7 @@ def jsonify_side(plan_day_side):
     set_one_side() setzen ihn vor dem Aufruf hier bewusst zurück (neues
     Gericht = noch nicht gekocht), move_one_side() lässt ihn dagegen
     unangetastet (dieselbe Beilage wandert nur auf einen anderen Tag)."""
-    data = jsonify_recipe(plan_day_side.recipe)
+    data = jsonify_recipe(plan_day_side.recipe, plan_id)
     data['side_id'] = plan_day_side.id
     data['cooked'] = plan_day_side.cooked
     return data

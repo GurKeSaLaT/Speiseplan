@@ -129,7 +129,7 @@ def test_week_view_extra_items_use_display_unit(client, app):
 
     monday = date(2026, 6, 15)
     with app.app_context():
-        update_display_units("kg", "ml")
+        update_display_units(client.plan_id, "kg", "ml")
         db.session.add(ExtraShoppingItem(plan_id=client.plan_id, week_start=monday, name="Mehl", amount=2000, unit="g"))
         db.session.commit()
 
