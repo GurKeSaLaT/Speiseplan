@@ -2,22 +2,15 @@
 (siehe services/auth.py: current_plan() für die Auflösungsreihenfolge).
 """
 
-import re
 from datetime import timedelta
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
 
 from models import PlanMembership, User, db
-from services.auth import current_user, hash_password, verify_password
+from services.auth import EMAIL_PATTERN, current_user, hash_password, verify_password
 from services.plans import accept_pending_invites
 
 auth_bp = Blueprint('auth', __name__)
-
-# Grobe Formprüfung für die Registrierung (kein neues Package wie
-# email-validator - passt zum bestehenden schlanken Abhängigkeits-Stil,
-# siehe services/auth.py-Modul-Docstring). Prüft nur die grobe Form
-# ("etwas@etwas.etwas"), keine echte Zustellbarkeit.
-EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 # Wie lange eine Session ohne erneuten Login gültig bleibt (siehe
 # app.py: SECRET_KEY-Kommentar) - großzügig bemessen, da es sich um private

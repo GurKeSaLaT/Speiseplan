@@ -134,3 +134,55 @@ def test_user_without_any_plan_can_still_reach_create_and_logout(app, make_user)
 
     with app.app_context():
         assert PlanMembership.query.filter_by(user_id=user_id).count() == 1
+
+
+# --- /plan/<id>/rename ---
+
+def test_rename_plan_updates_name(app, client):
+    resp = client.post(f"/plan/{client.plan_id}/rename", data={"name": "Neuer Planname"}, follow_redirects=False)
+    assert resp.status_code == 302
+
+    from models import Plan
+    with app.app_context():
+        assert Plan.query.get(client.plan_id).name == "Neuer Planname"
+
+
+def test_rename_plan_ignores_blank_name(app, client):
+    from models import Plan
+    with app.app_context():
+        original_name = Plan.query.get(client.plan_id).name
+
+    client.post(f"/plan/{client.plan_id}/rename", data={"name": "   "})
+
+    with app.app_context():
+        assert Plan.query.get(client.plan_id).name == original_name
+
+
+def test_rename_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
+    from models import Plan, PlanMembership, db
+
+    other_user_id, _ = make_user("Mitbewohner")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=client.plan_id, user_id=other_user_id, is_starred=False))
+        db.session.commit()
+
+    other_client = _login_as(app, other_user_id)
+    resp = other_client.post(f"/plan/{client.plan_id}/rename", data={"name": "Von Mitbewohner umbenannt"})
+    assert resp.status_code == 302
+
+    with app.app_context():
+        assert Plan.query.get(client.plan_id).name == "Von Mitbewohner umbenannt"
+
+
+def test_rename_plan_requires_membership(app, client, make_user):
+    from models import Plan
+
+    _, other_plan_id = make_user("Fremd")
+    with app.app_context():
+        original_name = Plan.query.get(other_plan_id).name
+
+    resp = client.post(f"/plan/{other_plan_id}/rename", data={"name": "Übernommen"})
+    assert resp.status_code == 404
+
+    with app.app_context():
+        assert Plan.query.get(other_plan_id).name == original_name

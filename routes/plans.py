@@ -12,7 +12,7 @@ from flask import Blueprint, abort, redirect, request, url_for, session
 
 from services.auth import current_user, user_has_plan_access
 from services.plans import create_plan, delete_plan
-from models import Plan
+from models import Plan, db
 
 plans_bp = Blueprint('plans', __name__)
 
@@ -51,3 +51,23 @@ def delete(plan_id):
     if session.get('active_plan_id') == plan_id:
         session.pop('active_plan_id', None)
     return redirect(url_for('plan.index'))
+
+
+@plans_bp.route('/plan/<int:plan_id>/rename', methods=['POST'])
+def rename(plan_id):
+    """Benennt einen Plan um - jedes Mitglied darf das (dieselbe
+    Begründung wie bei delete() oben: owner_user_id verleiht keine
+    besonderen Rechte). Ein leerer Name wird ignoriert, der bisherige
+    bleibt dann unverändert stehen (kein Fehlertext nötig, das Namensfeld
+    im Modal ist bereits als "required" markiert, siehe
+    templates/sharing.html)."""
+    user = current_user()
+    if not user_has_plan_access(user, plan_id):
+        abort(404)
+    plan = Plan.query.get_or_404(plan_id)
+
+    name = (request.form.get('name') or '').strip()
+    if name:
+        plan.name = name
+        db.session.commit()
+    return redirect(url_for('sharing.sharing_view'))

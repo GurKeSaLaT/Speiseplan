@@ -287,3 +287,54 @@ def test_cancel_invite_requires_own_plan(app, client, make_user):
     assert resp.status_code == 404
     with app.app_context():
         assert PendingPlanInvite.query.get(invite_id) is not None
+
+
+# --- /manage/sharing/leave (eigene Mitgliedschaft entfernen) ---
+
+def test_leave_plan_removes_own_membership_only(app, client, make_user):
+    from models import PlanMembership, db
+
+    other_user_id, other_plan_id = make_user("Planbesitzer")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    resp = client.post(f"/manage/sharing/leave/{other_plan_id}", follow_redirects=False)
+    assert resp.status_code == 302
+
+    from models import Plan
+    with app.app_context():
+        assert PlanMembership.query.filter_by(plan_id=other_plan_id, user_id=client.user_id).first() is None
+        # Plan und die Mitgliedschaft des Besitzers bleiben unberührt.
+        assert Plan.query.get(other_plan_id) is not None
+        assert PlanMembership.query.filter_by(plan_id=other_plan_id, user_id=other_user_id).first() is not None
+
+
+def test_leave_plan_rejected_for_owner(app, client):
+    resp = client.post(f"/manage/sharing/leave/{client.plan_id}")
+    assert resp.status_code == 400
+
+    from models import PlanMembership
+    with app.app_context():
+        assert PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=client.user_id).first() is not None
+
+
+def test_leave_plan_requires_membership(client, make_user):
+    _, other_plan_id = make_user("Fremd")
+    resp = client.post(f"/manage/sharing/leave/{other_plan_id}")
+    assert resp.status_code == 404
+
+
+def test_leave_active_plan_resets_session_active_plan(app, client, make_user):
+    from models import PlanMembership, db
+
+    other_user_id, other_plan_id = make_user("Planbesitzer")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    client.post(f"/plan/switch/{other_plan_id}")
+    client.post(f"/manage/sharing/leave/{other_plan_id}")
+
+    with client.session_transaction() as sess:
+        assert sess.get("active_plan_id") != other_plan_id

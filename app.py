@@ -35,6 +35,7 @@ from routes.categories import categories_bp
 from routes.settings import settings_bp
 from routes.sharing import sharing_bp
 from routes.plans import plans_bp
+from routes.account import account_bp
 
 app = Flask(__name__)
 # SQLite-Datei liegt in Flasks Standard-"instance"-Ordner (instance/speiseplan.db),
@@ -108,6 +109,7 @@ app.register_blueprint(categories_bp)
 app.register_blueprint(settings_bp)
 app.register_blueprint(sharing_bp)
 app.register_blueprint(plans_bp)
+app.register_blueprint(account_bp)
 
 
 def init_db():
@@ -534,7 +536,14 @@ with app.app_context():
 # stünde nur index() hier, würde der zweite Redirect sofort wieder von
 # diesem Gate abgefangen, eine Endlosschleife). plans.create ist der
 # einzige Weg, aus dem Zero-Plan-Zustand wieder herauszukommen.
-ZERO_PLAN_ALLOWED_ENDPOINTS = {'plan.index', 'plan.week_view', 'plans.create', 'auth.logout'}
+ZERO_PLAN_ALLOWED_ENDPOINTS = {
+    'plan.index', 'plan.week_view', 'plans.create', 'auth.logout',
+    # Profil-Verwaltung braucht keinen Plan - ein Nutzer ohne jede
+    # Mitgliedschaft muss trotzdem sein eigenes Konto verwalten/löschen
+    # können (routes/account.py).
+    'account.account_view', 'account.update_profile_route',
+    'account.update_password_route', 'account.delete_account_route',
+}
 
 
 @app.before_request

@@ -17,12 +17,20 @@ fehleranfällig als das Risiko, eine einzelne Route beim @login_required
 zu vergessen).
 """
 
+import re
 from functools import wraps
 
 from flask import g, redirect, session, url_for, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from models import PlanMembership, User
+
+# Grobe Formprüfung für E-Mail-Adressen (Registrierung, E-Mail-Einladung,
+# Profil-E-Mail-Änderung) - kein neues Package wie email-validator, passt
+# zum bestehenden schlanken Abhängigkeits-Stil (siehe Modul-Docstring
+# oben). Prüft nur die grobe Form ("etwas@etwas.etwas"), keine echte
+# Zustellbarkeit. EIN gemeinsamer Ort statt einer Kopie pro Route-Datei.
+EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 def hash_password(raw_password):

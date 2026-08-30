@@ -187,6 +187,7 @@
 
             <div class="rail-section">
                 <div class="rail-label">Konto</div>
+                <a class="rail-link {% if request.path == '/manage/account' %}active{% endif %}" href="/manage/account"><span class="ic">👤</span>Profil</a>
                 <a class="rail-link {% if request.path == '/manage/sharing' %}active{% endif %}" href="/manage/sharing"><span class="ic">🤝</span>Freigabe</a>
             </div>
 

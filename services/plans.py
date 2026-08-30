@@ -100,6 +100,12 @@ def delete_plan(plan):
     Category.query.filter_by(plan_id=plan.id).delete()
 
     PlanMembership.query.filter_by(plan_id=plan.id).delete()
+    # Noch offene Einladungen AUF diesen Plan (models.py: PendingPlanInvite)
+    # würden sonst auf eine nicht mehr existierende plan_id zeigen bleiben -
+    # registriert sich später jemand mit genau dieser E-Mail, würde
+    # accept_pending_invites() sonst eine PlanMembership auf einen bereits
+    # gelöschten Plan anlegen.
+    PendingPlanInvite.query.filter_by(plan_id=plan.id).delete()
     db.session.delete(plan)
     db.session.commit()
 

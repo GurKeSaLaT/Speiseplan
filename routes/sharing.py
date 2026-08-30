@@ -9,19 +9,13 @@ Mitgliedschaft (wer gehört dazu) und der pro-Nutzer-Stern (welcher Plan
 ist gerade "der eigene").
 """
 
-import re
-
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, abort, redirect, render_template, request, session, url_for
 
 from models import PendingPlanInvite, PlanMembership, User, db
-from services.auth import current_plan, current_user
+from services.auth import EMAIL_PATTERN, current_plan, current_user
 from services.mail import send_invite_email
 
 sharing_bp = Blueprint('sharing', __name__)
-
-# Dieselbe grobe Formprüfung wie bei der Registrierung selbst (siehe
-# routes/auth.py: EMAIL_PATTERN) - keine echte Zustellbarkeitsprüfung.
-EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 @sharing_bp.route('/manage/sharing')
@@ -119,6 +113,34 @@ def remove_member(user_id):
 
     PlanMembership.query.filter_by(plan_id=plan.id, user_id=user_id).delete()
     db.session.commit()
+    return redirect(url_for('sharing.sharing_view'))
+
+
+@sharing_bp.route('/manage/sharing/leave/<int:plan_id>', methods=['POST'])
+def leave_plan(plan_id):
+    """Entfernt die EIGENE Mitgliedschaft an plan_id - das Gegenstück zu
+    remove_member() oben (das ANDERE entfernt), hier für sich selbst und
+    bewusst unabhängig vom gerade aktiven Plan (current_plan()): die
+    "Meine Pläne"-Liste auf sharing.html zeigt ALLE eigenen Pläne, nicht
+    nur den aktiven, ein Verlassen muss also für jeden davon einzeln
+    funktionieren, ganz gleich welcher davon gerade aktiv ist.
+
+    Der EIGENTÜMER eines Plans (Plan.owner_user_id) kann ihn NICHT auf
+    diesem Weg verlassen - dafür gibt es delete_plan() (routes/plans.py),
+    das den Plan bei mehreren Mitgliedern korrekt an ein anderes übergibt,
+    statt ihn einfach ohne Eigentümer zurückzulassen."""
+    user = current_user()
+    membership = PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first()
+    if membership is None:
+        abort(404)
+    plan = membership.plan
+    if plan.owner_user_id == user.id:
+        abort(400)
+
+    db.session.delete(membership)
+    db.session.commit()
+    if session.get('active_plan_id') == plan_id:
+        session.pop('active_plan_id', None)
     return redirect(url_for('sharing.sharing_view'))
 
 
