@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, abort, render_template, request, redirect, url_for
 
 from models import db, Category, Recipe, RecipePlanLink, Ingredient
-from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
+from services.auth import current_plan, current_user, default_plan_id, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
@@ -78,18 +78,24 @@ def _canonical_ingredient_list(plan_id):
 def recipe_create_view():
     """Zeigt das Formular zum Anlegen eines neuen Rezepts - dasselbe
     Template wie recipe_edit_view() unten (templates/recipe_form.html),
-    nur mit recipe=None (siehe dortigen Kommentar). Ein neues Rezept
-    gehört immer dem gerade AKTIVEN Plan (current_plan()) - dessen
-    Kategorien werden zur Auswahl angeboten, das "in andere Pläne
-    einbinden"-Formular gibt es hier nicht (ein Rezept muss erst
-    existieren, bevor es verknüpft werden kann - siehe recipe_edit_view)."""
-    plan = current_plan()
-    categories = Category.query.filter_by(plan_id=plan.id).order_by(Category.name).all()
+    nur mit recipe=None (siehe dortigen Kommentar). Welchem Plan das neue
+    Rezept gehören soll, wählt der Nutzer bei mehreren Mitgliedschaften
+    explizit über ein Auswahlfeld (siehe templates/recipe_form.html) -
+    voreingestellt ist dabei IMMER der gesternte Plan (services/auth.py:
+    default_plan_id(), bewusst NICHT current_plan(), das stattdessen einen
+    zuvor per Tab/Sidebar umgeschalteten, nicht zwingend gesternten Plan
+    liefern könnte). Das "in andere Pläne einbinden"-Formular gibt es hier
+    nicht (ein Rezept muss erst existieren, bevor es verknüpft werden kann
+    - siehe recipe_edit_view)."""
+    user = current_user()
+    plan_id = default_plan_id(request.args, user)
+    categories = Category.query.filter_by(plan_id=plan_id).order_by(Category.name).all()
     return render_template(
         'recipe_form.html', categories=categories, recipe=None,
-        ingredient_list=_canonical_ingredient_list(plan.id), seasons=SEASONS,
+        ingredient_list=_canonical_ingredient_list(plan_id), seasons=SEASONS,
         selected_presets=set(), custom_start='', custom_end='',
         linkable_plans=[], linked_plan_ids=set(),
+        plan_id=plan_id, user_plans=user_plan_memberships(user),
     )
 
 
@@ -218,7 +224,8 @@ def add_recipe():
     die späteren Ingredient-Zeilen dieselben, bereits kanonischen Werte
     verwenden.
     """
-    plan = current_plan()
+    user = current_user()
+    plan_id = default_plan_id(request.form, user)
     name = request.form.get('name')
     category_id = request.form.get('category_id')
     is_side_dish = request.form.get('is_side_dish') == '1'
@@ -253,11 +260,11 @@ def add_recipe():
         fat = float(request.form.get('fat') or 0)
         calories = compute_calories(protein, carbs, fat)
     else:
-        computed = compute_recipe_nutrition(plan.id, normalized_ingredients, servings)
+        computed = compute_recipe_nutrition(plan_id, normalized_ingredients, servings)
         calories, protein, carbs, fat = computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
 
     new_recipe = Recipe(
-        name=name, owner_plan_id=plan.id, category_id=category_id,
+        name=name, owner_plan_id=plan_id, category_id=category_id,
         calories=calories, protein=protein, carbs=carbs, fat=fat, nutrition_override=nutrition_override,
         is_side_dish=is_side_dish, is_favorite=is_favorite, servings=servings,
         source_url=source_url, instructions=instructions
@@ -275,7 +282,10 @@ def add_recipe():
     db.session.commit()
     # Zurück zur "Erstellen"-Unterseite (nicht zur Liste), damit direkt das
     # nächste Rezept eingetragen werden kann, ohne erst zu navigieren.
-    return redirect(url_for('recipes.recipe_create_view'))
+    # plan_id sorgt dafür, dass der gerade gewählte Plan dabei erhalten
+    # bleibt, statt beim nächsten Rezept wieder auf den gesternten
+    # zurückzufallen (services/auth.py: default_plan_id()).
+    return redirect(url_for('recipes.recipe_create_view', plan_id=plan_id))
 
 
 @recipes_bp.route('/edit-recipe/<int:id>', methods=['POST'])

@@ -223,6 +223,67 @@ def test_add_recipe_creates_recipe_with_ingredients_and_seasons(client, app, mak
         assert len(recipe.seasons) == 1
 
 
+def test_recipe_create_view_hides_plan_selector_with_single_plan(client):
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b'name="plan_id"' in resp.data  # als verstecktes Feld weiterhin vorhanden
+    assert b'<select name="plan_id"' not in resp.data
+
+
+def test_recipe_create_view_shows_plan_selector_with_starred_preselected(app, client, make_user):
+    from models import PlanMembership, db
+
+    other_plan_id = make_user("Zweitplan-Besitzer")[1]
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b'<select name="plan_id"' in resp.data
+    # Der gesternte (eigene) Plan ist vorausgewählt, der andere nicht.
+    assert f'value="{client.plan_id}" selected'.encode() in resp.data
+    assert f'value="{other_plan_id}" selected'.encode() not in resp.data
+
+
+def test_add_recipe_without_explicit_plan_id_defaults_to_starred_plan(app, client, make_user, make_category):
+    """default_plan_id() (services/auth.py) fällt OHNE ?plan_id= auf den
+    gesternten Plan zurück, NICHT auf current_plan() - hier zusätzlich mit
+    einem zweiten, nicht gesternten eigenen Plan geprüft, dessen bloße
+    Existenz die Standardauswahl nicht verändern darf."""
+    from models import PlanMembership, Recipe, db
+
+    other_plan_id = make_user("Zweitplan-Besitzer")[1]
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    cat_id = make_category("Hauptgerichte")
+    form = _base_recipe_form(cat_id)
+    client.post("/add-recipe", data=form)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.owner_plan_id == client.plan_id
+
+
+def test_add_recipe_respects_explicit_plan_id_from_selector(app, client, make_user, make_category):
+    from models import PlanMembership, Recipe, db
+
+    other_plan_id = make_user("Zweitplan-Besitzer")[1]
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    cat_id = make_category("Hauptgerichte", plan_id=other_plan_id)
+    form = _base_recipe_form(cat_id, plan_id=str(other_plan_id))
+    client.post("/add-recipe", data=form)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.owner_plan_id == other_plan_id
+
+
 def test_add_recipe_sets_updated_at(client, app, make_category):
     """Für die "Zuletzt bearbeitet"-Liste auf /manage (routes/manage.py) -
     Recipe.updated_at wird beim Anlegen über den Spalten-Default gesetzt

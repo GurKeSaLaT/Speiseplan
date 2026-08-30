@@ -127,6 +127,27 @@ def selected_plan_id(request_args, user):
     return plan.id if plan else None
 
 
+def default_plan_id(request_args, user):
+    """Wie selected_plan_id() oben (ein gültiger ?plan_id=-Parameter
+    gewinnt immer), FÄLLT aber auf den GESTERNTEN Plan zurück statt auf
+    current_plan() - für Formulare, die absichtlich UNABHÄNGIG vom sonst
+    aktiven Plan (der z.B. durch einen zuvor besuchten Tab auf einen
+    anderen, nicht gesternten Plan zeigen kann) immer denselben,
+    vorhersagbaren Standard vorschlagen sollen (z.B. "welchem Plan gehört
+    ein neu angelegtes Rezept" - routes/recipes.py: recipe_create_view()).
+
+    Setzt voraus, dass user mindestens eine Mitgliedschaft hat - Routen,
+    die dies nutzen, sind für Nutzer ganz ohne Plan über das Zero-Plan-Gate
+    (app.py: ZERO_PLAN_ALLOWED_ENDPOINTS) ohnehin nicht erreichbar."""
+    requested = request_args.get('plan_id', type=int)
+    if requested is not None:
+        membership = PlanMembership.query.filter_by(plan_id=requested, user_id=user.id).first()
+        if membership is not None:
+            return requested
+    starred = PlanMembership.query.filter_by(user_id=user.id, is_starred=True).first()
+    return starred.plan_id if starred else None
+
+
 def login_required(view):
     """Nicht aktiv im Routing eingesetzt (siehe Modul-Docstring - app.py:
     require_login() übernimmt das global) - als eigenständiger Decorator
