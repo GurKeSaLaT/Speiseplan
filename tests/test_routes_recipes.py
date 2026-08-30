@@ -48,7 +48,7 @@ def test_recipe_create_view_embeds_ingredient_aliases_for_hint_js(client, app):
     from services.ingredient_aliases import set_alias
 
     with app.app_context():
-        set_alias("Olivenöl", "Öl")
+        set_alias(client.plan_id, "Olivenöl", "Öl")
 
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
@@ -142,7 +142,11 @@ def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe)
     recipe_id = make_recipe("Irgendein Gericht")
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    assert f'href="/manage/recipe/edit/{recipe_id}"'.encode() in resp.data
+    # Trägt seit dem Tab-Umschalter (siehe routes/recipes.py:
+    # recipe_edit_list_view) zusätzlich ?plan_id=<id> - "in" statt "endet
+    # mit" prüft weiterhin dasselbe Ziel, ohne von der genauen
+    # Query-String-Form abzuhängen.
+    assert f'href="/manage/recipe/edit/{recipe_id}?plan_id='.encode() in resp.data
 
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
@@ -217,6 +221,67 @@ def test_add_recipe_creates_recipe_with_ingredients_and_seasons(client, app, mak
         assert len(recipe.ingredients) == 1
         assert recipe.ingredients[0].name == "Nudeln"
         assert len(recipe.seasons) == 1
+
+
+def test_recipe_create_view_hides_plan_selector_with_single_plan(client):
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b'name="plan_id"' in resp.data  # als verstecktes Feld weiterhin vorhanden
+    assert b'<select name="plan_id"' not in resp.data
+
+
+def test_recipe_create_view_shows_plan_selector_with_starred_preselected(app, client, make_user):
+    from models import PlanMembership, db
+
+    other_plan_id = make_user("Zweitplan-Besitzer")[1]
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b'<select name="plan_id"' in resp.data
+    # Der gesternte (eigene) Plan ist vorausgewählt, der andere nicht.
+    assert f'value="{client.plan_id}" selected'.encode() in resp.data
+    assert f'value="{other_plan_id}" selected'.encode() not in resp.data
+
+
+def test_add_recipe_without_explicit_plan_id_defaults_to_starred_plan(app, client, make_user, make_category):
+    """default_plan_id() (services/auth.py) fällt OHNE ?plan_id= auf den
+    gesternten Plan zurück, NICHT auf current_plan() - hier zusätzlich mit
+    einem zweiten, nicht gesternten eigenen Plan geprüft, dessen bloße
+    Existenz die Standardauswahl nicht verändern darf."""
+    from models import PlanMembership, Recipe, db
+
+    other_plan_id = make_user("Zweitplan-Besitzer")[1]
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    cat_id = make_category("Hauptgerichte")
+    form = _base_recipe_form(cat_id)
+    client.post("/add-recipe", data=form)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.owner_plan_id == client.plan_id
+
+
+def test_add_recipe_respects_explicit_plan_id_from_selector(app, client, make_user, make_category):
+    from models import PlanMembership, Recipe, db
+
+    other_plan_id = make_user("Zweitplan-Besitzer")[1]
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    cat_id = make_category("Hauptgerichte", plan_id=other_plan_id)
+    form = _base_recipe_form(cat_id, plan_id=str(other_plan_id))
+    client.post("/add-recipe", data=form)
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.owner_plan_id == other_plan_id
 
 
 def test_add_recipe_sets_updated_at(client, app, make_category):
@@ -336,7 +401,7 @@ def test_recipe_edit_view_shows_ingredients_in_display_unit(client, app, make_re
         "Kilo-Anzeige", ingredients=[{"name": "Zucker", "amount": 1500, "unit": "g"}]
     )
     with app.app_context():
-        update_display_units("kg", "ml")
+        update_display_units(client.plan_id, "kg", "ml")
 
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
@@ -356,7 +421,7 @@ def test_recipe_edit_view_shows_alias_name_as_display_text(client, app, make_rec
 
     recipe_id = make_recipe("Pasta-Gericht", ingredients=[{"name": "Fusilli", "amount": 400, "unit": "g"}])
     with app.app_context():
-        set_alias("Fusilli", "Nudeln")
+        set_alias(client.plan_id, "Fusilli", "Nudeln")
 
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
@@ -435,7 +500,7 @@ def test_import_recipe_preview_converts_ingredients_to_display_unit(mock_fetch, 
     from services.settings import update_display_units
 
     with app.app_context():
-        update_display_units("kg", "l")
+        update_display_units(client.plan_id, "kg", "l")
 
     mock_fetch.return_value = {
         "name": "Importiert", "servings": 4,
@@ -459,7 +524,7 @@ def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_catego
     cat_id = make_category("Berechnet")
     with app.app_context():
         # 10g Eiweiß/70g Kohlenhydrate/1g Fett je 100g Mehl.
-        set_nutrition("Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
+        set_nutrition(client.plan_id, "Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
 
     form = _base_recipe_form(cat_id, servings="2", **{
         "nutrition_override": "",
@@ -505,7 +570,7 @@ def test_add_recipe_override_ignores_computed_nutrition(client, app, make_catego
 
     cat_id = make_category("Überschrieben")
     with app.app_context():
-        set_nutrition("Nudeln", reference_unit="g", protein=1, carbs=1, fat=1)
+        set_nutrition(client.plan_id, "Nudeln", reference_unit="g", protein=1, carbs=1, fat=1)
 
     # _base_recipe_form() setzt nutrition_override="1" und feste
     # protein/carbs/fat-Werte per Default - diese müssen trotz vorhandener
@@ -528,7 +593,7 @@ def test_edit_recipe_recomputes_nutrition_when_ingredients_change(client, app, m
     recipe_id = make_recipe("Neu berechnen", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
     with app.app_context():
         cat_id = db.session.get(Recipe, recipe_id).category_id
-        set_nutrition("Reis", reference_unit="g", protein=3, carbs=28, fat=0.3)
+        set_nutrition(client.plan_id, "Reis", reference_unit="g", protein=3, carbs=28, fat=0.3)
 
     form = _base_recipe_form(cat_id, servings="1", **{
         "nutrition_override": "",
@@ -571,7 +636,7 @@ def test_recipe_create_view_embeds_ingredient_nutrition_for_hint_js(client, app)
     from services.nutrition import set_nutrition
 
     with app.app_context():
-        set_nutrition("Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
+        set_nutrition(client.plan_id, "Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
 
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200

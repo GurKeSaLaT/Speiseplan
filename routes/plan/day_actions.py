@@ -17,10 +17,12 @@ from datetime import timedelta
 from flask import request
 
 from models import db, Category, Recipe, PlanDay, PlanDaySide
+from services.auth import current_plan
 from services.planning import (
     parse_iso_date, week_neighbor_exclude_ids, week_side_recipe_ids,
     choose_recipe, jsonify_recipe, jsonify_side
 )
+from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
 
 
@@ -73,29 +75,30 @@ def reroll_day(day_date):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
-    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=target_date).first()
     if not plan_day or plan_day.excluded:
         return {"error": "Dieser Tag ist nicht Teil eines Plans oder von der Hauptgericht-Planung ausgenommen."}, 400
 
-    exclude_ids = week_neighbor_exclude_ids(target_date)
+    exclude_ids = week_neighbor_exclude_ids(target_date, plan.id)
     if plan_day.main_recipe_id:
         exclude_ids.add(plan_day.main_recipe_id)
 
-    all_categories = Category.query.all()
+    all_categories = Category.query.filter_by(plan_id=plan.id).all()
     all_cat_ids = [c.id for c in all_categories]
 
-    other_recipes = Recipe.query.filter(Recipe.id.in_(exclude_ids)).all()
+    other_recipes = visible_recipes_query(plan.id).filter(Recipe.id.in_(exclude_ids)).all()
     other_cat_counts = {cid: 0 for cid in all_cat_ids}
     for r in other_recipes:
         other_cat_counts[r.category_id] = other_cat_counts.get(r.category_id, 0) + 1
 
     neighbor_ids = []
     for neighbor_date in (target_date - timedelta(days=1), target_date + timedelta(days=1)):
-        neighbor_day = PlanDay.query.filter_by(date=neighbor_date).first()
+        neighbor_day = PlanDay.query.filter_by(plan_id=plan.id, date=neighbor_date).first()
         if neighbor_day and neighbor_day.main_recipe_id:
             neighbor_ids.append(neighbor_day.main_recipe_id)
-    neighbor_categories = {r.category_id for r in Recipe.query.filter(Recipe.id.in_(neighbor_ids)).all()}
+    neighbor_categories = {r.category_id for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(neighbor_ids)).all()}
 
     # Sortierschlüssel wie in assign_balanced_categories(): erst
     # Nicht-Nachbar-Kategorien (False < True), dann die bislang seltenste.
@@ -106,12 +109,13 @@ def reroll_day(day_date):
     chosen = None
     for best_cat_id in sorted_target_categories:
         chosen = choose_recipe(
-            is_side_dish=False, exclude_ids=exclude_ids, category_id=best_cat_id, reference_date=target_date
+            is_side_dish=False, exclude_ids=exclude_ids, plan_id=plan.id, category_id=best_cat_id,
+            reference_date=target_date
         )
         if chosen:
             break
     if not chosen:
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids, reference_date=target_date)
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=exclude_ids, plan_id=plan.id, reference_date=target_date)
 
     if not chosen:
         return {"error": "Keine weiteren Rezepte in der Datenbank verfügbar!"}, 400
@@ -122,7 +126,7 @@ def reroll_day(day_date):
     # bereits als gekocht markiert war.
     plan_day.cooked = False
     db.session.commit()
-    return jsonify_recipe(chosen)
+    return jsonify_recipe(chosen, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/set-main', methods=['POST'])
@@ -148,6 +152,7 @@ def set_main_day(day_date):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     data = request.get_json() or {}
     try:
@@ -155,13 +160,13 @@ def set_main_day(day_date):
     except (TypeError, ValueError):
         return {"error": "Ungültiges Rezept"}, 400
 
-    recipe = Recipe.query.filter_by(id=recipe_id, is_side_dish=False).first()
+    recipe = visible_recipes_query(plan.id).filter_by(id=recipe_id, is_side_dish=False).first()
     if not recipe:
         return {"error": "Rezept nicht gefunden."}, 400
 
-    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=target_date).first()
     if not plan_day:
-        plan_day = PlanDay(date=target_date, servings=2)
+        plan_day = PlanDay(plan_id=plan.id, date=target_date, servings=2)
         db.session.add(plan_day)
 
     plan_day.excluded = False
@@ -170,10 +175,10 @@ def set_main_day(day_date):
     # Definition noch nicht gekocht.
     plan_day.cooked = False
     db.session.commit()
-    return jsonify_recipe(recipe)
+    return jsonify_recipe(recipe, plan.id)
 
 
-def _get_or_create_plan_day(target_date):
+def _get_or_create_plan_day(target_date, plan_id):
     """Get-or-create-Hilfsfunktion, die in mehreren der Beilagen-Endpunkte
     unten identisch gebraucht wird (add_side/reroll_one_side/set_one_side/
     move_one_side legen alle bei Bedarf eine neue, leere PlanDay-Zeile an,
@@ -182,9 +187,9 @@ def _get_or_create_plan_day(target_date):
     war). db.session.flush() stellt sicher, dass eine neu angelegte Zeile
     sofort eine echte id hat, bevor der Aufrufer eine PlanDaySide darauf
     verweisen lässt."""
-    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    plan_day = PlanDay.query.filter_by(plan_id=plan_id, date=target_date).first()
     if not plan_day:
-        plan_day = PlanDay(date=target_date, servings=2)
+        plan_day = PlanDay(plan_id=plan_id, date=target_date, servings=2)
         db.session.add(plan_day)
         db.session.flush()
     return plan_day
@@ -211,30 +216,31 @@ def add_side(day_date):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     data = request.get_json() or {}
     raw_recipe_id = data.get('recipe_id')
 
-    plan_day = _get_or_create_plan_day(target_date)
+    plan_day = _get_or_create_plan_day(target_date, plan.id)
 
     if raw_recipe_id:
         try:
             recipe_id = int(raw_recipe_id)
         except (TypeError, ValueError):
             return {"error": "Ungültiges Rezept"}, 400
-        chosen = Recipe.query.filter_by(id=recipe_id, is_side_dish=True).first()
+        chosen = visible_recipes_query(plan.id).filter_by(id=recipe_id, is_side_dish=True).first()
         if not chosen:
             return {"error": "Rezept nicht gefunden."}, 400
     else:
-        exclude_ids = week_side_recipe_ids(target_date)
-        chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, reference_date=target_date)
+        exclude_ids = week_side_recipe_ids(target_date, plan.id)
+        chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, plan_id=plan.id, reference_date=target_date)
         if not chosen:
             return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
 
     plan_day_side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=chosen.id)
     db.session.add(plan_day_side)
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/reroll', methods=['POST'])
@@ -251,15 +257,16 @@ def reroll_one_side(day_date, side_id):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     plan_day_side = PlanDaySide.query.join(PlanDay).filter(
-        PlanDaySide.id == side_id, PlanDay.date == target_date
+        PlanDaySide.id == side_id, PlanDay.plan_id == plan.id, PlanDay.date == target_date
     ).first()
     if not plan_day_side:
         return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
 
-    exclude_ids = week_side_recipe_ids(target_date)
-    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, reference_date=target_date)
+    exclude_ids = week_side_recipe_ids(target_date, plan.id)
+    chosen = choose_recipe(is_side_dish=True, exclude_ids=exclude_ids, plan_id=plan.id, reference_date=target_date)
     if not chosen:
         return {"error": "Keine weiteren Beilagen in der Datenbank verfügbar!"}, 400
 
@@ -267,7 +274,7 @@ def reroll_one_side(day_date, side_id):
     # Siehe reroll_day() oben - eine neu gewürfelte Beilage ist noch nicht gekocht.
     plan_day_side.cooked = False
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/set', methods=['POST'])
@@ -279,9 +286,10 @@ def set_one_side(day_date, side_id):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     plan_day_side = PlanDaySide.query.join(PlanDay).filter(
-        PlanDaySide.id == side_id, PlanDay.date == target_date
+        PlanDaySide.id == side_id, PlanDay.plan_id == plan.id, PlanDay.date == target_date
     ).first()
     if not plan_day_side:
         return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
@@ -292,7 +300,7 @@ def set_one_side(day_date, side_id):
     except (TypeError, ValueError):
         return {"error": "Ungültiges Rezept"}, 400
 
-    recipe = Recipe.query.filter_by(id=recipe_id, is_side_dish=True).first()
+    recipe = visible_recipes_query(plan.id).filter_by(id=recipe_id, is_side_dish=True).first()
     if not recipe:
         return {"error": "Rezept nicht gefunden."}, 400
 
@@ -300,7 +308,7 @@ def set_one_side(day_date, side_id):
     # Siehe reroll_day() oben - eine manuell gewählte Beilage ist noch nicht gekocht.
     plan_day_side.cooked = False
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/remove', methods=['POST'])
@@ -314,9 +322,10 @@ def remove_one_side(day_date, side_id):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     plan_day_side = PlanDaySide.query.join(PlanDay).filter(
-        PlanDaySide.id == side_id, PlanDay.date == target_date
+        PlanDaySide.id == side_id, PlanDay.plan_id == plan.id, PlanDay.date == target_date
     ).first()
     if plan_day_side:
         db.session.delete(plan_day_side)
@@ -342,17 +351,18 @@ def move_one_side(day_date, side_id, target_date_str):
     target_date = parse_iso_date(target_date_str)
     if source_date is None or target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     plan_day_side = PlanDaySide.query.join(PlanDay).filter(
-        PlanDaySide.id == side_id, PlanDay.date == source_date
+        PlanDaySide.id == side_id, PlanDay.plan_id == plan.id, PlanDay.date == source_date
     ).first()
     if not plan_day_side:
         return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404
 
-    target_plan_day = _get_or_create_plan_day(target_date)
+    target_plan_day = _get_or_create_plan_day(target_date, plan.id)
     plan_day_side.plan_day_id = target_plan_day.id
     db.session.commit()
-    return jsonify_side(plan_day_side)
+    return jsonify_side(plan_day_side, plan.id)
 
 
 @plan_bp.route('/day/<day_date>/servings', methods=['POST'])
@@ -375,6 +385,7 @@ def set_day_servings(day_date):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     data = request.get_json() or {}
     try:
@@ -382,9 +393,9 @@ def set_day_servings(day_date):
     except (TypeError, ValueError):
         servings = 2
 
-    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=target_date).first()
     if not plan_day:
-        plan_day = PlanDay(date=target_date)
+        plan_day = PlanDay(plan_id=plan.id, date=target_date)
         db.session.add(plan_day)
     plan_day.servings = servings
     db.session.commit()
@@ -422,14 +433,15 @@ def swap_days(date_a, date_b):
     parsed_b = parse_iso_date(date_b)
     if parsed_a is None or parsed_b is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
-    plan_day_a = PlanDay.query.filter_by(date=parsed_a).first()
-    plan_day_b = PlanDay.query.filter_by(date=parsed_b).first()
+    plan_day_a = PlanDay.query.filter_by(plan_id=plan.id, date=parsed_a).first()
+    plan_day_b = PlanDay.query.filter_by(plan_id=plan.id, date=parsed_b).first()
     if not plan_day_a:
-        plan_day_a = PlanDay(date=parsed_a, servings=2)
+        plan_day_a = PlanDay(plan_id=plan.id, date=parsed_a, servings=2)
         db.session.add(plan_day_a)
     if not plan_day_b:
-        plan_day_b = PlanDay(date=parsed_b, servings=2)
+        plan_day_b = PlanDay(plan_id=plan.id, date=parsed_b, servings=2)
         db.session.add(plan_day_b)
     db.session.flush()
 
@@ -467,8 +479,9 @@ def set_day_cooked(day_date):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
-    plan_day = PlanDay.query.filter_by(date=target_date).first()
+    plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=target_date).first()
     if not plan_day or not plan_day.main_recipe_id:
         return {"error": "Für diesen Tag ist kein Hauptgericht zugewiesen."}, 400
 
@@ -488,9 +501,10 @@ def set_side_cooked(day_date, side_id):
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": "Ungültiges Datum"}, 400
+    plan = current_plan()
 
     plan_day_side = PlanDaySide.query.join(PlanDay).filter(
-        PlanDaySide.id == side_id, PlanDay.date == target_date
+        PlanDaySide.id == side_id, PlanDay.plan_id == plan.id, PlanDay.date == target_date
     ).first()
     if not plan_day_side:
         return {"error": "Diese Beilage gehört nicht zu diesem Tag."}, 404

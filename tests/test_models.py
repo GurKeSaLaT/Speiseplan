@@ -34,12 +34,13 @@ def test_recipe_season_cascade_delete(app, make_recipe):
         assert RecipeSeason.query.filter_by(recipe_id=recipe_id).count() == 0
 
 
-def test_plan_day_side_cascade_delete(app, make_recipe):
+def test_plan_day_side_cascade_delete(app, make_recipe, make_user):
     from models import PlanDay, PlanDaySide, db
 
     recipe_id = make_recipe("Beilage", is_side_dish=True)
+    _, plan_id = make_user("PlanOwner")
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         db.session.add(PlanDaySide(plan_day_id=pd.id, recipe_id=recipe_id))
@@ -53,13 +54,14 @@ def test_plan_day_side_cascade_delete(app, make_recipe):
         assert PlanDaySide.query.filter_by(plan_day_id=pd_id).count() == 0
 
 
-def test_plan_day_can_have_multiple_sides(app, make_recipe):
+def test_plan_day_can_have_multiple_sides(app, make_recipe, make_user):
     from models import PlanDay, PlanDaySide, db
 
     side_a = make_recipe("Beilage A", is_side_dish=True)
     side_b = make_recipe("Beilage B", is_side_dish=True)
+    _, plan_id = make_user("PlanOwner")
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 16), servings=2)
+        pd = PlanDay(plan_id=plan_id, date=date(2026, 6, 16), servings=2)
         db.session.add(pd)
         db.session.flush()
         db.session.add(PlanDaySide(plan_day_id=pd.id, recipe_id=side_a))
@@ -70,38 +72,68 @@ def test_plan_day_can_have_multiple_sides(app, make_recipe):
         assert len(reloaded.sides) == 2
 
 
-def test_plan_day_date_is_unique(app):
+def test_plan_day_date_is_unique_per_plan(app, make_user):
+    """(plan_id, date) ist zusammengesetzt eindeutig (siehe models.py:
+    PlanDay.__table_args__) - zwei Zeilen für DENSELBEN Plan+Tag sind nicht
+    erlaubt, zwei verschiedene Pläne dürfen aber unabhängig voneinander
+    jeweils eine eigene Zeile für denselben Kalendertag haben (siehe
+    test_plan_day_date_can_repeat_across_different_plans unten)."""
     from models import PlanDay, db
 
+    _, plan_id = make_user("PlanOwner")
     with app.app_context():
-        db.session.add(PlanDay(date=date(2026, 6, 15), servings=2))
+        db.session.add(PlanDay(plan_id=plan_id, date=date(2026, 6, 15), servings=2))
         db.session.commit()
 
-        db.session.add(PlanDay(date=date(2026, 6, 15), servings=2))
+        db.session.add(PlanDay(plan_id=plan_id, date=date(2026, 6, 15), servings=2))
         with pytest.raises(IntegrityError):
             db.session.commit()
         db.session.rollback()
 
 
-def test_category_name_is_unique(app):
+def test_plan_day_date_can_repeat_across_different_plans(app, make_user):
+    from models import PlanDay, db
+
+    _, plan_a = make_user("PlanA")
+    _, plan_b = make_user("PlanB")
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=plan_a, date=date(2026, 6, 15), servings=2))
+        db.session.add(PlanDay(plan_id=plan_b, date=date(2026, 6, 15), servings=2))
+        db.session.commit()  # darf NICHT scheitern
+
+        assert PlanDay.query.filter_by(date=date(2026, 6, 15)).count() == 2
+
+
+def test_category_name_is_unique_per_plan(app, test_plan_id):
     from models import Category, db
 
     with app.app_context():
-        db.session.add(Category(name="Doppelt"))
+        db.session.add(Category(plan_id=test_plan_id, name="Doppelt"))
         db.session.commit()
 
-        db.session.add(Category(name="Doppelt"))
+        db.session.add(Category(plan_id=test_plan_id, name="Doppelt"))
         with pytest.raises(IntegrityError):
             db.session.commit()
         db.session.rollback()
 
 
-def test_recipe_defaults(app, make_category):
+def test_category_name_can_repeat_across_different_plans(app, test_plan_id, make_user):
+    from models import Category, db
+
+    _, other_plan_id = make_user("Andere")
+    with app.app_context():
+        db.session.add(Category(plan_id=test_plan_id, name="Doppelt"))
+        db.session.add(Category(plan_id=other_plan_id, name="Doppelt"))
+        db.session.commit()  # darf NICHT scheitern
+        assert Category.query.filter_by(name="Doppelt").count() == 2
+
+
+def test_recipe_defaults(app, test_plan_id, make_category):
     from models import Recipe, db
 
     cat_id = make_category()
     with app.app_context():
-        recipe = Recipe(name="Minimal", category_id=cat_id)
+        recipe = Recipe(name="Minimal", owner_plan_id=test_plan_id, category_id=cat_id)
         db.session.add(recipe)
         db.session.commit()
 
@@ -112,24 +144,24 @@ def test_recipe_defaults(app, make_category):
         assert recipe.nutrition_override is False
 
 
-def test_ingredient_nutrition_canonical_name_is_unique(app):
+def test_ingredient_nutrition_canonical_name_is_unique_per_plan(app, test_plan_id):
     from models import IngredientNutrition, db
 
     with app.app_context():
-        db.session.add(IngredientNutrition(canonical_name="Nudeln", protein=12))
+        db.session.add(IngredientNutrition(plan_id=test_plan_id, canonical_name="Nudeln", protein=12))
         db.session.commit()
 
-        db.session.add(IngredientNutrition(canonical_name="Nudeln", protein=99))
+        db.session.add(IngredientNutrition(plan_id=test_plan_id, canonical_name="Nudeln", protein=99))
         with pytest.raises(IntegrityError):
             db.session.commit()
         db.session.rollback()
 
 
-def test_ingredient_nutrition_defaults(app):
+def test_ingredient_nutrition_defaults(app, test_plan_id):
     from models import IngredientNutrition, db
 
     with app.app_context():
-        entry = IngredientNutrition(canonical_name="Reis")
+        entry = IngredientNutrition(plan_id=test_plan_id, canonical_name="Reis")
         db.session.add(entry)
         db.session.commit()
 

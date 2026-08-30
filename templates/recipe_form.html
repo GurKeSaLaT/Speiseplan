@@ -26,7 +26,7 @@
         <p class="eyebrow">{{ 'Rezept bearbeiten' if recipe else 'Neues Rezept' }}</p>
         <h1 class="page-head-title">{{ recipe.name if recipe else 'Rezept erstellen' }}</h1>
     </div>
-    <a href="/manage/recipe/edit-list" class="weeknav-btn">← Zurück zur Liste</a>
+    <a href="{{ url_for('recipes.recipe_edit_list_view', plan_id=plan_id) if recipe else url_for('recipes.recipe_edit_list_view') }}" class="weeknav-btn">← Zurück zur Liste</a>
 </div>
 
 <div class="rform-layout">
@@ -56,8 +56,52 @@
         </div>
         {% endif %}
 
+        {% if recipe %}
+        {# "Gericht zu einem anderen Plan hinzufügen" - eine ECHTE
+           Verknüpfung (models.py: RecipePlanLink), keine Kopie: das
+           Rezept bleibt dieselbe Datenbank-Zeile, wird aber zusätzlich
+           für einen weiteren Plan sichtbar/bearbeitbar. Eigene, kleine
+           <form>-Elemente außerhalb des Hauptformulars unten (verschachtelte
+           <form>-Tags sind in HTML nicht erlaubt) - jedes Löschen/
+           Hinzufügen ist hier eine eigene, sofortige Aktion. #}
+        <div class="rform-section">
+            <div class="rform-section-head">
+                <h2>🔗 In diesen Plänen</h2>
+            </div>
+            <div class="rform-section-body">
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <span class="badge bg-success px-3 py-2 rounded-pill">{{ recipe.owner_plan.name }} (Eigentümer)</span>
+                    {% for link in recipe.plan_links %}
+                    <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=link.plan_id) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="plan_id" value="{{ plan_id }}">
+                        <button type="submit" class="badge bg-light text-dark border px-3 py-2 rounded-pill" style="cursor: pointer;" title="Aus diesem Plan entfernen">
+                            {{ link.plan.name }} ✕
+                        </button>
+                    </form>
+                    {% endfor %}
+                </div>
+                {% if linkable_plans %}
+                <form method="POST" id="linkPlanForm" action="" class="d-flex gap-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="plan_id" value="{{ plan_id }}">
+                    <select name="target_plan_id" class="rform-field" onchange="this.form.action = '/manage/recipe/{{ recipe.id }}/link/' + this.value;" required style="max-width: 260px;">
+                        <option value="" selected disabled>Weiteren Plan wählen...</option>
+                        {% for p in linkable_plans %}
+                        <option value="{{ p.id }}">{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit" class="rform-btn rform-btn-ghost">Hinzufügen</button>
+                </form>
+                <div class="form-text mt-1">Das Gericht bleibt EIN Datensatz - Änderungen wirken sich in allen verknüpften Plänen aus.</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         <form id="recipe-form" action="{{ url_for('recipes.edit_recipe', id=recipe.id) if recipe else url_for('recipes.add_recipe') }}" method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if recipe %}<input type="hidden" name="plan_id" value="{{ plan_id }}">{% endif %}
 
             <!-- Grunddaten -->
             <div class="rform-section">
@@ -75,6 +119,28 @@
                     </div>
                 </div>
                 <div class="rform-section-body">
+                    {% if not recipe %}
+                    {% if user_plans and user_plans|length > 1 %}
+                    <div class="rform-mb">
+                        <label class="rform-field-label">Plan</label>
+                        {# Wechselt die Seite neu (statt nur clientseitig die
+                           Kategorie-Liste umzuschalten), da Kategorien/
+                           Zutaten-Vorschläge (ingredient_list) je Plan
+                           unterschiedlich sind - siehe routes/recipes.py:
+                           recipe_create_view(). Voreingestellt ist der
+                           gesternte Plan (services/auth.py: default_plan_id()). #}
+                        <select name="plan_id" class="rform-field" style="max-width: 320px;" onchange="location.href = '{{ url_for('recipes.recipe_create_view') }}?plan_id=' + this.value;">
+                            {% for membership in user_plans %}
+                            <option value="{{ membership.plan_id }}" {% if membership.plan_id == plan_id %}selected{% endif %}>
+                                {{ '⭐ ' if membership.is_starred }}{{ membership.plan.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% else %}
+                    <input type="hidden" name="plan_id" value="{{ plan_id }}">
+                    {% endif %}
+                    {% endif %}
                     <div class="rform-mb">
                         <label class="rform-field-label">Name des Gerichts</label>
                         <input type="text" name="name" id="nameInput" class="rform-field rform-field-hero" required placeholder="z.B. Spaghetti Bolognese" value="{{ recipe.name if recipe else '' }}">

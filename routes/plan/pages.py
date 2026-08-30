@@ -11,10 +11,12 @@ from datetime import date, timedelta
 from flask import render_template, request, redirect, url_for, abort
 
 from models import db, Category, Recipe, PlanDay, PlanDaySide, ExtraShoppingItem
+from services.auth import current_plan, current_user, user_plan_memberships
 from services.planning import (
     DAY_NAMES_DE, monday_of, week_dates_for, parse_iso_date,
     assign_balanced_categories, choose_recipe, jsonify_recipe, jsonify_side
 )
+from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
 from routes.plan import plan_bp
@@ -23,8 +25,11 @@ from routes.plan import plan_bp
 @plan_bp.route('/')
 def index():
     """Die Startseite der App: leitet immer sofort auf die Wochenansicht
-    der AKTUELLEN Kalenderwoche weiter (/plan/<Montag von heute>). Es gibt
-    keine eigenständige "/"-Seite mehr - das war früher (vor Einführung des
+    der AKTUELLEN Kalenderwoche weiter (/plan/<Montag von heute>), IM
+    AKTIVEN PLAN des eingeloggten Nutzers (services/auth.py: current_plan()
+    - welcher Plan das ist, entscheidet sich beim Login/über die
+    Plan-Umschalter in der Seitenleiste, nicht hier). Es gibt keine
+    eigenständige "/"-Seite mehr - das war früher (vor Einführung des
     dauerhaften Kalenders) die Tageszuweisungs-Seite, die jetzt unter
     /plan/<start_date>/create liegt und nur noch über den
     "Neuen Wochenplan erstellen"-Button erreichbar ist."""
@@ -71,7 +76,9 @@ def week_view(start_date):
     zusätzlich ALLE Rezepte (unabhängig vom aktuellen Plan) in einer
     schlanken Form - Grundlage für die manuelle Rezeptauswahl
     (Such-/Auswahlbox, siehe static/plan-manual-select.js sowie deren
-    Verwendung in static/plan.js und static/plan-sides.js).
+    Verwendung in static/plan.js und static/plan-sides.js). otherPlanMeals
+    enthält je Wochentag die Hauptgerichte der ÜBRIGEN eigenen Pläne (rein
+    lesend, siehe static/plan.js: renderOtherPlanMeals).
     """
     start = parse_iso_date(start_date)
     if start is None:
@@ -80,8 +87,21 @@ def week_view(start_date):
     if normalized != start:
         return redirect(url_for('plan.week_view', start_date=normalized.isoformat()))
 
+    active_plan = current_plan()
+    # Seit Pläne von Accounts entkoppelt sind (services/plans.py), ist "gar
+    # kein Plan" ein normaler, erreichbarer Zustand - z.B. direkt nach dem
+    # Löschen des letzten eigenen Plans (routes/plans.py: delete()). Statt
+    # der üblichen Kalenderdaten zeigt plan.html dann nur einen Hinweis samt
+    # Formular, den ersten Plan anzulegen (templates/plan.html: {% if
+    # no_plan %}) - alle übrigen Variablen unten würden ohnehin ins Leere
+    # laufen (active_plan.id crasht z.B. sofort).
+    if active_plan is None:
+        return render_template('plan.html', no_plan=True)
+
     dates = week_dates_for(normalized)
-    plan_days_by_date = {pd.date: pd for pd in PlanDay.query.filter(PlanDay.date.in_(dates)).all()}
+    plan_days_by_date = {
+        pd.date: pd for pd in PlanDay.query.filter(PlanDay.plan_id == active_plan.id, PlanDay.date.in_(dates)).all()
+    }
     ordered = [plan_days_by_date.get(d) for d in dates]
     has_any_data = any(ordered)
 
@@ -107,9 +127,43 @@ def week_view(start_date):
     # Manuell hinzugefügte Einkaufslisten-Posten dieser Woche (siehe
     # shopping.py: add_shopping_item) - lose über week_start an die Woche
     # gebunden, kein Fremdschlüssel auf PlanDay o.ä. nötig.
-    extra_items = ExtraShoppingItem.query.filter_by(week_start=normalized).order_by(ExtraShoppingItem.id).all()
+    extra_items = (
+        ExtraShoppingItem.query.filter_by(plan_id=active_plan.id, week_start=normalized)
+        .order_by(ExtraShoppingItem.id).all()
+    )
 
-    all_recipes = Recipe.query.all()
+    all_recipes = visible_recipes_query(active_plan.id).all()
+
+    # Hauptgerichte der ÜBRIGEN eigenen Pläne für dieselben 7 Kalendertage -
+    # rein informativ, nicht interaktiv (siehe static/plan.js:
+    # renderOtherPlanMeals). Nur Pläne, deren Mitgliedschaft
+    # show_in_week_overview trägt (models.py: PlanMembership - individuell
+    # pro Nutzer abschaltbar, siehe routes/sharing.py: toggle_overview()),
+    # und nie der aktive Plan selbst (der steht ohnehin schon oben in der
+    # Kachel). Beilagen bleiben bewusst außen vor (nur EIN Gericht pro Plan
+    # und Tag, wie vom Nutzer beschrieben).
+    other_memberships = [
+        m for m in user_plan_memberships(current_user())
+        if m.plan_id != active_plan.id and m.show_in_week_overview
+    ]
+    other_plan_days_by_key = {}
+    if other_memberships:
+        other_plan_days = PlanDay.query.filter(
+            PlanDay.plan_id.in_([m.plan_id for m in other_memberships]),
+            PlanDay.date.in_(dates),
+        ).all()
+        other_plan_days_by_key = {(pd.plan_id, pd.date): pd for pd in other_plan_days}
+    other_plan_meals = []
+    for d in dates:
+        meals_this_day = []
+        for m in other_memberships:
+            pd = other_plan_days_by_key.get((m.plan_id, d))
+            if pd and pd.main_recipe:
+                meals_this_day.append({
+                    "planId": m.plan_id, "planName": m.plan.name,
+                    "recipeId": pd.main_recipe.id, "recipeName": pd.main_recipe.name,
+                })
+        other_plan_meals.append(meals_this_day)
 
     plan_data = {
         'weekDates': [d.isoformat() for d in dates],
@@ -117,14 +171,14 @@ def week_view(start_date):
         'excludedDays': [i in excluded_days for i in range(7)],
         'servingsList': servings_list,
         'cookedMain': cooked_main,
-        'plan': [jsonify_recipe(r) if r else None for r in plan],
-        'sidePlan': [[jsonify_side(s) for s in sides] for sides in side_plan],
+        'plan': [jsonify_recipe(r, active_plan.id) if r else None for r in plan],
+        'sidePlan': [[jsonify_side(s, active_plan.id) for s in sides] for sides in side_plan],
         'extraItems': [
             {
                 "id": it.id, "name": it.name,
                 **dict(zip(
                     ("amount", "unit"),
-                    convert_for_display(it.amount, it.unit, get_display_units()) if it.amount is not None else (None, it.unit)
+                    convert_for_display(it.amount, it.unit, get_display_units(active_plan.id)) if it.amount is not None else (None, it.unit)
                 )),
                 "category": it.category,
             }
@@ -134,6 +188,7 @@ def week_view(start_date):
             {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
             for r in all_recipes
         ],
+        'otherPlanMeals': other_plan_meals,
     }
 
     # plan/side_plan/excluded_days/servings_list/days werden NICHT mehr an
@@ -170,9 +225,10 @@ def week_create_view(start_date):
     if start is None:
         abort(404)
     start = monday_of(start)
+    plan = current_plan()
 
-    recipes = Recipe.query.all()
-    categories = Category.query.all()
+    recipes = visible_recipes_query(plan.id).all()
+    categories = Category.query.filter_by(plan_id=plan.id).order_by(Category.name).all()
 
     return render_template(
         'create_week.html', recipes=recipes, categories=categories,
@@ -243,8 +299,9 @@ def week_generate(start_date):
         abort(404)
     start = monday_of(start)
     dates = week_dates_for(start)
+    plan = current_plan()
 
-    all_categories = Category.query.all()
+    all_categories = Category.query.filter_by(plan_id=plan.id).all()
 
     # 1. Formulardaten pro Tag auslesen: feste Zuweisung + Ausnahme-Status
     excluded_days = set()
@@ -272,7 +329,7 @@ def week_generate(start_date):
 
     if day_recipe_ids:
         unique_ids = list(set(day_recipe_ids.values()))
-        recipes_by_id = {str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_ids)).all()}
+        recipes_by_id = {str(r.id): r for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(unique_ids)).all()}
         for day_index, rid in day_recipe_ids.items():
             recipe = recipes_by_id.get(rid)
             if recipe:
@@ -286,7 +343,7 @@ def week_generate(start_date):
     if day_side_recipe_ids:
         unique_side_ids = list({rid for rids in day_side_recipe_ids.values() for rid in rids})
         side_recipes_by_id = {
-            str(r.id): r for r in Recipe.query.filter(Recipe.id.in_(unique_side_ids)).all()
+            str(r.id): r for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(unique_side_ids)).all()
         }
         for day_index, rids in day_side_recipe_ids.items():
             for rid in rids:
@@ -314,11 +371,13 @@ def week_generate(start_date):
     # oft dran waren, werden dadurch seltener (aber nie unmöglich) gezogen.
     for day_index, needed_cat_id in category_by_day.items():
         chosen = choose_recipe(
-            is_side_dish=False, exclude_ids=used_recipe_ids, category_id=needed_cat_id,
+            is_side_dish=False, exclude_ids=used_recipe_ids, plan_id=plan.id, category_id=needed_cat_id,
             reference_date=dates[day_index]
         )
         if not chosen:
-            chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids, reference_date=dates[day_index])
+            chosen = choose_recipe(
+                is_side_dish=False, exclude_ids=used_recipe_ids, plan_id=plan.id, reference_date=dates[day_index]
+            )
 
         if chosen:
             final_plan[day_index] = chosen
@@ -327,9 +386,9 @@ def week_generate(start_date):
     # 6. Dauerhaft speichern: ein PlanDay pro echtem Kalendertag dieser Woche
     for i in range(7):
         day_date = dates[i]
-        plan_day = PlanDay.query.filter_by(date=day_date).first()
+        plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=day_date).first()
         if not plan_day:
-            plan_day = PlanDay(date=day_date, servings=2)
+            plan_day = PlanDay(plan_id=plan.id, date=day_date, servings=2)
             db.session.add(plan_day)
             db.session.flush()  # weist plan_day.id zu, für die PlanDaySide-Zeilen unten
         plan_day.excluded = i in excluded_days

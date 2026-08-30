@@ -36,6 +36,17 @@
                 <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
             </div>
             <div class="card-body p-4">
+                {% if user_plans|length > 1 %}
+                <ul class="nav nav-pills mb-4">
+                    {% for membership in user_plans %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if membership.plan_id == plan_id %}active{% endif %}" href="{{ url_for(request.endpoint, plan_id=membership.plan_id) }}">
+                            {{ '⭐ ' if membership.is_starred }}{{ membership.plan.name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
                 <p class="text-muted">
                     Nährwerte je Grundzutat (z.B. "Nudeln", "Öl") - gilt automatisch für alle
                     gleichgesetzten Schreibweisen (z.B. "Spaghetti", "Fusilli"). Rezept-Nährwerte
@@ -50,6 +61,7 @@
 
                 <form action="/update-ingredient-nutrition" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="plan_id" value="{{ plan_id }}">
                     <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2 d-none d-md-flex">
                         <div class="col-md-3">Zutat</div>
                         <div class="col-md-2">Referenz</div>

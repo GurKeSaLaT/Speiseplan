@@ -101,6 +101,14 @@ let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 // Ganzes, keinem bestimmten Tag. Verwaltet in static/plan-shopping.js.
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
+// Hauptgerichte der ÜBRIGEN eigenen Pläne (Index = Wochentag, Wert = LISTE
+// von {planId, planName, recipeId, recipeName}) - rein informativ, siehe
+// renderOtherPlanMeals() weiter unten. An das feste Kalenderdatum dieses
+// Tages gebunden, nicht an weeklyPlanRecipes[dayIndex] - ändert sich daher
+// NIE bei einem Tage-Tausch (daySwap tauscht nur weeklyPlanRecipes/
+// weeklySideRecipes zwischen zwei Indizes, dieses Array bleibt unangetastet).
+let otherPlanMeals = window.PLAN_DATA.otherPlanMeals || [[], [], [], [], [], [], []];
+
 // Beim ersten Laden der Seite alle 7 Tageskarten (siehe renderDayCardBody
 // weiter unten - Jinja liefert in plan.html nur noch leere Karten-Hüllen)
 // sowie die Einkaufsliste (und darüber auch die Wochen-Nährwertübersicht,
@@ -312,8 +320,32 @@ function renderDayCardBody(dayIndex) {
     // landet (siehe dortiger Kommentar).
     const mainDisplayHtml = `<div class="main-dish-display" id="main-dish-display-${dayIndex}">${renderMainDisplay(dayIndex)}</div>`;
     const sidesHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSidesSection(dayIndex)}</div>`;
+    const otherPlansHtml = renderOtherPlanMeals(dayIndex);
 
-    return mainDisplayHtml + sidesHtml;
+    return mainDisplayHtml + sidesHtml + otherPlansHtml;
+}
+
+/**
+ * Rein lesende Zusatzzeile unterhalb der Beilagen: was an diesem Tag in den
+ * ÜBRIGEN eigenen Plänen gekocht wird (siehe otherPlanMeals oben,
+ * routes/plan/pages.py: week_view()) - je Eintrag Plan-Name als Badge plus
+ * Gerichtname, OHNE Würfeln/Bearbeiten/Ziehen/Cooked-Umschalten (das
+ * Hauptgericht des aktiven Plans oben bleibt die einzige interaktive
+ * Stelle der Karte). Gibt für diesen Tag leeren String zurück, wenn kein
+ * anderer Plan an dem Tag ein Gericht hat - die Kachel bleibt dann exakt
+ * wie vor dieser Funktion.
+ */
+function renderOtherPlanMeals(dayIndex) {
+    const meals = otherPlanMeals[dayIndex] || [];
+    if (meals.length === 0) return '';
+
+    const rows = meals.map(meal => `
+        <div class="small text-muted d-flex align-items-center gap-2">
+            <span class="badge bg-light text-dark border">${meal.planName}</span>
+            <span>${meal.recipeName}</span>
+        </div>
+    `).join('');
+    return `<div class="other-plan-meals mt-2 pt-2 border-top">${rows}</div>`;
 }
 
 /**

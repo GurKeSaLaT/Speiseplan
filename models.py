@@ -38,9 +38,18 @@ class Category(db.Model):
     (siehe services/planning.py: assign_balanced_categories). Eine Kategorie
     lässt sich erst löschen, wenn ihr keine Rezepte mehr zugeordnet sind
     (siehe routes/categories.py: delete_category).
+
+    plan_id bindet die Kategorie an EINEN Plan (siehe Plan/PlanMembership
+    weiter unten) - jeder Plan pflegt seine eigene Kategorie-Liste, analog
+    zu den übrigen "Einstellungen" (AppSettings/IngredientAlias/
+    IngredientNutrition). name ist deshalb nur noch INNERHALB eines Plans
+    eindeutig (siehe __table_args__), nicht mehr global.
     """
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    name = db.Column(db.String(50), nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'name', name='uq_category_plan_id_name'),)
 
 
 class Recipe(db.Model):
@@ -52,9 +61,25 @@ class Recipe(db.Model):
     der automatischen Wochenplanung werden Hauptgerichte (is_side_dish=False)
     und Beilagen (is_side_dish=True) nie miteinander vermischt (siehe
     services/planning.py: choose_recipe).
+
+    owner_plan_id ist der Plan, unter dem das Rezept ursprünglich angelegt
+    wurde ("an den eigenen Plan gebunden") - RecipePlanLink (siehe unten)
+    ergänzt das um beliebig viele WEITERE Pläne, in denen dasselbe Rezept
+    zusätzlich sichtbar/nutzbar ist (echte Verknüpfung, keine Kopie: eine
+    Änderung an Name/Zutaten/Anleitung wirkt sich überall aus, wo das
+    Rezept eingebunden ist). services/planning.py: visible_recipes_query()
+    ist die einzige Stelle, die "für Plan X nutzbare Rezepte" tatsächlich
+    auflöst (owner_plan_id == X ODER ein RecipePlanLink auf X) - alle
+    Routen fragen darüber ab statt Recipe.query direkt, damit diese Regel
+    nicht an mehreren Stellen dupliziert wird. category_id zeigt dabei
+    IMMER auf eine Kategorie des EIGENTÜMER-Plans (owner_plan_id) - wird
+    das Rezept in einen anderen Plan eingebunden, übernimmt es dessen
+    Kategorie unverändert mit, unabhängig von der Kategorie-Liste des
+    Ziel-Plans.
     """
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    owner_plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     is_side_dish = db.Column(db.Boolean, default=False, nullable=False)
 
@@ -117,6 +142,7 @@ class Recipe(db.Model):
     updated_at = db.Column(db.DateTime, default=db.func.now())
 
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
+    owner_plan = db.relationship('Plan', foreign_keys=[owner_plan_id])
     # cascade="all, delete-orphan": Zutaten werden automatisch mitgelöscht,
     # sobald das Rezept gelöscht wird - es gibt keine "verwaisten" Zutaten.
     ingredients = db.relationship('Ingredient', backref='recipe', cascade="all, delete-orphan")
@@ -128,6 +154,10 @@ class Recipe(db.Model):
     # der hinterlegten Zeiträume fällt. Das schränkt nur die AUTOMATISCHE
     # Auswahl ein, nie die manuelle Auswahl über die Suche.
     seasons = db.relationship('RecipeSeason', backref='recipe', cascade="all, delete-orphan")
+
+    # cascade="all, delete-orphan": Verknüpfungen zu weiteren Plänen
+    # verschwinden automatisch mit, sobald das Rezept selbst gelöscht wird.
+    plan_links = db.relationship('RecipePlanLink', backref='recipe', cascade="all, delete-orphan")
 
 
 class RecipeSeason(db.Model):
@@ -148,6 +178,32 @@ class RecipeSeason(db.Model):
     start_day = db.Column(db.Integer, nullable=False)
     end_month = db.Column(db.Integer, nullable=False)
     end_day = db.Column(db.Integer, nullable=False)
+
+
+class RecipePlanLink(db.Model):
+    """Bindet ein Rezept ZUSÄTZLICH an einen weiteren Plan, über seinen
+    eigentlichen Eigentümer-Plan (Recipe.owner_plan_id) hinaus - "Gericht
+    zu einem anderen Plan hinzufügen" legt genau eine solche Zeile an.
+
+    Das ist eine ECHTE Verknüpfung, keine Kopie: dieselbe Recipe-Zeile
+    (inkl. all ihrer Ingredient-/RecipeSeason-Zeilen) wird für den
+    verknüpften Plan sichtbar und voll bearbeitbar - eine Änderung wirkt
+    sich für ALLE Pläne aus, in denen das Rezept eingebunden ist. Siehe
+    services/planning.py: visible_recipes_query() für die einzige Stelle,
+    die diese Sichtbarkeitsregel auswertet.
+
+    Kein unique-Constraint gegen den EIGENTÜMER-Plan selbst (Recipe.
+    owner_plan_id) auf Datenbankebene - wird stattdessen von der Route
+    verhindert (siehe routes/recipes.py: link_recipe_to_plan), die dafür
+    ohnehin bereits current_plan()/Mitgliedschaften nachschlagen muss.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+
+    __table_args__ = (db.UniqueConstraint('recipe_id', 'plan_id', name='uq_recipe_plan_link_recipe_id_plan_id'),)
+
+    plan = db.relationship('Plan')
 
 
 class Ingredient(db.Model):
@@ -200,12 +256,23 @@ class PlanDay(db.Model):
     Planung aus, niemals die Beilagen.
     """
     id = db.Column(db.Integer, primary_key=True)
-    # unique+index: pro Kalendertag darf es höchstens eine Zeile geben, und
-    # die Wochenansicht fragt regelmäßig nach Datumsbereichen (date.in_(...)).
-    date = db.Column(db.Date, unique=True, nullable=False, index=True)
+    # Zu welchem Plan (siehe Plan/PlanMembership unten) dieser Kalendertag
+    # gehört - jeder Plan hat seinen eigenen, unabhängigen Kalender. Das
+    # frühere unique=True direkt auf date (ein Tag konnte höchstens EINE
+    # Zeile in der GESAMTEN App haben) ist deshalb einem zusammengesetzten
+    # Unique (plan_id, date) gewichen (siehe __table_args__ unten): zwei
+    # verschiedene Pläne dürfen für denselben Kalendertag jeweils eine
+    # eigene Zeile haben.
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    # index=True (statt zusätzlich unique=True, das jetzt über
+    # __table_args__ läuft): die Wochenansicht fragt regelmäßig nach
+    # Datumsbereichen (date.in_(...)).
+    date = db.Column(db.Date, nullable=False, index=True)
     excluded = db.Column(db.Boolean, default=False, nullable=False)
     servings = db.Column(db.Integer, nullable=False, default=2)
     main_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'date', name='uq_plan_day_plan_id_date'),)
 
     # Ob das Hauptgericht DIESES Tages bereits gekocht wurde (Checkbox im
     # Rezept-Detail-Fenster, siehe static/plan.js: openRecipeDetail/
@@ -267,8 +334,13 @@ class ExtraShoppingItem(db.Model):
     optional und frei, werden aber (anders als Zutaten aus Rezepten) NICHT
     mit der Personenzahl eines Wochentags skaliert, da sie an keinen
     bestimmten Tag oder ein bestimmtes Rezept gebunden sind.
+
+    plan_id ordnet den Posten (wie PlanDay.plan_id) einem bestimmten Plan
+    zu - dieselbe Kalenderwoche kann in zwei verschiedenen Plänen jeweils
+    eigene manuelle Posten haben.
     """
     id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     week_start = db.Column(db.Date, nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False)
     amount = db.Column(db.Float, nullable=True)
@@ -277,17 +349,18 @@ class ExtraShoppingItem(db.Model):
 
 
 class AppSettings(db.Model):
-    """Globale Anzeige-Einstellungen der App - aktuell nur die bevorzugten
+    """Anzeige-Einstellungen EINES Plans - aktuell nur die bevorzugten
     Einheiten für Masse (g/kg) und Volumen (ml/l), in denen Zutatenmengen
     dargestellt werden sollen (siehe services/units.py: convert_for_display,
-    routes/settings.py). Eine einzelne Singleton-Zeile (immer id=1) statt
-    einer generischen Key-Value-Tabelle, da es bislang nur diese zwei
-    Einstellungen gibt - services/settings.py: get_settings() legt sie bei
-    Bedarf lazy mit diesen Defaults an, kein eigener Migrationsschritt in
-    app.py nötig. Ändert NICHT die kanonisch in Ingredient.amount/.unit
-    gespeicherten Werte (immer Gramm/Milliliter), sondern nur, wie sie
-    beim Anzeigen umgerechnet werden."""
+    routes/settings.py). Eine Zeile PRO Plan (plan_id unique) statt einer
+    einzelnen globalen Singleton-Zeile wie früher - services/settings.py:
+    get_settings(plan_id) legt sie bei Bedarf lazy mit diesen Defaults an,
+    kein eigener Migrationsschritt für NEUE Pläne nötig (nur für bereits
+    bestehende Bestandsdaten, siehe app.py: init_db()). Ändert NICHT die
+    kanonisch in Ingredient.amount/.unit gespeicherten Werte (immer Gramm/
+    Milliliter), sondern nur, wie sie beim Anzeigen umgerechnet werden."""
     id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), unique=True, nullable=False, index=True)
     mass_unit = db.Column(db.String(10), nullable=False, default='g')
     volume_unit = db.Column(db.String(10), nullable=False, default='ml')
 
@@ -311,11 +384,16 @@ class IngredientAlias(db.Model):
 
     raw_name ist bereits in der Form gespeichert, in der jsonify_recipe()
     nachschlägt (.strip().title(), siehe dort) - Groß-/Kleinschreibung und
-    Leerraum spielen beim Zuordnen daher keine Rolle.
+    Leerraum spielen beim Zuordnen daher keine Rolle. plan_id bindet die
+    Zuordnung an EINEN Plan (jeder Plan pflegt seine eigene Gleichsetzung),
+    raw_name ist deshalb nur noch INNERHALB eines Plans eindeutig.
     """
     id = db.Column(db.Integer, primary_key=True)
-    raw_name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    raw_name = db.Column(db.String(100), nullable=False, index=True)
     canonical_name = db.Column(db.String(100), nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'raw_name', name='uq_ingredient_alias_plan_id_raw_name'),)
 
 
 class IngredientNutrition(db.Model):
@@ -341,11 +419,134 @@ class IngredientNutrition(db.Model):
     Eiweiß/Kohlenhydraten/Fett errechnen (4 kcal/g je Eiweiß und
     Kohlenhydrate, 9 kcal/g Fett - die Atwater-Faustregel) und wären als
     zusätzlich gepflegter Wert nur eine redundante, potenziell
-    widersprüchliche Angabe. Siehe services/nutrition.py: compute_calories()."""
+    widersprüchliche Angabe. Siehe services/nutrition.py: compute_calories().
+
+    plan_id bindet den Eintrag an EINEN Plan (jeder Plan pflegt seine
+    eigenen Nährwert-Referenzen), canonical_name ist deshalb nur noch
+    INNERHALB eines Plans eindeutig."""
     id = db.Column(db.Integer, primary_key=True)
-    canonical_name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    canonical_name = db.Column(db.String(100), nullable=False, index=True)
     reference_amount = db.Column(db.Float, nullable=False, default=100)
     reference_unit = db.Column(db.String(20), nullable=False, default='g')
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'canonical_name', name='uq_ingredient_nutrition_plan_id_canonical_name'),)
+
+
+class User(db.Model):
+    """Ein Nutzer-Konto - siehe services/auth.py für Login/Session-Handling.
+
+    password_hash speichert NIE das Klartext-Passwort, sondern einen über
+    werkzeug.security.generate_password_hash() erzeugten Hash (PBKDF2 mit
+    Salt) - services/auth.py: check_password() vergleicht damit beim
+    Login über werkzeug.security.check_password_hash(), ohne das
+    Passwort selbst je wieder rekonstruieren zu können.
+
+    Login erfolgt über email (immer klein geschrieben gespeichert, siehe
+    routes/auth.py: login()/register()) - name ist reiner Anzeigename OHNE
+    Eindeutigkeit, zwei Nutzer dürfen also gleich heißen. Registrierung
+    läuft über routes/auth.py: register() (Button auf der Login-Seite);
+    beim App-Start in app.py: init_db() werden zusätzlich weiterhin zwei
+    generische Demo-Konten ("Nutzer1"/"Nutzer2") gesät (Platzhalter-
+    E-Mails nach dem Schema <name>@example.com, siehe dort)."""
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+
+class Plan(db.Model):
+    """Ein eigenständiger Wochenplan-"Haushalt": eine unabhängige Sammlung
+    von PlanDay-Zeilen (siehe dort: PlanDay.plan_id) samt Einkaufsliste
+    (ExtraShoppingItem.plan_id) UND eigenem Kochbuch/eigenen Einstellungen
+    (Recipe.owner_plan_id, Category.plan_id, AppSettings.plan_id,
+    IngredientAlias.plan_id, IngredientNutrition.plan_id) - jeder Plan
+    verwaltet seine Rezepte, Kategorien, Zutaten-Gleichsetzungen, Nährwert-
+    Referenzen und Anzeige-Einheiten komplett unabhängig von anderen
+    Plänen. Ein Rezept lässt sich zusätzlich per RecipePlanLink in einen
+    ANDEREN Plan einbinden (siehe dort) - eine echte Verknüpfung, kein
+    eigenes Kochbuch pro Plan im Sinne getrennter Kopien.
+
+    Jeder Nutzer bekommt beim Anlegen automatisch genau einen eigenen Plan
+    (owner_user_id, siehe app.py: init_db()); über PlanMembership (unten)
+    lassen sich weitere Nutzer mit vollem Zugriff zu einem Plan hinzufügen
+    (siehe routes/sharing.py: invite_member).
+
+    owner_user_id ist rein informativ (zeigt z.B. auf der Freigabeseite,
+    wer den Plan ursprünglich angelegt hat) - für die eigentliche
+    Zugriffskontrolle zählt ausschließlich, ob eine PlanMembership-Zeile
+    für den jeweiligen Nutzer existiert (auch der Eigentümer selbst bekommt
+    beim Anlegen eine ganz normale, nur zusätzlich gesternte Mitgliedschaft,
+    siehe unten) - kein Nutzer hat also über owner_user_id allein weitere
+    Rechte, die ein eingeladenes Mitglied nicht auch hätte.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+    owner = db.relationship('User', foreign_keys=[owner_user_id])
+
+
+class PlanMembership(db.Model):
+    """Verknüpft einen Nutzer mit einem Plan, auf den er Zugriff hat (voller
+    Lese-/Schreibzugriff für alle Mitglieder, kein Unterschied zwischen
+    Eigentümer und eingeladenem Mitglied - siehe Plan.owner_user_id oben).
+
+    is_starred markiert PRO NUTZER (nicht global) den einen Plan, der nach
+    dem Login automatisch geöffnet wird und oben in der Navigation steht
+    (siehe services/auth.py: current_plan()). Dass wirklich immer nur EINE
+    Mitgliedschaft desselben Nutzers gleichzeitig gesternt ist, wird nicht
+    über ein Datenbank-Constraint erzwungen (SQLite kennt keinen "at most
+    one true per user_id"-Constraint ohne Umwege), sondern auf
+    Anwendungsebene: routes/sharing.py: star_plan() entsternt in
+    DERSELBEN Transaktion zuerst alle anderen Mitgliedschaften desselben
+    Nutzers, bevor die neue gesetzt wird.
+
+    show_in_week_overview steuert, analog PRO NUTZER (nicht global), ob
+    dieser Plan in DEN WOCHENPLAN-TAGESKACHELN ANDERER Pläne desselben
+    Nutzers als zusätzlicher, nur lesbarer Eintrag auftaucht (siehe
+    routes/plan/pages.py: week_view() - "otherPlanMeals"). Betrifft NICHT
+    die Ansicht des Plans selbst (der bleibt, wenn er der aktive Plan ist,
+    immer normal sichtbar) - nur, ob er bei einem GETEILTEN Plan für DIESEN
+    einen Nutzer zusätzlich in die Kacheln der übrigen eigenen Pläne
+    einfließt. Default True (neue Mitgliedschaften fließen automatisch mit
+    ein), abschaltbar über die Checkbox auf /manage/sharing.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    is_starred = db.Column(db.Boolean, default=False, nullable=False)
+    show_in_week_overview = db.Column(db.Boolean, default=True, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'user_id', name='uq_plan_membership_plan_id_user_id'),)
+
+    plan = db.relationship('Plan')
+    user = db.relationship('User')
+
+
+class PendingPlanInvite(db.Model):
+    """Eine per E-Mail ausgesprochene Plan-Einladung an eine NOCH NICHT
+    registrierte Adresse (siehe routes/sharing.py: invite_member() - für
+    eine bereits existierende E-Mail entsteht stattdessen sofort eine
+    echte PlanMembership, keine Zeile hier).
+
+    Registriert sich später jemand mit genau dieser E-Mail (klein
+    geschrieben, siehe routes/auth.py: register()), wird die Einladung
+    automatisch in eine echte PlanMembership umgewandelt und diese Zeile
+    dabei gelöscht (services/plans.py: accept_pending_invites()) - bis
+    dahin bleibt sie hier als sichtbarer "ausstehend"-Eintrag auf
+    /manage/sharing stehen (samt erneut abrufbarem Einladungs-Link, da noch
+    kein echter Mail-Versand angebunden ist, siehe services/mail.py)."""
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    invited_at = db.Column(db.DateTime, default=db.func.now())
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'email', name='uq_pending_plan_invite_plan_id_email'),)
+
+    plan = db.relationship('Plan')

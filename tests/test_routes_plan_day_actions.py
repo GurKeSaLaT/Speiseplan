@@ -3,11 +3,11 @@ Kalendertage (würfeln, manuell auswählen, Beilagen, Personenzahl, Tausch)."""
 from datetime import date
 
 
-def _plan_day(app, day_date, **kwargs):
+def _plan_day(app, plan_id, day_date, **kwargs):
     from models import PlanDay, db
 
     with app.app_context():
-        pd = PlanDay(date=day_date, servings=kwargs.pop("servings", 2), **kwargs)
+        pd = PlanDay(plan_id=plan_id, date=day_date, servings=kwargs.pop("servings", 2), **kwargs)
         db.session.add(pd)
         db.session.commit()
         return pd.id
@@ -28,7 +28,7 @@ def test_reroll_day_without_plan_returns_400(client, make_recipe):
 
 def test_reroll_day_excluded_day_returns_400(client, app, make_recipe):
     make_recipe("Irgendwas")
-    _plan_day(app, date(2026, 6, 15), excluded=True)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), excluded=True)
     resp = client.post("/day/2026-06-15/reroll-main")
     assert resp.status_code == 400
 
@@ -38,7 +38,7 @@ def test_reroll_day_replaces_with_different_recipe(client, app, make_recipe):
 
     old_id = make_recipe("Alt")
     new_id = make_recipe("Neu")
-    _plan_day(app, date(2026, 6, 15), main_recipe_id=old_id)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=old_id)
 
     resp = client.post("/day/2026-06-15/reroll-main")
     assert resp.status_code == 200
@@ -51,7 +51,7 @@ def test_reroll_day_replaces_with_different_recipe(client, app, make_recipe):
 
 def test_reroll_day_no_candidates_returns_400(client, app, make_recipe):
     only_id = make_recipe("Einziges")
-    _plan_day(app, date(2026, 6, 15), main_recipe_id=only_id)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=only_id)
 
     resp = client.post("/day/2026-06-15/reroll-main")
     assert resp.status_code == 400
@@ -63,7 +63,7 @@ def test_reroll_day_resets_cooked(client, app, make_recipe):
 
     old_id = make_recipe("Alt")
     make_recipe("Neu")
-    _plan_day(app, date(2026, 6, 15), main_recipe_id=old_id, cooked=True)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=old_id, cooked=True)
 
     resp = client.post("/day/2026-06-15/reroll-main")
     assert resp.status_code == 200
@@ -95,7 +95,7 @@ def test_set_main_day_creates_plan_day_and_clears_excluded(client, app, make_rec
     from models import PlanDay, db
 
     recipe_id = make_recipe("Manuell gewählt")
-    _plan_day(app, date(2026, 6, 15), excluded=True)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), excluded=True)
 
     resp = client.post("/day/2026-06-15/set-main", json={"recipe_id": recipe_id})
     assert resp.status_code == 200
@@ -124,7 +124,7 @@ def test_set_main_day_resets_cooked(client, app, make_recipe):
     from models import PlanDay
 
     recipe_id = make_recipe("Manuell gewählt")
-    _plan_day(app, date(2026, 6, 15), cooked=True)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), cooked=True)
 
     resp = client.post("/day/2026-06-15/set-main", json={"recipe_id": recipe_id})
     assert resp.status_code == 200
@@ -180,7 +180,7 @@ def test_reroll_one_side_wrong_day_returns_404(client, app, make_recipe):
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
@@ -198,7 +198,7 @@ def test_reroll_one_side_replaces_recipe_keeps_id(client, app, make_recipe):
     old_side = make_recipe("Alte Beilage", is_side_dish=True)
     new_side = make_recipe("Neue Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=old_side)
@@ -219,7 +219,7 @@ def test_reroll_one_side_resets_cooked(client, app, make_recipe):
     old_side = make_recipe("Alte Beilage", is_side_dish=True)
     make_recipe("Neue Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=old_side, cooked=True)
@@ -244,7 +244,7 @@ def test_set_one_side_invalid_recipe_returns_400(client, app, make_recipe):
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
@@ -262,7 +262,7 @@ def test_set_one_side_success(client, app, make_recipe):
     old_side = make_recipe("Alte Beilage", is_side_dish=True)
     new_side = make_recipe("Neue, manuell gewählt", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=old_side)
@@ -281,7 +281,7 @@ def test_set_one_side_resets_cooked(client, app, make_recipe):
     old_side = make_recipe("Alte Beilage", is_side_dish=True)
     new_side = make_recipe("Neue, manuell gewählt", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=old_side, cooked=True)
@@ -301,7 +301,7 @@ def test_remove_one_side_deletes_existing(client, app, make_recipe):
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
@@ -334,7 +334,7 @@ def test_move_one_side_moves_to_target_creating_plan_day(client, app, make_recip
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
@@ -357,7 +357,7 @@ def test_move_one_side_preserves_cooked(client, app, make_recipe):
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id, cooked=True)
@@ -415,8 +415,8 @@ def test_swap_days_swaps_main_recipe_excluded_and_sides(client, app, make_recipe
     side_a = make_recipe("Beilage Montag", is_side_dish=True)
 
     with app.app_context():
-        pd_a = PlanDay(date=date(2026, 6, 15), main_recipe_id=recipe_a, excluded=False, servings=2, cooked=True)
-        pd_b = PlanDay(date=date(2026, 6, 16), main_recipe_id=recipe_b, excluded=True, servings=3, cooked=False)
+        pd_a = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), main_recipe_id=recipe_a, excluded=False, servings=2, cooked=True)
+        pd_b = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 16), main_recipe_id=recipe_b, excluded=True, servings=3, cooked=False)
         db.session.add_all([pd_a, pd_b])
         db.session.flush()
         db.session.add(PlanDaySide(plan_day_id=pd_a.id, recipe_id=side_a))
@@ -463,7 +463,7 @@ def test_set_day_cooked_invalid_date_returns_400(client):
 
 
 def test_set_day_cooked_without_main_recipe_returns_400(client, app):
-    _plan_day(app, date(2026, 6, 15))
+    _plan_day(app, client.plan_id, date(2026, 6, 15))
     resp = client.post("/day/2026-06-15/cooked", json={"cooked": True})
     assert resp.status_code == 400
 
@@ -477,7 +477,7 @@ def test_set_day_cooked_toggles_true_and_false(client, app, make_recipe):
     from models import PlanDay
 
     recipe_id = make_recipe("Gericht")
-    _plan_day(app, date(2026, 6, 15), main_recipe_id=recipe_id)
+    _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=recipe_id)
 
     resp = client.post("/day/2026-06-15/cooked", json={"cooked": True})
     assert resp.status_code == 200
@@ -504,7 +504,7 @@ def test_set_side_cooked_wrong_day_returns_404(client, app, make_recipe):
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)
@@ -521,7 +521,7 @@ def test_set_side_cooked_toggles(client, app, make_recipe):
 
     side_recipe_id = make_recipe("Beilage", is_side_dish=True)
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=client.plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=side_recipe_id)

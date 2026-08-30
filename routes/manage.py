@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from flask import Blueprint, render_template
 
 from models import Category, IngredientNutrition, Recipe
+from services.auth import current_plan
 from services.nutrition import list_alias_canonical_names
+from services.recipe_visibility import visible_recipes_query
 
 manage_bp = Blueprint('manage', __name__)
 
@@ -46,19 +48,24 @@ def manage():
     "Zutaten gleichgesetzt" zählt die tatsächlichen Alias-ZIELnamen
     (list_alias_canonical_names(), z.B. "Nudeln") - nicht die Anzahl der
     einzelnen zusammengefassten Schreibweisen. "Nährwerte gepflegt" zählt
-    die Anzahl vorhandener IngredientNutrition-Referenzeinträge.
+    die Anzahl vorhandener IngredientNutrition-Referenzeinträge. Alles hier
+    bezieht sich auf den aktuell AKTIVEN Plan (current_plan()) - Rezepte
+    auf die für ihn sichtbaren (Eigentümer + eingebunden, siehe
+    services/recipe_visibility.py), Kategorien/Aliase/Nährwerte auf die,
+    die dieser Plan selbst pflegt.
     """
+    plan = current_plan()
     recent_recipes = (
-        Recipe.query.filter(Recipe.updated_at.isnot(None))
+        visible_recipes_query(plan.id).filter(Recipe.updated_at.isnot(None))
         .order_by(Recipe.updated_at.desc())
         .limit(RECENT_RECIPES_LIMIT)
         .all()
     )
     stats = {
-        "recipe_count": Recipe.query.count(),
-        "category_count": Category.query.count(),
-        "aliased_ingredient_count": len(list_alias_canonical_names()),
-        "nutrition_entry_count": IngredientNutrition.query.count(),
+        "recipe_count": visible_recipes_query(plan.id).count(),
+        "category_count": Category.query.filter_by(plan_id=plan.id).count(),
+        "aliased_ingredient_count": len(list_alias_canonical_names(plan.id)),
+        "nutrition_entry_count": IngredientNutrition.query.filter_by(plan_id=plan.id).count(),
     }
     recent = [
         {"recipe": r, "when": _format_relative_day(r.updated_at)}

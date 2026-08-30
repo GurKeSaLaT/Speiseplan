@@ -36,6 +36,7 @@ from collections import Counter
 from datetime import date, timedelta
 
 from models import db, Recipe, PlanDay, PlanDaySide
+from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
 from services.ingredient_aliases import normalize_ingredient_name
 from services.settings import get_display_units
@@ -62,7 +63,7 @@ FAVORITE_WEIGHT = 3
 REPETITION_LOOKBACK_WEEKS = 8
 
 
-def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
+def recent_usage_counts(recipe_ids, reference_date, is_side_dish, plan_id):
     """Zählt für jede der übergebenen Rezept-IDs, wie oft sie in den
     letzten REPETITION_LOOKBACK_WEEKS Wochen VOR reference_date im
     Plan-Kalender verwendet wurde. Gibt ein Dict {Rezept-ID: Anzahl}
@@ -82,6 +83,11 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
     UNMITTELBAR VOR dem betrachteten Tag beziehen, unabhängig vom
     tatsächlichen heutigen Datum.
 
+    plan_id grenzt die Zählung auf EINEN Plan ein (siehe models.py:
+    PlanDay.plan_id) - die Wiederholungs-Gewichtung eines Plans soll sich
+    nur an dessen EIGENER Historie orientieren, nicht an der eines
+    komplett anderen, geteilten Plans.
+
     Wird von choose_recipe() genutzt, um weighted_recipe_choice() eine
     weiche (nicht ausschließende) Wiederholungs-Gewichtung mitzugeben -
     siehe dort.
@@ -94,13 +100,17 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
         rows = (
             db.session.query(PlanDaySide.recipe_id)
             .join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id)
-            .filter(PlanDay.date >= since, PlanDay.date < reference_date, PlanDaySide.recipe_id.in_(recipe_ids))
+            .filter(
+                PlanDay.plan_id == plan_id, PlanDay.date >= since, PlanDay.date < reference_date,
+                PlanDaySide.recipe_id.in_(recipe_ids)
+            )
             .all()
         )
         return Counter(rid for (rid,) in rows)
 
     rows = PlanDay.query.filter(
-        PlanDay.date >= since, PlanDay.date < reference_date, PlanDay.main_recipe_id.in_(recipe_ids)
+        PlanDay.plan_id == plan_id, PlanDay.date >= since, PlanDay.date < reference_date,
+        PlanDay.main_recipe_id.in_(recipe_ids)
     ).all()
     return Counter(pd.main_recipe_id for pd in rows)
 
@@ -171,9 +181,10 @@ def parse_iso_date(value):
         return None
 
 
-def week_neighbor_exclude_ids(day_date):
+def week_neighbor_exclude_ids(day_date, plan_id):
     """Sammelt die Hauptgericht-Rezept-IDs aller ANDEREN Tage in derselben
-    Kalenderwoche wie day_date - für die Dubletten-Vermeidung beim
+    Kalenderwoche wie day_date, INNERHALB EINES Plans (plan_id, siehe
+    models.py: PlanDay.plan_id) - für die Dubletten-Vermeidung beim
     (Neu-)Würfeln eines Hauptgerichts (siehe week_side_recipe_ids weiter
     unten für das Beilagen-Pendant, das anders arbeitet, weil ein Tag dort
     mehrere Einträge gleichzeitig haben kann).
@@ -187,7 +198,7 @@ def week_neighbor_exclude_ids(day_date):
     """
     start = monday_of(day_date)
     dates = week_dates_for(start)
-    rows = PlanDay.query.filter(PlanDay.date.in_(dates)).all()
+    rows = PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates)).all()
     ids = set()
     for pd in rows:
         if pd.date == day_date:
@@ -197,10 +208,11 @@ def week_neighbor_exclude_ids(day_date):
     return ids
 
 
-def week_side_recipe_ids(day_date):
+def week_side_recipe_ids(day_date, plan_id):
     """Sammelt die Rezept-IDs ALLER Beilagen, die bereits irgendwo in der
-    Kalenderwoche verwendet werden, die day_date enthält - über alle 7 Tage
-    hinweg, OHNE einen Tag oder eine einzelne Beilage auszunehmen.
+    Kalenderwoche verwendet werden, die day_date enthält - innerhalb EINES
+    Plans, über alle 7 Tage hinweg, OHNE einen Tag oder eine einzelne
+    Beilage auszunehmen.
 
     Anders als week_neighbor_exclude_ids() (die den betrachteten Tag selbst
     bewusst ausschließt, damit ein Reroll sein eigenes aktuelles Rezept
@@ -218,7 +230,7 @@ def week_side_recipe_ids(day_date):
     rows = (
         db.session.query(PlanDaySide.recipe_id)
         .join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id)
-        .filter(PlanDay.date.in_(dates))
+        .filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates))
         .all()
     )
     return {rid for (rid,) in rows}
@@ -306,10 +318,17 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
     return assigned
 
 
-def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True, reference_date=None):
+def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_season=True, reference_date=None):
     """Die zentrale Rezept-Auswahlfunktion: wählt EIN passendes, noch nicht
     verwendetes Rezept aus der Datenbank aus. Wird sowohl beim Erstellen
     einer kompletten Woche als auch bei jedem Einzel-Reroll aufgerufen.
+
+    plan_id grenzt den Auswahl-Pool auf die für DIESEN Plan sichtbaren
+    Rezepte ein (Eigentümer ODER per RecipePlanLink eingebunden, siehe
+    services/recipe_visibility.py) und wird zusätzlich an
+    recent_usage_counts() (siehe unten) durchgereicht, damit sich auch die
+    Wiederholungs-Gewichtung an der Historie GENAU dieses Plans orientiert,
+    nicht an der eines anderen, komplett unabhängigen Plans.
 
     Filterreihenfolge:
     1. is_side_dish trennt strikt zwischen Hauptgericht- und Beilagen-Pool -
@@ -354,7 +373,7 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     ein einfaches random.choice()), sodass Favoriten und selten verwendete
     Rezepte unter den verbliebenen Kandidaten bevorzugt gezogen werden.
     """
-    base_query = Recipe.query.filter(
+    base_query = visible_recipes_query(plan_id).filter(
         Recipe.is_side_dish.is_(is_side_dish),
         ~Recipe.id.in_(exclude_ids)
     )
@@ -367,7 +386,7 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
 
     usage_counts = {}
     if reference_date is not None:
-        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, is_side_dish)
+        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, is_side_dish, plan_id)
 
     if prefer_season:
         seasonal_candidates = [r for r in candidates if recipe_available_now(r)]
@@ -377,7 +396,7 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
     return weighted_recipe_choice(candidates, usage_counts)
 
 
-def jsonify_recipe(recipe):
+def jsonify_recipe(recipe, plan_id):
     """Serialisiert ein Recipe-ORM-Objekt in ein einfaches Dict, das sich
     sowohl direkt als Flask-JSON-Response zurückgeben lässt (Flask
     konvertiert ein zurückgegebenes Dict automatisch zu einer
@@ -415,8 +434,15 @@ def jsonify_recipe(recipe):
     Aggregation nach "Name+Einheit" in rebuildShoppingList() weiterhin ohne
     eigene Umrechnung korrekt gleichnamige Zutaten über mehrere Rezepte
     hinweg zusammenfasst.
+
+    plan_id bestimmt, wessen Zutaten-Gleichsetzung/Anzeige-Einheiten gelten
+    (services/ingredient_aliases.py: normalize_ingredient_name(),
+    services/settings.py: get_display_units()) - bei einem per
+    RecipePlanLink eingebundenen Rezept IMMER die des GERADE AKTIVEN
+    Plans, nicht die seines Eigentümer-Plans, damit ein Nutzer auf seiner
+    eigenen Einkaufsliste konsistent seine eigenen Einstellungen sieht.
     """
-    display_units = get_display_units()
+    display_units = get_display_units(plan_id)
     return {
         "id": recipe.id,
         "name": recipe.name,
@@ -432,7 +458,7 @@ def jsonify_recipe(recipe):
         "instructions": recipe.instructions,
         "ingredients": [
             {
-                "name": normalize_ingredient_name(ing.name),
+                "name": normalize_ingredient_name(plan_id, ing.name),
                 **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
                 "category": ing.category,
             }
@@ -441,7 +467,7 @@ def jsonify_recipe(recipe):
     }
 
 
-def jsonify_side(plan_day_side):
+def jsonify_side(plan_day_side, plan_id):
     """Wie jsonify_recipe(), aber für eine PlanDaySide-Zeile: hängt an das
     serialisierte Rezept-Dict zusätzlich side_id an - die ID der
     PlanDaySide-Zeile selbst, NICHT des Rezepts. static/plan-sides.js
@@ -454,7 +480,7 @@ def jsonify_side(plan_day_side):
     set_one_side() setzen ihn vor dem Aufruf hier bewusst zurück (neues
     Gericht = noch nicht gekocht), move_one_side() lässt ihn dagegen
     unangetastet (dieselbe Beilage wandert nur auf einen anderen Tag)."""
-    data = jsonify_recipe(plan_day_side.recipe)
+    data = jsonify_recipe(plan_day_side.recipe, plan_id)
     data['side_id'] = plan_day_side.id
     data['cooked'] = plan_day_side.cooked
     return data

@@ -53,7 +53,7 @@ def test_add_shopping_item_response_uses_display_unit(client, app):
     from services.settings import update_display_units
 
     with app.app_context():
-        update_display_units("kg", "ml")
+        update_display_units(client.plan_id, "kg", "ml")
 
     resp = client.post("/plan/2026-06-15/shopping-item/add", json={
         "name": "Zucker", "amount": 2000, "unit": "g",
@@ -80,7 +80,7 @@ def test_delete_shopping_item_removes_it(client, app):
     from models import ExtraShoppingItem, db
 
     with app.app_context():
-        item = ExtraShoppingItem(week_start=date(2026, 6, 15), name="Zu löschen")
+        item = ExtraShoppingItem(plan_id=client.plan_id, week_start=date(2026, 6, 15), name="Zu löschen")
         db.session.add(item)
         db.session.commit()
         item_id = item.id
@@ -95,3 +95,22 @@ def test_delete_shopping_item_removes_it(client, app):
 def test_delete_shopping_item_unknown_id_returns_404(client):
     resp = client.post("/shopping-item/999999/delete")
     assert resp.status_code == 404
+
+
+def test_delete_shopping_item_from_other_plan_returns_404(client, app, make_user):
+    """Ein Posten eines FREMDEN Plans darf sich nicht über seine bloße
+    item_id löschen lassen, selbst wenn man die ID errät/kennt (siehe
+    routes/plan/shopping.py: delete_shopping_item() - Besitz-Check)."""
+    from models import ExtraShoppingItem, db
+
+    _, other_plan_id = make_user("Andere")
+    with app.app_context():
+        item = ExtraShoppingItem(plan_id=other_plan_id, week_start=date(2026, 6, 15), name="Fremder Posten")
+        db.session.add(item)
+        db.session.commit()
+        item_id = item.id
+
+    resp = client.post(f"/shopping-item/{item_id}/delete")
+    assert resp.status_code == 404
+    with app.app_context():
+        assert ExtraShoppingItem.query.count() == 1

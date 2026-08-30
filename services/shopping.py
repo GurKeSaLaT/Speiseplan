@@ -48,9 +48,10 @@ UNCATEGORIZED = "Sonstiges"
 PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}
 
 
-def infer_category(canonical_name):
+def infer_category(plan_id, canonical_name):
     """Rät die Einkaufslisten-Kategorie für eine kanonische Zutat anhand
-    bereits bestehender Zutat-Zeilen: die unter diesem Namen (nach
+    bereits bestehender, für plan_id SICHTBARER Zutat-Zeilen (siehe
+    services/recipe_visibility.py): die unter diesem Namen (nach
     Alias-Auflösung) am häufigsten vergebene, nicht-leere Kategorie - oder
     None, falls noch keine einzige Zeile dieser kanonischen Zutat
     kategorisiert ist.
@@ -65,10 +66,12 @@ def infer_category(canonical_name):
     from collections import Counter
     from models import Ingredient
     from services.ingredient_aliases import normalize_ingredient_name
+    from services.recipe_visibility import visible_recipe_ids_subquery
 
+    visible_ingredients = Ingredient.query.filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
     categories = [
-        ing.category for ing in Ingredient.query.all()
-        if ing.category and normalize_ingredient_name(ing.name) == canonical_name
+        ing.category for ing in visible_ingredients
+        if ing.category and normalize_ingredient_name(plan_id, ing.name) == canonical_name
     ]
     if not categories:
         return None

@@ -7,6 +7,18 @@ Ende direkt eine konsolidierte Einkaufsliste bekommen.
 
 ## Features
 
+- **Nutzerkonten & geteilte Pläne** – Registrierung per Name/E-Mail/Passwort,
+  Login über die E-Mail-Adresse. Jeder Nutzer kann sich beliebig viele eigene
+  Wochenpläne anlegen (Umschalter in der Seitenleiste, Standard ist der
+  gesternte Plan) und einzelne Pläne per E-Mail-Adresse mit anderen teilen –
+  existiert dazu bereits ein Konto, ist der Plan sofort geteilt, sonst wird
+  eine Einladung zum Registrieren "verschickt" (aktuell nur geloggt und als
+  Link auf der Freigabeseite angezeigt, da noch kein SMTP angebunden ist).
+  Rezepte, Kategorien, Einheiten und Zutaten-Gleichsetzung gehören jeweils
+  EINEM Plan; ein Rezept lässt sich zusätzlich in weitere eigene Pläne
+  einbinden (echte Verknüpfung, keine Kopie). Jede Tageskachel im
+  Wochenplan zeigt zusätzlich (pro Plan abschaltbar), was an dem Tag in den
+  ÜBRIGEN eigenen Plänen gekocht wird.
 - **Dauerhafter Plan-Kalender** – jede geplante Woche wird pro Kalendertag
   in der Datenbank gespeichert, nicht nur flüchtig angezeigt. Die
   Startseite zeigt die aktuelle Woche mit Navigation (vorherige/nächste
@@ -92,13 +104,22 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
-Die App läuft danach unter `http://127.0.0.1:5000` und leitet direkt auf
-die aktuelle Kalenderwoche weiter. `instance/speiseplan.db` ist im Repo
-mit Beispieldaten (rund 100 importierte Rezepte samt Zutaten-
-Gleichsetzung) versioniert, damit sich die App nach dem Setup direkt
-sinnvoll ausprobieren lässt, statt mit einer leeren Datenbank zu starten;
-bei späteren Updates werden fehlende Tabellen/Spalten automatisch
-nachmigriert. Für das Docker-Deployment ist das irrelevant - dort wird
+Die App läuft danach unter `http://127.0.0.1:5000` und leitet auf die
+Login-Seite weiter. `instance/speiseplan.db` ist im Repo mit
+Beispieldaten (rund 100 importierte Rezepte samt Zutaten-Gleichsetzung)
+sowie zwei generischen Demo-Konten versioniert, damit sich die App nach
+dem Setup direkt sinnvoll ausprobieren lässt, statt mit einer leeren
+Datenbank zu starten:
+
+| E-Mail                  | Passwort  |
+|--------------------------|-----------|
+| `nutzer1@example.com`    | `Nutzer1` |
+| `nutzer2@example.com`    | `Nutzer2` |
+
+Über den "Konto erstellen"-Button auf der Login-Seite lässt sich
+jederzeit ein weiteres, eigenes Konto anlegen. Bei späteren Updates
+werden fehlende Tabellen/Spalten automatisch nachmigriert. Für das
+Docker-Deployment ist das Beispieldaten-Detail irrelevant - dort wird
 `instance/` als Volume auf ein Verzeichnis außerhalb des Containers
 gemountet (siehe unten), das immer Vorrang vor dem im Image enthaltenen
 Datenbankstand hat.
@@ -129,20 +150,32 @@ bleibt dabei unangetastet.
 
 ```
 app.py                        App-Setup, Blueprint-Registrierung, DB-Migration
-models.py                     SQLAlchemy-Modelle (Category, Recipe, RecipeSeason, Ingredient,
-                               PlanDay, PlanDaySide, ExtraShoppingItem, AppSettings)
+models.py                     SQLAlchemy-Modelle (User, Plan, PlanMembership, PendingPlanInvite,
+                               Category, Recipe, RecipePlanLink, RecipeSeason, Ingredient,
+                               PlanDay, PlanDaySide, ExtraShoppingItem, AppSettings,
+                               IngredientAlias, IngredientNutrition)
 routes/
+  auth.py                     Login, Registrierung, Logout, aktiven Plan wechseln (Blueprint "auth")
+  account.py                  Eigenes Profil/Passwort ändern, Konto löschen (Blueprint "account")
+  plans.py                    Plan anlegen/umbenennen/löschen (Blueprint "plans")
+  sharing.py                  Mitglieder/Einladungen/Stern eines Plans, Plan verlassen (Blueprint "sharing")
   plan/                       Kalender-Wochenansicht, Plan erstellen, Würfeln/Tauschen/manuelle
                                Auswahl, Beilagen, Einkaufsliste (Blueprint "plan", auf drei
                                Dateien verteilt, die sich denselben Blueprint teilen):
     pages.py                    Seiten-Routen (/, /plan/<start>, .../create, .../generate)
     day_actions.py              AJAX: Hauptgericht/Beilagen würfeln/auswählen/verschieben, Tage tauschen
     shopping.py                 AJAX: manuelle Einkaufslisten-Artikel
-  recipes.py                  Rezept-CRUD + Rezept-Import (Blueprint "recipes")
+  recipes.py                  Rezept-CRUD + Rezept-Import + Plan-Verknüpfung (Blueprint "recipes")
   categories.py                Kategorie-CRUD (Blueprint "categories")
   manage.py                    Verwaltungs-Startseite (Blueprint "manage")
   settings.py                  Einheiten- + Zutaten-Gleichsetzung-Einstellungen (Blueprint "settings")
 services/
+  auth.py                      Login/Session, aktiver Plan, Tab-Auswahl-Helfer (current_plan(),
+                                selected_plan_id(), default_plan_id())
+  accounts.py                  Eigenes Profil/Passwort ändern, Konto löschen
+  plans.py                     Plan-Lebenszyklus (anlegen/löschen, Einladungen annehmen)
+  mail.py                      Einladungs-Mail-Versand (aktuell nur geloggt, kein SMTP angebunden)
+  recipe_visibility.py         Welche Rezepte für einen Plan sichtbar sind (Eigentümer + Verknüpfungen)
   planning.py                  Wochen-/Datums-Helfer, Kategorie-Balance, Rezeptauswahl,
                                 Favoriten-/Wiederholungs-Gewichtung
   seasons.py                   Saison-Zuordnung (Standard-Saisons + eigene Zeiträume)
@@ -151,7 +184,8 @@ services/
   units.py                     Einheiten-Normalisierung/-Umrechnung (Masse -> g, Volumen -> ml)
   settings.py                  Speicherung der Anzeige-Einheiten-Einstellung (AppSettings)
   ingredient_aliases.py        Zutaten-Gleichsetzung für die Einkaufsliste (IngredientAlias)
-templates/                    Jinja2-Templates (Plan-Kalender, Wochenplan erstellen, Verwaltung)
+templates/                    Jinja2-Templates (Login/Registrierung, Plan-Kalender,
+                               Wochenplan erstellen, Verwaltung, Freigabe, Profil)
 static/
   plan.js                       Plan-Seite: Zustand, Tageskarten, Hauptgericht, Tages-Tausch
   plan-manual-select.js          Wiederverwendbare Rezeptsuche-Box (Hauptgericht + Beilagen)

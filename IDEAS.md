@@ -196,3 +196,26 @@ Backlog für zukünftige Features - noch nicht umgesetzt, nur gesammelt.
    lassen sich genauso per Live-Prüfung + Domain-Ergänzung in
    `ALLOWED_HOSTS` hinzufügen. Kptncook wäre z.B. eine App ohne
    öffentliche Rezept-Webseiten und daher so nicht unterstützbar.
+
+## Wartet auf echten Mailversand
+
+Alles hier ist erst sinnvoll umsetzbar, sobald `services/mail.py` echte
+Mails verschickt statt sie nur zu loggen (siehe dortiger Docstring - noch
+keine SMTP-Zugangsdaten vorhanden).
+
+1. **Benachrichtigung bei Plan-Einladung.** Aktuell merkt ein eingeladener
+   Nutzer eine Freigabe nur, wenn er selbst auf `/manage/sharing`
+   nachschaut - die eigentliche Einladungs-Mail (`send_invite_email()`)
+   wird nur geloggt und zusätzlich als kopierbarer Link auf der
+   Freigabeseite angezeigt (siehe `templates/sharing.html`: "Ausstehende
+   Einladungen").
+2. **Passwort-Reset per E-Mail.** Es gibt aktuell keine
+   "Passwort vergessen"-Funktion - ein vergessenes Passwort lässt sich
+   nirgends selbst zurücksetzen. Bräuchte einen zeitlich begrenzten
+   Reset-Link, der per Mail verschickt wird (analog zum
+   Einladungs-Link-Mechanismus).
+3. **E-Mail-Verifizierung bei der Registrierung.** `routes/auth.py:
+   register()` prüft die eingegebene Adresse aktuell nur auf grobe Form
+   (`services/auth.py: EMAIL_PATTERN`), nicht auf tatsächliche
+   Erreichbarkeit - ein Bestätigungslink wäre ohne echten Mailversand
+   nicht sinnvoll umsetzbar.
