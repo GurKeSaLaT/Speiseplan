@@ -40,8 +40,48 @@ def app(app_module):
 
 
 @pytest.fixture()
-def client(app):
-    return app.test_client()
+def make_user(app):
+    """Legt einen User samt eigenem, gesternten Plan an (analog zu
+    make_category/make_recipe unten) und gibt (user_id, plan_id) zurück."""
+    from models import Plan, PlanMembership, User, db
+    from services.auth import hash_password
+
+    def _make(username="Testnutzer", password="test"):
+        with app.app_context():
+            user = User(username=username, password_hash=hash_password(password))
+            db.session.add(user)
+            db.session.flush()
+            plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)
+            db.session.add(plan)
+            db.session.flush()
+            db.session.add(PlanMembership(plan_id=plan.id, user_id=user.id, is_starred=True))
+            db.session.commit()
+            return user.id, plan.id
+
+    return _make
+
+
+@pytest.fixture()
+def client(app, make_user):
+    """Ein bereits eingeloggter Testclient: seit der Nutzerverwaltung
+    verlangt app.py: require_login() für praktisch jede Route eine
+    aktive Session, ganz unabhängig davon, was der jeweilige Test
+    eigentlich prüfen will - Login ist damit einfach eine weitere
+    unsichtbare Vorbedingung, wie schon _clean_tables unten. client.user_id/
+    client.plan_id (siehe Attribute unten) machen den zugehörigen
+    Test-Nutzer/-Plan für Tests greifbar, die z.B. einen PlanDay direkt
+    per ORM anlegen müssen (PlanDay.plan_id ist NOT NULL). Tests, die
+    explizit das NICHT eingeloggte Verhalten prüfen wollen (Redirect auf
+    /login), bauen sich stattdessen direkt über app.test_client() einen
+    eigenen, bewusst anonymen Client (siehe tests/test_auth.py)."""
+    user_id, plan_id = make_user("Testnutzer")
+    test_client = app.test_client()
+    with test_client.session_transaction() as sess:
+        sess['user_id'] = user_id
+        sess['active_plan_id'] = plan_id
+    test_client.user_id = user_id
+    test_client.plan_id = plan_id
+    return test_client
 
 
 @pytest.fixture(autouse=True)

@@ -62,7 +62,7 @@ FAVORITE_WEIGHT = 3
 REPETITION_LOOKBACK_WEEKS = 8
 
 
-def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
+def recent_usage_counts(recipe_ids, reference_date, is_side_dish, plan_id):
     """Zählt für jede der übergebenen Rezept-IDs, wie oft sie in den
     letzten REPETITION_LOOKBACK_WEEKS Wochen VOR reference_date im
     Plan-Kalender verwendet wurde. Gibt ein Dict {Rezept-ID: Anzahl}
@@ -82,6 +82,11 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
     UNMITTELBAR VOR dem betrachteten Tag beziehen, unabhängig vom
     tatsächlichen heutigen Datum.
 
+    plan_id grenzt die Zählung auf EINEN Plan ein (siehe models.py:
+    PlanDay.plan_id) - die Wiederholungs-Gewichtung eines Plans soll sich
+    nur an dessen EIGENER Historie orientieren, nicht an der eines
+    komplett anderen, geteilten Plans.
+
     Wird von choose_recipe() genutzt, um weighted_recipe_choice() eine
     weiche (nicht ausschließende) Wiederholungs-Gewichtung mitzugeben -
     siehe dort.
@@ -94,13 +99,17 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish):
         rows = (
             db.session.query(PlanDaySide.recipe_id)
             .join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id)
-            .filter(PlanDay.date >= since, PlanDay.date < reference_date, PlanDaySide.recipe_id.in_(recipe_ids))
+            .filter(
+                PlanDay.plan_id == plan_id, PlanDay.date >= since, PlanDay.date < reference_date,
+                PlanDaySide.recipe_id.in_(recipe_ids)
+            )
             .all()
         )
         return Counter(rid for (rid,) in rows)
 
     rows = PlanDay.query.filter(
-        PlanDay.date >= since, PlanDay.date < reference_date, PlanDay.main_recipe_id.in_(recipe_ids)
+        PlanDay.plan_id == plan_id, PlanDay.date >= since, PlanDay.date < reference_date,
+        PlanDay.main_recipe_id.in_(recipe_ids)
     ).all()
     return Counter(pd.main_recipe_id for pd in rows)
 
@@ -171,9 +180,10 @@ def parse_iso_date(value):
         return None
 
 
-def week_neighbor_exclude_ids(day_date):
+def week_neighbor_exclude_ids(day_date, plan_id):
     """Sammelt die Hauptgericht-Rezept-IDs aller ANDEREN Tage in derselben
-    Kalenderwoche wie day_date - für die Dubletten-Vermeidung beim
+    Kalenderwoche wie day_date, INNERHALB EINES Plans (plan_id, siehe
+    models.py: PlanDay.plan_id) - für die Dubletten-Vermeidung beim
     (Neu-)Würfeln eines Hauptgerichts (siehe week_side_recipe_ids weiter
     unten für das Beilagen-Pendant, das anders arbeitet, weil ein Tag dort
     mehrere Einträge gleichzeitig haben kann).
@@ -187,7 +197,7 @@ def week_neighbor_exclude_ids(day_date):
     """
     start = monday_of(day_date)
     dates = week_dates_for(start)
-    rows = PlanDay.query.filter(PlanDay.date.in_(dates)).all()
+    rows = PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates)).all()
     ids = set()
     for pd in rows:
         if pd.date == day_date:
@@ -197,10 +207,11 @@ def week_neighbor_exclude_ids(day_date):
     return ids
 
 
-def week_side_recipe_ids(day_date):
+def week_side_recipe_ids(day_date, plan_id):
     """Sammelt die Rezept-IDs ALLER Beilagen, die bereits irgendwo in der
-    Kalenderwoche verwendet werden, die day_date enthält - über alle 7 Tage
-    hinweg, OHNE einen Tag oder eine einzelne Beilage auszunehmen.
+    Kalenderwoche verwendet werden, die day_date enthält - innerhalb EINES
+    Plans, über alle 7 Tage hinweg, OHNE einen Tag oder eine einzelne
+    Beilage auszunehmen.
 
     Anders als week_neighbor_exclude_ids() (die den betrachteten Tag selbst
     bewusst ausschließt, damit ein Reroll sein eigenes aktuelles Rezept
@@ -218,7 +229,7 @@ def week_side_recipe_ids(day_date):
     rows = (
         db.session.query(PlanDaySide.recipe_id)
         .join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id)
-        .filter(PlanDay.date.in_(dates))
+        .filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates))
         .all()
     )
     return {rid for (rid,) in rows}
@@ -306,10 +317,15 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
     return assigned
 
 
-def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=True, reference_date=None):
+def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_season=True, reference_date=None):
     """Die zentrale Rezept-Auswahlfunktion: wählt EIN passendes, noch nicht
     verwendetes Rezept aus der Datenbank aus. Wird sowohl beim Erstellen
     einer kompletten Woche als auch bei jedem Einzel-Reroll aufgerufen.
+
+    plan_id wird ausschließlich an recent_usage_counts() (siehe unten)
+    durchgereicht - Rezepte/Kategorien selbst sind weiterhin GLOBAL (nicht
+    pro Plan), nur die Wiederholungs-Gewichtung soll sich an der Historie
+    des richtigen Plans orientieren, nicht an einem anderen, geteilten.
 
     Filterreihenfolge:
     1. is_side_dish trennt strikt zwischen Hauptgericht- und Beilagen-Pool -
@@ -367,7 +383,7 @@ def choose_recipe(is_side_dish, exclude_ids, category_id=None, prefer_season=Tru
 
     usage_counts = {}
     if reference_date is not None:
-        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, is_side_dish)
+        usage_counts = recent_usage_counts([r.id for r in candidates], reference_date, is_side_dish, plan_id)
 
     if prefer_season:
         seasonal_candidates = [r for r in candidates if recipe_available_now(r)]

@@ -200,12 +200,23 @@ class PlanDay(db.Model):
     Planung aus, niemals die Beilagen.
     """
     id = db.Column(db.Integer, primary_key=True)
-    # unique+index: pro Kalendertag darf es höchstens eine Zeile geben, und
-    # die Wochenansicht fragt regelmäßig nach Datumsbereichen (date.in_(...)).
-    date = db.Column(db.Date, unique=True, nullable=False, index=True)
+    # Zu welchem Plan (siehe Plan/PlanMembership unten) dieser Kalendertag
+    # gehört - jeder Plan hat seinen eigenen, unabhängigen Kalender. Das
+    # frühere unique=True direkt auf date (ein Tag konnte höchstens EINE
+    # Zeile in der GESAMTEN App haben) ist deshalb einem zusammengesetzten
+    # Unique (plan_id, date) gewichen (siehe __table_args__ unten): zwei
+    # verschiedene Pläne dürfen für denselben Kalendertag jeweils eine
+    # eigene Zeile haben.
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    # index=True (statt zusätzlich unique=True, das jetzt über
+    # __table_args__ läuft): die Wochenansicht fragt regelmäßig nach
+    # Datumsbereichen (date.in_(...)).
+    date = db.Column(db.Date, nullable=False, index=True)
     excluded = db.Column(db.Boolean, default=False, nullable=False)
     servings = db.Column(db.Integer, nullable=False, default=2)
     main_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=True)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'date', name='uq_plan_day_plan_id_date'),)
 
     # Ob das Hauptgericht DIESES Tages bereits gekocht wurde (Checkbox im
     # Rezept-Detail-Fenster, siehe static/plan.js: openRecipeDetail/
@@ -267,8 +278,13 @@ class ExtraShoppingItem(db.Model):
     optional und frei, werden aber (anders als Zutaten aus Rezepten) NICHT
     mit der Personenzahl eines Wochentags skaliert, da sie an keinen
     bestimmten Tag oder ein bestimmtes Rezept gebunden sind.
+
+    plan_id ordnet den Posten (wie PlanDay.plan_id) einem bestimmten Plan
+    zu - dieselbe Kalenderwoche kann in zwei verschiedenen Plänen jeweils
+    eigene manuelle Posten haben.
     """
     id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     week_start = db.Column(db.Date, nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False)
     amount = db.Column(db.Float, nullable=True)
@@ -349,3 +365,73 @@ class IngredientNutrition(db.Model):
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
+
+
+class User(db.Model):
+    """Ein Nutzer-Konto - siehe services/auth.py für Login/Session-Handling.
+
+    password_hash speichert NIE das Klartext-Passwort, sondern einen über
+    werkzeug.security.generate_password_hash() erzeugten Hash (PBKDF2 mit
+    Salt) - services/auth.py: check_password() vergleicht damit beim
+    Login über werkzeug.security.check_password_hash(), ohne das
+    Passwort selbst je wieder rekonstruieren zu können.
+
+    Aktuell gibt es keine eigene Registrierungsseite: neue Nutzer werden
+    ausschließlich beim App-Start in app.py: init_db() eingetragen (siehe
+    dort - momentan "Jonas"/"Elo").
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+
+class Plan(db.Model):
+    """Ein eigenständiger Wochenplan-Kalender: eine unabhängige Sammlung von
+    PlanDay-Zeilen (siehe dort: PlanDay.plan_id) samt der dazugehörigen
+    Einkaufsliste (ExtraShoppingItem.plan_id). Jeder Nutzer bekommt beim
+    Anlegen automatisch genau einen eigenen Plan (owner_user_id, siehe
+    app.py: init_db()); über PlanMembership (unten) lassen sich weitere
+    Nutzer mit vollem Zugriff zu einem Plan hinzufügen (siehe
+    routes/sharing.py: invite_member).
+
+    owner_user_id ist rein informativ (zeigt z.B. auf der Freigabeseite,
+    wer den Plan ursprünglich angelegt hat) - für die eigentliche
+    Zugriffskontrolle zählt ausschließlich, ob eine PlanMembership-Zeile
+    für den jeweiligen Nutzer existiert (auch der Eigentümer selbst bekommt
+    beim Anlegen eine ganz normale, nur zusätzlich gesternte Mitgliedschaft,
+    siehe unten) - kein Nutzer hat also über owner_user_id allein weitere
+    Rechte, die ein eingeladenes Mitglied nicht auch hätte.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+    owner = db.relationship('User', foreign_keys=[owner_user_id])
+
+
+class PlanMembership(db.Model):
+    """Verknüpft einen Nutzer mit einem Plan, auf den er Zugriff hat (voller
+    Lese-/Schreibzugriff für alle Mitglieder, kein Unterschied zwischen
+    Eigentümer und eingeladenem Mitglied - siehe Plan.owner_user_id oben).
+
+    is_starred markiert PRO NUTZER (nicht global) den einen Plan, der nach
+    dem Login automatisch geöffnet wird und oben in der Navigation steht
+    (siehe services/auth.py: current_plan()). Dass wirklich immer nur EINE
+    Mitgliedschaft desselben Nutzers gleichzeitig gesternt ist, wird nicht
+    über ein Datenbank-Constraint erzwungen (SQLite kennt keinen "at most
+    one true per user_id"-Constraint ohne Umwege), sondern auf
+    Anwendungsebene: routes/sharing.py: star_plan() entsternt in
+    DERSELBEN Transaktion zuerst alle anderen Mitgliedschaften desselben
+    Nutzers, bevor die neue gesetzt wird.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    is_starred = db.Column(db.Boolean, default=False, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'user_id', name='uq_plan_membership_plan_id_user_id'),)
+
+    plan = db.relationship('Plan')
+    user = db.relationship('User')

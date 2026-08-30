@@ -160,44 +160,48 @@ def test_assign_balanced_categories_preexisting_counts_influence_balance():
 
 # --- choose_recipe / recent_usage_counts / jsonify_* (mit echter DB) ---
 
-def test_choose_recipe_respects_side_dish_pool_separation(app, make_recipe):
+def test_choose_recipe_respects_side_dish_pool_separation(app, make_recipe, make_user):
     main_id = make_recipe("Hauptgericht", is_side_dish=False)
     side_id = make_recipe("Beilage", is_side_dish=True)
+    _, plan_id = make_user()
 
     with app.app_context():
-        chosen = choose_recipe(is_side_dish=True, exclude_ids=set())
+        chosen = choose_recipe(is_side_dish=True, exclude_ids=set(), plan_id=plan_id)
         assert chosen.id == side_id
         assert chosen.id != main_id
 
 
-def test_choose_recipe_excludes_given_ids(app, make_recipe):
+def test_choose_recipe_excludes_given_ids(app, make_recipe, make_user):
     cat_id = shared_category(app)
     r1 = make_recipe("R1", category_id=cat_id)
     r2 = make_recipe("R2", category_id=cat_id)
+    _, plan_id = make_user()
 
     with app.app_context():
-        chosen = choose_recipe(is_side_dish=False, exclude_ids={r1})
+        chosen = choose_recipe(is_side_dish=False, exclude_ids={r1}, plan_id=plan_id)
         assert chosen.id == r2
 
 
-def test_choose_recipe_returns_none_when_no_candidates(app, make_recipe):
+def test_choose_recipe_returns_none_when_no_candidates(app, make_recipe, make_user):
     r1 = make_recipe("Einziges")
+    _, plan_id = make_user()
     with app.app_context():
-        assert choose_recipe(is_side_dish=False, exclude_ids={r1}) is None
+        assert choose_recipe(is_side_dish=False, exclude_ids={r1}, plan_id=plan_id) is None
 
 
-def test_choose_recipe_filters_by_category(app, make_recipe):
+def test_choose_recipe_filters_by_category(app, make_recipe, make_user):
     cat_a = shared_category(app, "Kategorie A")
     cat_b = shared_category(app, "Kategorie B")
     r_a = make_recipe("In A", category_id=cat_a)
     make_recipe("In B", category_id=cat_b)
+    _, plan_id = make_user()
 
     with app.app_context():
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=set(), category_id=cat_a)
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=set(), plan_id=plan_id, category_id=cat_a)
         assert chosen.id == r_a
 
 
-def test_choose_recipe_season_preference_falls_back_when_none_available(app, make_recipe):
+def test_choose_recipe_season_preference_falls_back_when_none_available(app, make_recipe, make_user):
     from models import RecipeSeason, db
     from services.seasons import SEASON_PRESETS
 
@@ -205,6 +209,7 @@ def test_choose_recipe_season_preference_falls_back_when_none_available(app, mak
     # tatsächlichen heutigen Datum darf choose_recipe trotzdem NICHT leer
     # ausgehen (Saison darf die Auswahl nie komplett blockieren).
     recipe_id = make_recipe("Nur Winter")
+    _, plan_id = make_user()
     with app.app_context():
         db.session.add(RecipeSeason(recipe_id=recipe_id, start_month=SEASON_PRESETS["Winter"][0],
                                      start_day=SEASON_PRESETS["Winter"][1],
@@ -212,49 +217,71 @@ def test_choose_recipe_season_preference_falls_back_when_none_available(app, mak
                                      end_day=SEASON_PRESETS["Winter"][3]))
         db.session.commit()
 
-        chosen = choose_recipe(is_side_dish=False, exclude_ids=set(), prefer_season=True)
+        chosen = choose_recipe(is_side_dish=False, exclude_ids=set(), plan_id=plan_id, prefer_season=True)
         assert chosen is not None
         assert chosen.id == recipe_id
 
 
-def test_recent_usage_counts_only_counts_within_lookback_window(app, make_recipe):
+def test_recent_usage_counts_only_counts_within_lookback_window(app, make_recipe, make_user):
     from models import PlanDay, db
 
     recipe_id = make_recipe("Oft gekocht")
     reference = date(2026, 6, 15)
+    _, plan_id = make_user()
 
     with app.app_context():
         # Innerhalb der letzten 8 Wochen
-        db.session.add(PlanDay(date=reference - timedelta(weeks=2), main_recipe_id=recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=plan_id, date=reference - timedelta(weeks=2), main_recipe_id=recipe_id, servings=2))
         # Zu lange her (9 Wochen), darf NICHT mitgezählt werden
-        db.session.add(PlanDay(date=reference - timedelta(weeks=9), main_recipe_id=recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=plan_id, date=reference - timedelta(weeks=9), main_recipe_id=recipe_id, servings=2))
         # Genau am reference_date selbst (exklusiv, siehe date < reference_date)
-        db.session.add(PlanDay(date=reference, main_recipe_id=recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=plan_id, date=reference, main_recipe_id=recipe_id, servings=2))
         db.session.commit()
 
-        counts = recent_usage_counts([recipe_id], reference, is_side_dish=False)
+        counts = recent_usage_counts([recipe_id], reference, is_side_dish=False, plan_id=plan_id)
         assert counts[recipe_id] == 1
 
 
-def test_recent_usage_counts_side_dish_pool_uses_plan_day_side(app, make_recipe):
+def test_recent_usage_counts_side_dish_pool_uses_plan_day_side(app, make_recipe, make_user):
     from models import PlanDay, PlanDaySide, db
 
     recipe_id = make_recipe("Beilage", is_side_dish=True)
     reference = date(2026, 6, 15)
+    _, plan_id = make_user()
 
     with app.app_context():
-        pd = PlanDay(date=reference - timedelta(weeks=1), servings=2)
+        pd = PlanDay(plan_id=plan_id, date=reference - timedelta(weeks=1), servings=2)
         db.session.add(pd)
         db.session.flush()
         db.session.add(PlanDaySide(plan_day_id=pd.id, recipe_id=recipe_id))
         db.session.commit()
 
-        counts = recent_usage_counts([recipe_id], reference, is_side_dish=True)
+        counts = recent_usage_counts([recipe_id], reference, is_side_dish=True, plan_id=plan_id)
         assert counts[recipe_id] == 1
 
 
-def test_recent_usage_counts_empty_ids_returns_empty_dict():
-    assert recent_usage_counts([], date.today(), is_side_dish=False) == {}
+def test_recent_usage_counts_only_counts_within_own_plan(app, make_recipe, make_user):
+    """Die Wiederholungs-Gewichtung eines Plans darf sich nicht an der
+    Historie eines KOMPLETT ANDEREN, geteilten Plans orientieren (siehe
+    services/planning.py: recent_usage_counts()-Docstring)."""
+    from models import PlanDay, db
+
+    recipe_id = make_recipe("In fremdem Plan gekocht")
+    reference = date(2026, 6, 15)
+    _, own_plan_id = make_user("Eigen")
+    _, other_plan_id = make_user("Fremd")
+
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=other_plan_id, date=reference - timedelta(weeks=1), main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+        counts = recent_usage_counts([recipe_id], reference, is_side_dish=False, plan_id=own_plan_id)
+        assert counts == {}
+
+
+def test_recent_usage_counts_empty_ids_returns_empty_dict(make_user):
+    _, plan_id = make_user()
+    assert recent_usage_counts([], date.today(), is_side_dish=False, plan_id=plan_id) == {}
 
 
 def test_jsonify_recipe_normalizes_ingredient_names(app, make_recipe):
@@ -329,12 +356,13 @@ def test_jsonify_recipe_includes_detail_fields(app, make_recipe):
         assert data["instructions"] == "Alles anbraten."
 
 
-def test_jsonify_side_adds_side_id(app, make_recipe):
+def test_jsonify_side_adds_side_id(app, make_recipe, make_user):
     from models import PlanDay, PlanDaySide, db
 
     recipe_id = make_recipe("Salat", is_side_dish=True)
+    _, plan_id = make_user()
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=recipe_id)
@@ -346,12 +374,13 @@ def test_jsonify_side_adds_side_id(app, make_recipe):
         assert data["name"] == "Salat"
 
 
-def test_jsonify_side_includes_cooked_flag(app, make_recipe):
+def test_jsonify_side_includes_cooked_flag(app, make_recipe, make_user):
     from models import PlanDay, PlanDaySide, db
 
     recipe_id = make_recipe("Salat", is_side_dish=True)
+    _, plan_id = make_user()
     with app.app_context():
-        pd = PlanDay(date=date(2026, 6, 15), servings=2)
+        pd = PlanDay(plan_id=plan_id, date=date(2026, 6, 15), servings=2)
         db.session.add(pd)
         db.session.flush()
         side = PlanDaySide(plan_day_id=pd.id, recipe_id=recipe_id, cooked=True)

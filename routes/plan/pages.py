@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from flask import render_template, request, redirect, url_for, abort
 
 from models import db, Category, Recipe, PlanDay, PlanDaySide, ExtraShoppingItem
+from services.auth import current_plan
 from services.planning import (
     DAY_NAMES_DE, monday_of, week_dates_for, parse_iso_date,
     assign_balanced_categories, choose_recipe, jsonify_recipe, jsonify_side
@@ -23,8 +24,11 @@ from routes.plan import plan_bp
 @plan_bp.route('/')
 def index():
     """Die Startseite der App: leitet immer sofort auf die Wochenansicht
-    der AKTUELLEN Kalenderwoche weiter (/plan/<Montag von heute>). Es gibt
-    keine eigenständige "/"-Seite mehr - das war früher (vor Einführung des
+    der AKTUELLEN Kalenderwoche weiter (/plan/<Montag von heute>), IM
+    AKTIVEN PLAN des eingeloggten Nutzers (services/auth.py: current_plan()
+    - welcher Plan das ist, entscheidet sich beim Login/über die
+    Plan-Umschalter in der Seitenleiste, nicht hier). Es gibt keine
+    eigenständige "/"-Seite mehr - das war früher (vor Einführung des
     dauerhaften Kalenders) die Tageszuweisungs-Seite, die jetzt unter
     /plan/<start_date>/create liegt und nur noch über den
     "Neuen Wochenplan erstellen"-Button erreichbar ist."""
@@ -80,8 +84,11 @@ def week_view(start_date):
     if normalized != start:
         return redirect(url_for('plan.week_view', start_date=normalized.isoformat()))
 
+    active_plan = current_plan()
     dates = week_dates_for(normalized)
-    plan_days_by_date = {pd.date: pd for pd in PlanDay.query.filter(PlanDay.date.in_(dates)).all()}
+    plan_days_by_date = {
+        pd.date: pd for pd in PlanDay.query.filter(PlanDay.plan_id == active_plan.id, PlanDay.date.in_(dates)).all()
+    }
     ordered = [plan_days_by_date.get(d) for d in dates]
     has_any_data = any(ordered)
 
@@ -107,7 +114,10 @@ def week_view(start_date):
     # Manuell hinzugefügte Einkaufslisten-Posten dieser Woche (siehe
     # shopping.py: add_shopping_item) - lose über week_start an die Woche
     # gebunden, kein Fremdschlüssel auf PlanDay o.ä. nötig.
-    extra_items = ExtraShoppingItem.query.filter_by(week_start=normalized).order_by(ExtraShoppingItem.id).all()
+    extra_items = (
+        ExtraShoppingItem.query.filter_by(plan_id=active_plan.id, week_start=normalized)
+        .order_by(ExtraShoppingItem.id).all()
+    )
 
     all_recipes = Recipe.query.all()
 
@@ -243,6 +253,7 @@ def week_generate(start_date):
         abort(404)
     start = monday_of(start)
     dates = week_dates_for(start)
+    plan = current_plan()
 
     all_categories = Category.query.all()
 
@@ -314,11 +325,13 @@ def week_generate(start_date):
     # oft dran waren, werden dadurch seltener (aber nie unmöglich) gezogen.
     for day_index, needed_cat_id in category_by_day.items():
         chosen = choose_recipe(
-            is_side_dish=False, exclude_ids=used_recipe_ids, category_id=needed_cat_id,
+            is_side_dish=False, exclude_ids=used_recipe_ids, plan_id=plan.id, category_id=needed_cat_id,
             reference_date=dates[day_index]
         )
         if not chosen:
-            chosen = choose_recipe(is_side_dish=False, exclude_ids=used_recipe_ids, reference_date=dates[day_index])
+            chosen = choose_recipe(
+                is_side_dish=False, exclude_ids=used_recipe_ids, plan_id=plan.id, reference_date=dates[day_index]
+            )
 
         if chosen:
             final_plan[day_index] = chosen
@@ -327,9 +340,9 @@ def week_generate(start_date):
     # 6. Dauerhaft speichern: ein PlanDay pro echtem Kalendertag dieser Woche
     for i in range(7):
         day_date = dates[i]
-        plan_day = PlanDay.query.filter_by(date=day_date).first()
+        plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=day_date).first()
         if not plan_day:
-            plan_day = PlanDay(date=day_date, servings=2)
+            plan_day = PlanDay(plan_id=plan.id, date=day_date, servings=2)
             db.session.add(plan_day)
             db.session.flush()  # weist plan_day.id zu, für die PlanDaySide-Zeilen unten
         plan_day.excluded = i in excluded_days

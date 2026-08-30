@@ -45,7 +45,7 @@ def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
     monday = date(2026, 6, 15)
     recipe_id = make_recipe("Montagsgericht")
     with app.app_context():
-        db.session.add(PlanDay(date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
         db.session.commit()
 
     resp = client.get(f"/plan/{monday.isoformat()}")
@@ -71,7 +71,7 @@ def test_week_view_has_pantry_list_panel(client, app, make_recipe):
     monday = date(2026, 6, 15)
     recipe_id = make_recipe("Montagsgericht")
     with app.app_context():
-        db.session.add(PlanDay(date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
         db.session.commit()
 
     resp = client.get(f"/plan/{monday.isoformat()}")
@@ -86,7 +86,7 @@ def test_week_view_plan_data_reflects_excluded_and_servings(client, app):
 
     monday = date(2026, 6, 15)
     with app.app_context():
-        db.session.add(PlanDay(date=monday, excluded=True, servings=4))
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, excluded=True, servings=4))
         db.session.commit()
 
     resp = client.get(f"/plan/{monday.isoformat()}")
@@ -108,8 +108,8 @@ def test_week_view_plan_data_reflects_cooked_main(client, app, make_recipe):
     monday = date(2026, 6, 15)
     recipe_id = make_recipe("Gekochtes Gericht")
     with app.app_context():
-        db.session.add(PlanDay(date=monday, main_recipe_id=recipe_id, cooked=True))
-        db.session.add(PlanDay(date=monday + timedelta(days=1), cooked=False))
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, main_recipe_id=recipe_id, cooked=True))
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday + timedelta(days=1), cooked=False))
         db.session.commit()
 
     resp = client.get(f"/plan/{monday.isoformat()}")
@@ -130,7 +130,7 @@ def test_week_view_extra_items_use_display_unit(client, app):
     monday = date(2026, 6, 15)
     with app.app_context():
         update_display_units("kg", "ml")
-        db.session.add(ExtraShoppingItem(week_start=monday, name="Mehl", amount=2000, unit="g"))
+        db.session.add(ExtraShoppingItem(plan_id=client.plan_id, week_start=monday, name="Mehl", amount=2000, unit="g"))
         db.session.commit()
 
     resp = client.get(f"/plan/{monday.isoformat()}")

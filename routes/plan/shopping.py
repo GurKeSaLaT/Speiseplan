@@ -4,9 +4,10 @@ oder Getränke. Anlegen ist wochenbezogen (start_date), Löschen dagegen
 postenbezogen (die id reicht, ohne Wochenbezug).
 """
 
-from flask import request
+from flask import abort, request
 
 from models import db, ExtraShoppingItem
+from services.auth import current_plan
 from services.planning import monday_of, parse_iso_date
 from services.settings import get_display_units
 from services.units import convert_for_display, normalize_amount_unit
@@ -54,7 +55,9 @@ def add_shopping_item(start_date):
     if amount is not None and unit is not None:
         amount, unit = normalize_amount_unit(amount, unit)
 
-    item = ExtraShoppingItem(week_start=start, name=name, amount=amount, unit=unit, category=category)
+    item = ExtraShoppingItem(
+        plan_id=current_plan().id, week_start=start, name=name, amount=amount, unit=unit, category=category
+    )
     db.session.add(item)
     db.session.commit()
 
@@ -69,8 +72,14 @@ def delete_shopping_item(item_id):
     """AJAX-Endpunkt hinter dem ❌-Button eines manuell hinzugefügten
     Einkaufslisten-Postens: löscht ihn endgültig (im Gegensatz zur
     Ankreuzen-Funktion der übrigen Einkaufsliste, die rein clientseitig und
-    nicht dauerhaft ist)."""
+    nicht dauerhaft ist).
+
+    Zusätzlicher Besitz-Check (plan_id muss zum aktiven Plan passen, sonst
+    404 statt still zu löschen) - item_id allein wäre sonst über
+    Plan-Grenzen hinweg erratbar/nutzbar."""
     item = ExtraShoppingItem.query.get_or_404(item_id)
+    if item.plan_id != current_plan().id:
+        abort(404)
     db.session.delete(item)
     db.session.commit()
     return {"ok": True}

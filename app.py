@@ -16,20 +16,23 @@ import os
 import secrets
 
 from sqlalchemy import text
-from flask import Flask
+from flask import Flask, redirect, request, session, url_for
 from flask_wtf import CSRFProtect
 
-from models import db, Category, RecipeSeason, PlanDaySide
+from models import db, Category, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
+from services.auth import current_plan, current_user, hash_password
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
 from services.seasons import SEASON_PRESETS
 from services.shopping import PANTRY_CATEGORIES, SHOPPING_CATEGORIES, UNCATEGORIZED
 from services.units import renormalize_existing_ingredients
+from routes.auth import auth_bp, SESSION_LIFETIME
 from routes.plan import plan_bp
 from routes.manage import manage_bp
 from routes.recipes import recipes_bp
 from routes.categories import categories_bp
 from routes.settings import settings_bp
+from routes.sharing import sharing_bp
 
 app = Flask(__name__)
 # SQLite-Datei liegt in Flasks Standard-"instance"-Ordner (instance/speiseplan.db),
@@ -43,6 +46,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = (
     os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(app.instance_path, 'speiseplan.db')
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Wie lange eine Session ohne erneuten Login gültig bleibt (siehe
+# routes/auth.py: SESSION_LIFETIME-Kommentar).
+app.config['PERMANENT_SESSION_LIFETIME'] = SESSION_LIFETIME
 
 os.makedirs(app.instance_path, exist_ok=True)
 db.init_app(app)
@@ -92,11 +98,13 @@ CSRFProtect(app)
 # Jeder Blueprint bringt seinen eigenen URL-Namensraum mit (z.B. wird aus
 # der Funktion week_view in plan_bp der Endpunkt "plan.week_view", wie er
 # in url_for()-Aufrufen in den Templates/Redirects verwendet wird).
+app.register_blueprint(auth_bp)
 app.register_blueprint(plan_bp)
 app.register_blueprint(manage_bp)
 app.register_blueprint(recipes_bp)
 app.register_blueprint(categories_bp)
 app.register_blueprint(settings_bp)
+app.register_blueprint(sharing_bp)
 
 
 def init_db():
@@ -234,6 +242,94 @@ def init_db():
         db.session.execute(text("ALTER TABLE plan_day_side ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
 
+    # --- Nutzerverwaltung: Login + eigene/geteilte Wochenpläne ---
+    # Erststart (noch kein einziger Nutzer vorhanden): legt die beiden
+    # aktuell vorgesehenen Konten an (siehe models.py: User) - es gibt
+    # keine eigene Registrierungsseite, neue Nutzer kommen bislang nur über
+    # diese Stelle hinzu. Jeder bekommt sofort einen eigenen Plan (siehe
+    # models.py: Plan/PlanMembership); NUR Jonas' eigener Plan wird dabei
+    # direkt gesternt - er wird gleich unten zum "legacy_plan", dem die
+    # komplette bisherige Planungs-Historie zugeordnet wird, und Elo
+    # bekommt IHREN Stern dort (nicht auf ihrem eigenen, leeren Plan) -
+    # so hat jeder Nutzer durchgehend genau einen gesternten Plan, und
+    # beide landen nach dem allerersten Login auf demselben, bereits
+    # vorhandenen Plan.
+    seeded_plans_by_username = {}
+    if not User.query.first():
+        for username in ("Jonas", "Elo"):
+            user = User(username=username, password_hash=hash_password(username))
+            db.session.add(user)
+            db.session.flush()
+            plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)
+            db.session.add(plan)
+            db.session.flush()
+            db.session.add(PlanMembership(plan_id=plan.id, user_id=user.id, is_starred=(username == "Jonas")))
+            seeded_plans_by_username[username] = plan
+        db.session.commit()
+
+    # plan_id auf PlanDay/ExtraShoppingItem: existierte in früheren
+    # Versionen der App noch nicht (der Kalender war global, ein einziger
+    # von allen geteilter Plan) - fehlt die Spalte, wird sie ergänzt und
+    # ALLE bestehenden Zeilen (die komplette bisherige Planungs-Historie)
+    # werden Jonas' neu angelegtem Plan zugeordnet; Elo wird zusätzlich
+    # (gesternt) als Mitglied dieses Plans eingetragen - so sehen nach
+    # dieser einmaligen Migration BEIDE exakt denselben, bereits
+    # vorhandenen Plan, ganz ohne dass jemand manuell etwas einladen müsste.
+    existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
+    if 'plan_id' not in existing_plan_day_columns:
+        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        if legacy_plan is not None:
+            elo = User.query.filter_by(username="Elo").first()
+            if elo is not None and not PlanMembership.query.filter_by(plan_id=legacy_plan.id, user_id=elo.id).first():
+                db.session.add(PlanMembership(plan_id=legacy_plan.id, user_id=elo.id, is_starred=True))
+                db.session.commit()
+
+            db.session.execute(text("ALTER TABLE plan_day ADD COLUMN plan_id INTEGER"))
+            db.session.execute(
+                text("UPDATE plan_day SET plan_id = :pid WHERE plan_id IS NULL"), {"pid": legacy_plan.id}
+            )
+            db.session.commit()
+
+            # SQLite kann weder eine NOT-NULL-Bedingung noch einen
+            # zusammengesetzten UNIQUE-Constraint nachträglich per ALTER
+            # TABLE ergänzen - wie schon bei der früheren
+            # side_recipe_id-Migration oben wird die Tabelle daher einmalig
+            # mit dem kompletten Zielschema neu aufgebaut (Kopie inkl. IDs,
+            # damit PlanDaySide-Zeilen weiter auf die richtigen Tage zeigen).
+            db.session.execute(text("""
+                CREATE TABLE plan_day_new (
+                    id INTEGER NOT NULL PRIMARY KEY,
+                    plan_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    excluded BOOLEAN NOT NULL,
+                    servings INTEGER NOT NULL,
+                    main_recipe_id INTEGER,
+                    cooked BOOLEAN NOT NULL DEFAULT 0,
+                    FOREIGN KEY(plan_id) REFERENCES plan (id),
+                    FOREIGN KEY(main_recipe_id) REFERENCES recipe (id),
+                    UNIQUE(plan_id, date)
+                )
+            """))
+            db.session.execute(text("""
+                INSERT INTO plan_day_new (id, plan_id, date, excluded, servings, main_recipe_id, cooked)
+                SELECT id, plan_id, date, excluded, servings, main_recipe_id, cooked FROM plan_day
+            """))
+            db.session.execute(text("DROP TABLE plan_day"))
+            db.session.execute(text("ALTER TABLE plan_day_new RENAME TO plan_day"))
+            db.session.commit()
+
+    existing_extra_item_columns = {
+        row[1] for row in db.session.execute(text("PRAGMA table_info(extra_shopping_item)"))
+    }
+    if 'plan_id' not in existing_extra_item_columns:
+        legacy_plan = seeded_plans_by_username.get("Jonas") or Plan.query.first()
+        if legacy_plan is not None:
+            db.session.execute(text("ALTER TABLE extra_shopping_item ADD COLUMN plan_id INTEGER"))
+            db.session.execute(
+                text("UPDATE extra_shopping_item SET plan_id = :pid WHERE plan_id IS NULL"), {"pid": legacy_plan.id}
+            )
+            db.session.commit()
+
     # IngredientNutrition.calories entfernt: Kalorien sind aus Eiweiß/
     # Kohlenhydraten/Fett errechenbar (siehe services/nutrition.py:
     # compute_calories()) und wären als eigens gepflegter Wert nur
@@ -273,6 +369,26 @@ def init_db():
 # mit mehreren Workern, die sonst gleichzeitig migrieren könnten).
 with app.app_context():
     init_db()
+
+
+@app.before_request
+def require_login():
+    """Schützt global JEDE Route außer der Login-Seite selbst und
+    statischen Dateien (CSS/JS/Bilder) - ein einzelner Gate-Punkt statt
+    eines @login_required-Decorators an jeder der bestehenden Routen
+    (siehe services/auth.py: login_required() für die Decorator-Variante,
+    die aktuell nirgends im Routing eingesetzt wird), damit keine Route
+    versehentlich ungeschützt bleibt.
+
+    request.endpoint ist None für nicht auflösbare Pfade (z.B. ein
+    Tippfehler in der URL) - die werden hier bewusst durchgelassen, damit
+    Flask seine normale 404-Antwort liefert, statt stattdessen fälschlich
+    auf /login umzuleiten."""
+    if request.endpoint is None or request.endpoint in ('auth.login', 'static'):
+        return None
+    if current_user() is None:
+        return redirect(url_for('auth.login', next=request.path))
+    return None
 
 
 @app.after_request
@@ -326,6 +442,31 @@ def inject_css_version():
     except OSError:
         css_version = 0
     return {'css_version': css_version}
+
+
+@app.context_processor
+def inject_current_user_and_plans():
+    """Stellt allen Templates den eingeloggten Nutzer, seinen aktiven Plan
+    sowie die Liste ALLER Pläne zur Verfügung, auf die er Zugriff hat
+    (eigener + eingeladene, siehe models.py: PlanMembership) - genutzt von
+    templates/base.html für den Nutzer-/Plan-Abschnitt in der
+    Seitenleiste (Name, Abmelden, Plan-Wechsel/Stern). Gesternter Plan
+    zuerst, sonst alphabetisch.
+
+    Auf der Login-Seite selbst (kein eingeloggter Nutzer) bleiben alle drei
+    Werte leer/None - das Template dort erweitert base.html ohnehin nicht,
+    braucht sie also gar nicht."""
+    user = current_user()
+    if user is None:
+        return {'nav_current_user': None, 'nav_current_plan': None, 'nav_user_plans': []}
+
+    memberships = PlanMembership.query.filter_by(user_id=user.id).all()
+    memberships.sort(key=lambda m: (not m.is_starred, m.plan.name))
+    return {
+        'nav_current_user': user,
+        'nav_current_plan': current_plan(),
+        'nav_user_plans': memberships,
+    }
 
 
 @app.context_processor

@@ -145,6 +145,29 @@
                 <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>Übersicht</a>
             </div>
 
+            {# Eigene Pläne (eigener + eingeladene, siehe models.py:
+               PlanMembership) - Klick wechselt den aktiven Plan
+               (routes/auth.py: switch_plan) und springt auf dessen
+               aktuelle Woche. Der gesternte steht immer zuerst (siehe
+               app.py: inject_current_user_and_plans) und ist zusätzlich
+               optisch als "aktiv" markiert, wenn er gerade der
+               tatsächlich aktive Plan ist. Nur sichtbar mit mehr als
+               einem Plan - mit nur einem einzigen (der Normalfall ohne
+               Freigaben) wäre ein Umschalter ohne Alternative sinnlos. #}
+            {% if nav_user_plans and nav_user_plans|length > 1 %}
+            <div class="rail-section">
+                <div class="rail-label">Meine Pläne</div>
+                {% for membership in nav_user_plans %}
+                <form method="POST" action="{{ url_for('auth.switch_plan', plan_id=membership.plan_id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="rail-link w-100 text-start border-0 bg-transparent {% if nav_current_plan and membership.plan_id == nav_current_plan.id %}active{% endif %}">
+                        <span class="ic">{{ '⭐' if membership.is_starred else '📋' }}</span>{{ membership.plan.name }}
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <div class="rail-section">
                 <div class="rail-label">Rezepte</div>
                 <a class="rail-link {% if request.path == '/manage/recipe/create' %}active{% endif %}" href="/manage/recipe/create"><span class="ic">✨</span>Erstellen</a>
@@ -159,7 +182,21 @@
                 <a class="rail-link {% if request.path == '/manage/ingredient-nutrition' %}active{% endif %}" href="/manage/ingredient-nutrition"><span class="ic">🍎</span>Nährwerte</a>
             </div>
 
+            <div class="rail-section">
+                <div class="rail-label">Konto</div>
+                <a class="rail-link {% if request.path == '/manage/sharing' %}active{% endif %}" href="/manage/sharing"><span class="ic">🤝</span>Freigabe</a>
+            </div>
+
             <div class="rail-theme">
+                {% if nav_current_user %}
+                <div class="theme-row d-flex justify-content-between align-items-center">
+                    <span class="lbl">👤 {{ nav_current_user.username }}</span>
+                    <form method="POST" action="{{ url_for('auth.logout') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">Abmelden</button>
+                    </form>
+                </div>
+                {% endif %}
                 <div class="theme-row"><span class="lbl">🎨 Darstellung</span></div>
                 <div class="segmented" id="themeSwitcher">
                     <button type="button" data-theme-choice="system">System</button>

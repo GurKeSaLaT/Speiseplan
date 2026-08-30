@@ -1,0 +1,78 @@
+{# Eigenständige Login-Seite (/login, routes/auth.py: login()) - erweitert
+   BEWUSST NICHT base.html: dessen Seitenleiste zeigt Nutzername/Pläne
+   eines bereits eingeloggten Nutzers, den es hier per Definition noch
+   nicht gibt. Bindet Bootstrap/style.css trotzdem direkt ein (wie
+   base.html) und übernimmt dasselbe früh laufende Theme-Skript, damit
+   Hell-/Dunkelmodus schon auf dieser allerersten Seite korrekt greifen -
+   sonst würde ein Nutzer mit Dunkelmodus-Präferenz erst nach dem Login
+   einen Bruch im Erscheinungsbild sehen. #}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍽️ Speiseplanhelfer - Anmelden</title>
+
+    <script>
+    (function() {
+        var STORAGE_KEY = 'speiseplan-theme';
+        function getPreference() {
+            try { return localStorage.getItem(STORAGE_KEY) || 'system'; } catch (e) { return 'system'; }
+        }
+        function applyTheme(preference) {
+            var resolved = preference === 'system'
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : preference;
+            document.documentElement.setAttribute('data-bs-theme', resolved);
+        }
+        applyTheme(getPreference());
+    })();
+    </script>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" type="text/css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_version }}" type="text/css">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        .login-shell {
+            min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+        }
+        .login-card {
+            width: 100%; max-width: 360px; background: var(--card-bg); border-radius: var(--radius-main);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08); padding: 2rem 1.75rem;
+        }
+        .login-mark {
+            width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 1rem;
+            background: linear-gradient(155deg, var(--primary-food), var(--primary-dark));
+            display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+            box-shadow: 0 4px 12px rgba(46, 111, 64, 0.28);
+        }
+        .login-title { text-align: center; font-weight: 800; font-size: 1.2rem; margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body>
+    <div class="login-shell">
+        <div class="login-card">
+            <div class="login-mark">🍽️</div>
+            <h1 class="login-title">Speiseplanhelfer</h1>
+
+            {% if error %}
+            <div class="alert alert-danger py-2 small" role="alert">{{ error }}</div>
+            {% endif %}
+
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small" for="username">Name</label>
+                    <input type="text" name="username" id="username" class="form-control" required autofocus autocomplete="username">
+                </div>
+                <div class="mb-4">
+                    <label class="form-label fw-bold small" for="password">Passwort</label>
+                    <input type="password" name="password" id="password" class="form-control" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-success w-100 fw-bold">Anmelden</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
