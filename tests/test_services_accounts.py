@@ -7,7 +7,7 @@ def test_update_profile_success(app, client):
     from services.accounts import update_profile
 
     with app.app_context():
-        ok, error = update_profile(User.query.get(client.user_id), "Neuer Name", "neu@test.local")
+        ok, error = update_profile(User.query.get(client.user_id), "Neuer Name", "neu@test.local", "en")
         assert ok is True
         assert error is None
         user = User.query.get(client.user_id)
@@ -20,7 +20,7 @@ def test_update_profile_normalizes_email_lowercase(app, client):
     from services.accounts import update_profile
 
     with app.app_context():
-        update_profile(User.query.get(client.user_id), "X", "GROSS@Test.Local")
+        update_profile(User.query.get(client.user_id), "X", "GROSS@Test.Local", "en")
         assert User.query.get(client.user_id).email == "gross@test.local"
 
 
@@ -31,7 +31,7 @@ def test_update_profile_rejects_duplicate_email(app, client, make_user):
     other_id, _ = make_user("Andere")
     with app.app_context():
         other_email = User.query.get(other_id).email
-        ok, error = update_profile(User.query.get(client.user_id), "X", other_email)
+        ok, error = update_profile(User.query.get(client.user_id), "X", other_email, "en")
         assert ok is False
         assert "existiert bereits" in error
 
@@ -41,7 +41,7 @@ def test_update_profile_rejects_malformed_email(app, client):
     from services.accounts import update_profile
 
     with app.app_context():
-        ok, error = update_profile(User.query.get(client.user_id), "X", "keine-email")
+        ok, error = update_profile(User.query.get(client.user_id), "X", "keine-email", "en")
         assert ok is False
         assert "gültige E-Mail" in error
 
@@ -51,8 +51,28 @@ def test_update_profile_rejects_empty_fields(app, client):
     from services.accounts import update_profile
 
     with app.app_context():
-        ok, error = update_profile(User.query.get(client.user_id), "", "")
+        ok, error = update_profile(User.query.get(client.user_id), "", "", "en")
         assert ok is False
+
+
+def test_update_profile_changes_language(app, client):
+    from models import User
+    from services.accounts import update_profile
+
+    with app.app_context():
+        ok, error = update_profile(User.query.get(client.user_id), "X", "x@test.local", "de")
+        assert ok is True
+        assert User.query.get(client.user_id).language == "de"
+
+
+def test_update_profile_rejects_unsupported_language(app, client):
+    from models import User
+    from services.accounts import update_profile
+
+    with app.app_context():
+        ok, error = update_profile(User.query.get(client.user_id), "X", "x2@test.local", "fr")
+        assert ok is False
+        assert error is not None
 
 
 def test_update_password_requires_correct_current_password(app, client):

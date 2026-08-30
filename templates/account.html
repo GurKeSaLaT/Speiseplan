@@ -29,6 +29,15 @@
                         <label class="form-label fw-bold small" for="accountEmail">E-Mail</label>
                         <input type="email" name="email" id="accountEmail" class="form-control" value="{{ user.email }}" required autocomplete="email">
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small" for="accountLanguage">Sprache</label>
+                        {# Optionsnamen bewusst in der jeweils eigenen Sprache (nicht übersetzt) -
+                           übliche Konvention für Sprachauswahlfelder, siehe app.py: get_locale(). #}
+                        <select name="language" id="accountLanguage" class="form-select">
+                            <option value="en" {% if user.language == 'en' %}selected{% endif %}>English</option>
+                            <option value="de" {% if user.language == 'de' %}selected{% endif %}>Deutsch</option>
+                        </select>
+                    </div>
                     <button type="submit" class="btn btn-dark fw-bold">Speichern</button>
                 </form>
             </div>

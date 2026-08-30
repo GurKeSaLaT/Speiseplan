@@ -9,7 +9,9 @@ def test_account_view_reachable(client):
 
 
 def test_update_profile_shows_success(app, client):
-    resp = client.post("/manage/account/profile", data={"name": "Neuer Name", "email": "neu@test.local"})
+    resp = client.post(
+        "/manage/account/profile", data={"name": "Neuer Name", "email": "neu@test.local", "language": "en"}
+    )
     assert resp.status_code == 200
     assert "Profil aktualisiert".encode("utf-8") in resp.data
 
@@ -25,9 +27,21 @@ def test_update_profile_shows_error_on_duplicate_email(app, client, make_user):
     with app.app_context():
         other_email = User.query.filter_by(name="Andere").first().email
 
-    resp = client.post("/manage/account/profile", data={"name": "X", "email": other_email})
+    resp = client.post(
+        "/manage/account/profile", data={"name": "X", "email": other_email, "language": "en"}
+    )
     assert resp.status_code == 200
     assert "existiert bereits".encode("utf-8") in resp.data
+
+
+def test_update_profile_route_changes_language(app, client):
+    resp = client.post(
+        "/manage/account/profile", data={"name": "X", "email": "x@test.local", "language": "de"}
+    )
+    assert resp.status_code == 200
+    from models import User
+    with app.app_context():
+        assert User.query.get(client.user_id).language == "de"
 
 
 def test_update_password_shows_success(client):

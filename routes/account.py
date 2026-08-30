@@ -22,7 +22,9 @@ def account_view():
 @account_bp.route('/manage/account/profile', methods=['POST'])
 def update_profile_route():
     user = current_user()
-    ok, error = update_profile(user, request.form.get('name'), request.form.get('email'))
+    ok, error = update_profile(
+        user, request.form.get('name'), request.form.get('email'), request.form.get('language')
+    )
     return render_template('account.html', user=user, profile_error=error, profile_success=ok)
 
 

@@ -17,6 +17,7 @@ import secrets
 
 from sqlalchemy import text
 from flask import Flask, redirect, request, session, url_for
+from flask_babel import Babel
 from flask_wtf import CSRFProtect
 
 from models import db, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
@@ -98,6 +99,29 @@ app.config['SECRET_KEY'] = load_or_create_secret_key()
 # unbemerkt Schreibaktionen (Rezept löschen o.ä.) auslösen können.
 CSRFProtect(app)
 
+
+def get_locale():
+    """Resolves the active UI language for this request (Flask-Babel calls
+    this once per request). Logged-in users get their saved preference
+    (User.language, changeable on /manage/account, see
+    services/accounts.py: update_profile()); anonymous requests (login/
+    register) fall back to the browser's Accept-Language header, defaulting
+    to English whenever it's absent or doesn't match a supported language -
+    English is this app's default language."""
+    user = current_user()
+    if user is not None:
+        return user.language
+    return request.accept_languages.best_match(['de', 'en']) or 'en'
+
+
+# translations/ holds the German catalog (translations/de/LC_MESSAGES/
+# messages.po, compiled to messages.mo) - English needs no catalog at all,
+# since the source strings written directly in _('...')/{{ _('...') }}
+# calls throughout the app ARE the English text (gettext falls back to
+# showing the msgid as-is when no translation is loaded for the active
+# locale, which for 'en' is exactly the desired behavior).
+Babel(app, default_locale='en', locale_selector=get_locale)
+
 # Jeder Blueprint bringt seinen eigenen URL-Namensraum mit (z.B. wird aus
 # der Funktion week_view in plan_bp der Endpunkt "plan.week_view", wie er
 # in url_for()-Aufrufen in den Templates/Redirects verwendet wird).
@@ -165,6 +189,19 @@ def init_db():
         """))
         db.session.execute(text("DROP TABLE user"))
         db.session.execute(text("ALTER TABLE user_new RENAME TO user"))
+        db.session.commit()
+
+    # user.language: didn't exist in an earlier version - add the missing
+    # column. The SQLite default ('en') applies automatically to all
+    # existing accounts too (see models.py: User.language). Must run here,
+    # immediately after the user table exists with its final shape and
+    # BEFORE any ORM-level User.query call below (e.g. the account-seeding
+    # check further down) - SQLAlchemy includes every mapped column,
+    # including this new one, in every User query, so it would fail with
+    # "no such column: user.language" if this migration ran any later.
+    existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
+    if 'language' not in existing_user_columns:
+        db.session.execute(text("ALTER TABLE user ADD COLUMN language VARCHAR(5) NOT NULL DEFAULT 'en'"))
         db.session.commit()
 
     existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}

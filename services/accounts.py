@@ -6,15 +6,28 @@ services/plans.py (Lebenszyklus EINES Plans) geht es hier um den Nutzer
 selbst als Objekt, das sich ändern oder ganz auflösen lässt.
 """
 
+# lazy_gettext (not gettext): this module's functions are also called
+# directly from tests without a real Flask request context (see
+# tests/test_services_accounts.py) - gettext() requires request context to
+# resolve the active locale immediately, lazy_gettext() defers that until
+# the string is actually rendered/stringified, so it works either way.
+from flask_babel import lazy_gettext as _l
+
 from models import PlanMembership, User, db
 from services.auth import EMAIL_PATTERN, hash_password, verify_password
 from services.plans import delete_plan
 
+# The languages this app ships a UI for (see app.py: get_locale()) - kept
+# here rather than in models.py since it's a validation concern of the
+# profile form, not part of the User schema itself.
+SUPPORTED_LANGUAGES = ('en', 'de')
 
-def update_profile(user, name, email):
+
+def update_profile(user, name, email, language):
     """Ändert Name (freier Anzeigename, keine Eindeutigkeit nötig, siehe
-    models.py: User-Docstring) und E-Mail (das LOGIN-Feld, muss daher
-    weiterhin eindeutig und grob gültig sein). Gibt (True, None) bei
+    models.py: User-Docstring), E-Mail (das LOGIN-Feld, muss daher
+    weiterhin eindeutig und grob gültig sein) und die UI-Sprache
+    (User.language, siehe app.py: get_locale()). Gibt (True, None) bei
     Erfolg zurück, sonst (False, Fehlertext) - committet nur im
     Erfolgsfall."""
     name = (name or '').strip()
@@ -26,9 +39,12 @@ def update_profile(user, name, email):
     existing = User.query.filter(User.email == email, User.id != user.id).first()
     if existing is not None:
         return False, 'Für diese E-Mail-Adresse existiert bereits ein anderes Konto.'
+    if language not in SUPPORTED_LANGUAGES:
+        return False, _l('Please choose a valid language.')
 
     user.name = name
     user.email = email
+    user.language = language
     db.session.commit()
     return True, None
 

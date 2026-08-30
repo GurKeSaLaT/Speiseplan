@@ -451,11 +451,17 @@ class User(db.Model):
     läuft über routes/auth.py: register() (Button auf der Login-Seite);
     beim App-Start in app.py: init_db() werden zusätzlich weiterhin zwei
     generische Demo-Konten ("Nutzer1"/"Nutzer2") gesät (Platzhalter-
-    E-Mails nach dem Schema <name>@example.com, siehe dort)."""
+    E-Mails nach dem Schema <name>@example.com, siehe dort).
+
+    language is the ISO 639-1 code Flask-Babel uses to pick this user's
+    translation catalog (see app.py: get_locale()) - defaults to 'en'
+    (English is the app's default language). Changeable on /manage/account
+    (see services/accounts.py: update_profile())."""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    language = db.Column(db.String(5), nullable=False, default='en')
     created_at = db.Column(db.DateTime, default=db.func.now())
 
 
