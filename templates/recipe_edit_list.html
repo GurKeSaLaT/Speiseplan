@@ -18,6 +18,17 @@
                 <a href="/manage" class="btn btn-sm btn-outline-dark fw-bold"><- Zurück</a>
             </div>
             <div class="card-body p-4">
+                {% if user_plans|length > 1 %}
+                <ul class="nav nav-pills mb-4">
+                    {% for membership in user_plans %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if membership.plan_id == plan_id %}active{% endif %}" href="{{ url_for(request.endpoint, plan_id=membership.plan_id) }}">
+                            {{ '⭐ ' if membership.is_starred }}{{ membership.plan.name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
                 {% if recipes %}
                 <input type="text" id="recipeFilter" class="form-control mb-3" placeholder="🔍 Rezept oder Kategorie suchen..." autocomplete="off">
                 {% endif %}
@@ -42,7 +53,7 @@
                             {% endif %}
                         </div>
                         <div class="d-flex gap-2">
-                            <a href="/manage/recipe/edit/{{ recipe.id }}" class="btn btn-warning fw-bold text-dark btn-sm px-3">
+                            <a href="{{ url_for('recipes.recipe_edit_view', id=recipe.id, plan_id=plan_id) }}" class="btn btn-warning fw-bold text-dark btn-sm px-3">
                                 Bearbeiten ✏️
                             </a>
                             {% if recipe.owner_plan_id == own_plan_id %}
@@ -52,6 +63,7 @@
                             {% else %}
                             <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=own_plan_id) }}" class="m-0">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="plan_id" value="{{ plan_id }}">
                                 <button type="submit" class="btn btn-outline-secondary btn-sm px-3" title="Nur aus diesem Plan entfernen, das Rezept bleibt in seinem Ursprungsplan erhalten">
                                     Entfernen 🔗
                                 </button>

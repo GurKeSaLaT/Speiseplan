@@ -171,34 +171,6 @@
                 </button>
             </div>
 
-            {# Modal zum Anlegen eines weiteren eigenen Plans - von jeder
-               Seite aus erreichbar (lebt deshalb hier in base.html statt in
-               einer einzelnen Unterseite), gleiches Muster wie das
-               Rezept-Detail-Fenster in templates/plan.html. Erfolgreiches
-               Absenden wechselt sofort auf den neuen Plan (siehe
-               routes/plans.py: create()). #}
-            <div class="modal fade" id="createPlanModal" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered modal-sm">
-                    <div class="modal-content border-0 shadow">
-                        <form method="POST" action="{{ url_for('plans.create') }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <div class="modal-header">
-                                <h5 class="modal-title fw-bold">➕ Neuer Plan</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                            </div>
-                            <div class="modal-body">
-                                <label class="form-label small text-muted" for="createPlanName">Name des Plans</label>
-                                <input type="text" id="createPlanName" name="name" class="form-control" required autofocus>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                                <button type="submit" class="btn btn-primary-custom fw-bold">Erstellen</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
             <div class="rail-section">
                 <div class="rail-label">Rezepte</div>
                 <a class="rail-link {% if request.path == '/manage/recipe/create' %}active{% endif %}" href="/manage/recipe/create"><span class="ic">✨</span>Erstellen</a>
@@ -241,6 +213,44 @@
             {# Hauptinhalt: wird von jeder Unterseite über {% block content %}...{% endblock %} befüllt #}
             <div class="container pb-5">
                 {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+
+    {# Modal zum Anlegen eines weiteren eigenen Plans - von jeder Seite aus
+       erreichbar (lebt deshalb hier in base.html statt in einer einzelnen
+       Unterseite, Trigger-Button siehe oben in .app-rail), gleiches Muster
+       wie das Rezept-Detail-Fenster in templates/plan.html. Erfolgreiches
+       Absenden wechselt sofort auf den neuen Plan (siehe
+       routes/plans.py: create()).
+
+       BEWUSST außerhalb von .app-shell/.app-rail platziert, als direktes
+       Kind von <body>: .app-rail ist position:sticky (siehe static/
+       style.css) - jeder position:fixed-Nachfahre eines solchen Elements
+       (wie dieses Bootstrap-Modal) landet sonst in DESSEN lokalem
+       Stapelkontext statt oberhalb der gesamten Seite und wird von
+       .app-content optisch verdeckt/unterlaufen, obwohl er per CSS
+       eigentlich "fixed" positioniert ist (siehe data-bs-target oben -
+       funktioniert unabhängig von der DOM-Position, da rein über die
+       ID angesteuert). #}
+    <div class="modal fade" id="createPlanModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content border-0 shadow">
+                <form method="POST" action="{{ url_for('plans.create') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold">➕ Neuer Plan</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label small text-muted" for="createPlanName">Name des Plans</label>
+                        <input type="text" id="createPlanName" name="name" class="form-control" required autofocus>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                        <button type="submit" class="btn btn-primary-custom fw-bold">Erstellen</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

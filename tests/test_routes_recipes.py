@@ -142,7 +142,11 @@ def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe)
     recipe_id = make_recipe("Irgendein Gericht")
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    assert f'href="/manage/recipe/edit/{recipe_id}"'.encode() in resp.data
+    # Trägt seit dem Tab-Umschalter (siehe routes/recipes.py:
+    # recipe_edit_list_view) zusätzlich ?plan_id=<id> - "in" statt "endet
+    # mit" prüft weiterhin dasselbe Ziel, ohne von der genauen
+    # Query-String-Form abzuhängen.
+    assert f'href="/manage/recipe/edit/{recipe_id}?plan_id='.encode() in resp.data
 
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
