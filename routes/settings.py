@@ -21,7 +21,7 @@ package, since all three areas are small):
    from which recipe nutrition values are automatically calculated (see
    routes/recipes.py: add_recipe()/edit_recipe()).
 
-All three areas are separated PER PLAN (see models.py: AppSettings.
+All three areas are separated PER PLAN (see models/settings.py: AppSettings.
 plan_id/IngredientAlias.plan_id/IngredientNutrition.plan_id) - each page
 shows a tab switcher when a user has access to more than one plan (see
 services/auth.py: selected_plan_id/user_plan_memberships) and acts on

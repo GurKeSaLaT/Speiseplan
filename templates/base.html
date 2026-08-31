@@ -145,7 +145,7 @@
                 <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>{{ _('Overview') }}</a>
             </div>
 
-            {# Own plans (own + invited, see models.py:
+            {# Own plans (own + invited, see models/plan.py:
                PlanMembership) - clicking switches the active plan
                (routes/auth.py: switch_plan) and jumps to its
                current week. The starred one is always listed first (see

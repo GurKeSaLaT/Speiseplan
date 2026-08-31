@@ -297,7 +297,7 @@ def test_other_plan_meals_empty_when_no_other_plan_has_a_dish(app, client, make_
 
 
 def test_other_plan_meals_respects_per_membership_overview_flag(app, client, make_recipe, make_user):
-    """show_in_week_overview applies individually PER USER (models.py:
+    """show_in_week_overview applies individually PER USER (models/plan.py:
     PlanMembership) - if client turns off their own membership in a
     shared plan from the overview, that has no effect on an OTHER
     member of the same plan (whose flag remains unchanged/on)."""

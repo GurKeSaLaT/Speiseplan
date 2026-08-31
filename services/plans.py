@@ -7,7 +7,7 @@ gets exactly one plan - they create their own via /plan/create
 (routes/plans.py), as many as they like. create_plan()/delete_plan() are
 bundled here because both touch the same category logic (seeding or taking
 over categories) and are reused from several places: create_plan() both
-from the route and (via seed_default_categories()) from app.py: init_db()
+from the route and (via seed_default_categories()) from migrations.py: init_db()
 for every plan that doesn't have its own categories yet.
 """
 
@@ -28,7 +28,7 @@ def seed_default_categories(plan_id):
     category of its own - custom categories added or renamed later are
     therefore never overwritten or recreated (the check is purely "does
     this plan already have any category at all?"). Does not commit itself -
-    the caller (create_plan() or app.py: init_db()) decides when to
+    the caller (create_plan() or migrations.py: init_db()) decides when to
     commit."""
     if Category.query.filter_by(plan_id=plan_id).first():
         return
@@ -38,7 +38,7 @@ def seed_default_categories(plan_id):
 
 def create_plan(user, name):
     """Creates a new, standalone plan for user: the plan row itself (user
-    is recorded informationally as owner_user_id, see models.py: Plan
+    is recorded informationally as owner_user_id, see models/plan.py: Plan
     docstring - grants no special rights as a result), a PlanMembership for
     user (starred, if this is their FIRST membership ever - otherwise the
     previously starred plan stays starred, a new plan doesn't automatically
@@ -99,7 +99,7 @@ def delete_plan(plan):
     Category.query.filter_by(plan_id=plan.id).delete()
 
     PlanMembership.query.filter_by(plan_id=plan.id).delete()
-    # Any still-open invitations TO this plan (models.py: PendingPlanInvite)
+    # Any still-open invitations TO this plan (models/plan.py: PendingPlanInvite)
     # would otherwise be left pointing at a plan_id that no longer exists -
     # if someone later registers with exactly that email,
     # accept_pending_invites() would otherwise create a PlanMembership for
@@ -111,7 +111,7 @@ def delete_plan(plan):
 
 def accept_pending_invites(user):
     """Converts every still-open PendingPlanInvite for user.email (see the
-    models.py docstring there) into a real PlanMembership - called directly
+    models/plan.py docstring there) into a real PlanMembership - called directly
     after a new account is created (routes/auth.py: register()), so that
     registering via an invite link leads immediately to plan membership,
     without the inviter having to take a second action.

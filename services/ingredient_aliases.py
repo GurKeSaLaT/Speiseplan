@@ -1,7 +1,7 @@
 """Ingredient equating for the shopping list: maps concrete ingredient
 names (e.g. "Spaghetti", "Fusilli") to a shared, higher-level name (e.g.
 "Pasta"), so that the shopping list combines them into ONE line item
-instead of several. See models.py: IngredientAlias for the storage and
+instead of several. See models/settings.py: IngredientAlias for the storage and
 routes/settings.py for the management page where users maintain this
 mapping themselves.
 
@@ -10,7 +10,7 @@ jsonify_recipe) - the ingredient list of a single recipe (create/edit
 form) still shows the originally entered name, unaffected by any mapping
 maintained here.
 
-Each plan maintains its OWN equating (see models.py:
+Each plan maintains its OWN equating (see models/settings.py:
 IngredientAlias.plan_id) - the same ingredient can be grouped differently
 (or not at all) in two plans. For a recipe that is visible in multiple
 plans via RecipePlanLink, viewing it ALWAYS applies the equating of the

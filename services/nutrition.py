@@ -1,6 +1,6 @@
 """Automatic nutrition calculation from a recipe's ingredients.
 
-Recipe.calories/.protein/.carbs/.fat (see models.py) are, by default, NO
+Recipe.calories/.protein/.carbs/.fat (see models/recipe.py) are, by default, NO
 LONGER maintained by hand, but are calculated when a recipe is saved from
 the stored nutrition references of its ingredients (see
 compute_recipe_nutrition(), called from routes/recipes.py: add_recipe()/
@@ -8,7 +8,7 @@ edit_recipe()) - Recipe.nutrition_override=True switches this off for a
 single recipe and leaves the manually entered values in place (e.g. for a
 ready-made product where only the nutrition value on the package is known).
 
-The nutrition references themselves (IngredientNutrition, see models.py)
+The nutrition references themselves (IngredientNutrition, see models/settings.py)
 are stored per CANONICAL ingredient (services/ingredient_aliases.py:
 normalize_ingredient_name()) - for an alias-grouped ingredient like
 "Pasta", that means ONE shared entry instead of one per spelling such as

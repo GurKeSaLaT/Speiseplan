@@ -8,7 +8,7 @@ when saving, regardless of the entered/imported spelling or magnitude
 ("1kg" becomes "1000g", "2 tbsp" becomes "30 ml"). normalize_amount_unit()
 handles this both for manual recipe entry (routes/recipes.py) and for
 import (services/recipe_import.py), as well as once for legacy data
-(renormalize_existing_ingredients(), called from app.py: init_db()).
+(renormalize_existing_ingredients(), called from migrations.py: init_db()).
 
 The fact that ALL Ingredient rows of a family carry the same unit in the
 database is the precondition for the shopping list (static/plan-shopping.js:
@@ -123,12 +123,12 @@ def convert_for_display(amount, unit, display_units):
 
 def renormalize_existing_ingredients():
     """Migrates EXISTING Ingredient rows to the canonical form once (see
-    normalize_amount_unit) - called from app.py: init_db() on every app
+    normalize_amount_unit) - called from migrations.py: init_db() on every app
     start. Idempotent like the other migration steps there: a row that is
     already canonical (e.g. amount=1000, unit="g") produces the same value
     on repeated normalization and is thus skipped, so a repeated call does
     nothing further. Commits on its own, analogous to the other migration
-    steps in app.py: init_db()."""
+    steps in migrations.py: init_db()."""
     changed = False
     for ingredient in Ingredient.query.all():
         new_amount, new_unit = normalize_amount_unit(ingredient.amount, ingredient.unit)

@@ -1,5 +1,5 @@
 """Display settings of A SINGLE plan (currently: preferred units for mass
-and volume, see services/units.py and models.py: AppSettings) - each plan
+and volume, see services/units.py and models/settings.py: AppSettings) - each plan
 maintains its own row, independent of other plans."""
 
 from models import AppSettings, db
@@ -9,7 +9,7 @@ from services.units import DEFAULT_DISPLAY_UNIT, DISPLAY_UNIT_CHOICES, MASS, VOL
 def get_settings(plan_id):
     """Returns the AppSettings row of A SINGLE plan, lazily creating it with
     the default values (g/ml) if needed, instead of requiring a separate
-    migration step for every newly created plan (see app.py: init_db() for
+    migration step for every newly created plan (see migrations.py: init_db() for
     the one-time migration of existing legacy data)."""
     settings = AppSettings.query.filter_by(plan_id=plan_id).first()
     if not settings:

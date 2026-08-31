@@ -1,6 +1,6 @@
 """Sharing/star management for weekly plans (/manage/sharing): who is a
 member of the currently active plan, inviting/removing further users, and
-which of one's own plans is currently starred (see models.py:
+which of one's own plans is currently starred (see models/plan.py:
 Plan/PlanMembership as well as services/auth.py: current_plan()).
 
 All members of a plan have full read/write access - there is no
@@ -49,7 +49,7 @@ def invite_member():
     an account already exists for it, a PlanMembership with full access
     like any other member is created immediately (without an invite/
     confirmation workflow). If none exists yet, a PendingPlanInvite is
-    created instead (see the models.py docstring there) and an invite is
+    created instead (see the models/plan.py docstring there) and an invite is
     "sent" (services/mail.py: send_invite_email() - currently only
     logged, the link additionally appears directly on this page, see
     templates/sharing.html: "Pending invites"). Not starred, or only
@@ -148,7 +148,7 @@ def leave_plan(plan_id):
 @sharing_bp.route('/manage/sharing/overview-toggle/<int:plan_id>', methods=['POST'])
 def toggle_overview(plan_id):
     """Toggles PlanMembership.show_in_week_overview for ONE'S OWN
-    membership on plan_id (see the models.py docstring there - a flag
+    membership on plan_id (see the models/plan.py docstring there - a flag
     that applies purely per user, analogous to is_starred) - never
     affects the membership of another user of the same, possibly shared,
     plan."""
@@ -168,7 +168,7 @@ def star_plan(plan_id):
     automatically after login from now on, appears at the top of the
     navigation) - to do so, first unstars all other memberships of the
     same user within the same transaction, so that never more than one
-    is starred at the same time (see models.py: PlanMembership
+    is starred at the same time (see models/plan.py: PlanMembership
     docstring)."""
     user = current_user()
     membership = PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first()

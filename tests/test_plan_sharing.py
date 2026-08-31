@@ -121,7 +121,7 @@ def test_switch_plan_requires_membership(app, client, make_user):
 
 def test_week_view_does_not_show_other_plans_data(app, client, make_recipe, make_user):
     """Recipes themselves are deliberately GLOBAL (shared cookbook, see
-    the models.py comment on Plan) - "Fremdes Gericht" is therefore
+    the models/plan.py comment on Plan) - "Fremdes Gericht" is therefore
     still allowed to show up in the client-side recipe search
     (window.PLAN_DATA.allRecipes). Only the actual PLANNING needs to be
     isolated: this day must not show an assigned main dish in the
@@ -153,7 +153,7 @@ def test_reroll_repetition_weighting_ignores_other_plans_history(app, client, ma
     making sure that a reroll in the user's own plan works at all,
     independent of whether a foreign plan filled with the SAME-NAMED
     entry exists (no cross-plan collision via the date column, see
-    models.py: PlanDay.__table_args__)."""
+    models/calendar.py: PlanDay.__table_args__)."""
     from models import PlanDay, db
 
     recipe_a = make_recipe("Bei mir")

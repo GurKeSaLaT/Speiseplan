@@ -16,7 +16,7 @@ category themselves anyway, a direct save without review would be
 riskier).
 
 A recipe belongs to ONE plan (Recipe.owner_plan_id) and can additionally be
-linked into any number of further plans (RecipePlanLink, see models.py and
+linked into any number of further plans (RecipePlanLink, see models/recipe.py and
 services/recipe_visibility.py: link_recipe_to_plan/
 unlink_recipe_from_plan below) - a genuine link, not a copy. A recipe is
 visible (viewable/editable) in EVERY plan that either owns it or has such a
@@ -111,7 +111,7 @@ def recipe_edit_view(id):
 
     Categories deliberately come from the recipe's OWNER plan
     (recipe.owner_plan_id), not from the selected plan: Recipe.
-    category_id always points to a category of the owner (see models.py:
+    category_id always points to a category of the owner (see models/recipe.py:
     Recipe docstring) - for a merely linked-in recipe, no matching
     category could otherwise be shown/changed at all.
     linkable_plans/linked_plan_ids feed the "link into another plan"
@@ -291,7 +291,7 @@ def edit_recipe(id):
     allowed if the recipe is visible for the active plan (see
     recipe_edit_view) - ANY member of a plan that owns the recipe OR that
     it's linked into may fully edit it (no distinction between owner and
-    merely linked, see models.py: RecipePlanLink docstring).
+    merely linked, see models/recipe.py: RecipePlanLink docstring).
 
     The ingredients are not reconciled one by one here (no diff of
     "changed/new/deleted"), but completely deleted and recreated from the
@@ -320,7 +320,7 @@ def edit_recipe(id):
     recipe.source_url = (request.form.get('source_url') or '').strip() or None
     recipe.instructions = (request.form.get('instructions') or '').strip() or None
     # Explicit rather than via an onupdate=... on the column (see
-    # models.py: Recipe.updated_at) - that would only trigger if at least
+    # models/recipe.py: Recipe.updated_at) - that would only trigger if at least
     # one column value actually changes, but here EVERY save should
     # count, even one with unchanged content.
     recipe.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -378,7 +378,7 @@ def delete_recipe(id):
     via unlink_recipe_from_plan() below, without deleting the recipe for
     all other plans as well. Associated Ingredient/RecipeSeason/
     RecipePlanLink rows are deleted automatically along with it via the
-    cascade="all, delete-orphan" configuration in models.py.
+    cascade="all, delete-orphan" configuration in models/recipe.py.
 
     Deliberately NO check whether the recipe is still referenced in the
     weekly plan calendar: PlanDay.main_recipe_id and PlanDaySide.recipe_id
@@ -407,7 +407,7 @@ def delete_recipe(id):
 def link_recipe_to_plan(id, target_plan_id):
     """"Add dish to another plan": links a recipe visible for the
     selected plan (see recipe_edit_view()) ADDITIONALLY into
-    target_plan_id (see models.py: RecipePlanLink) - a genuine link, not
+    target_plan_id (see models/recipe.py: RecipePlanLink) - a genuine link, not
     a copy. Requires that the logged-in user is actually a member of
     target_plan_id (otherwise they could "spam" other people's plans they
     themselves have no access to with recipes)."""

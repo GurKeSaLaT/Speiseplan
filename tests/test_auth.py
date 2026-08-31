@@ -77,7 +77,7 @@ def test_seeded_users_can_log_in_with_placeholder_email(app):
     not against the fresh-per-test-run SQLite file - see
     tests/conftest.py: app_module). Logging in with the example.com
     placeholder address is explicitly allowed in test operation (see
-    models.py: User docstring)."""
+    models/user.py: User docstring)."""
     from services.auth import hash_password
     from models import User, db
 

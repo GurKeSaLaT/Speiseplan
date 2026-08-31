@@ -7,7 +7,7 @@ lets the neighborhood category rule on reroll work across week
 boundaries (see reroll_day).
 
 The side-dish actions (/day/<day_date>/side/...) are additionally
-ITEM-specific (a day can have several side dishes, see models.py:
+ITEM-specific (a day can have several side dishes, see models/calendar.py:
 PlanDaySide) - all but "add" therefore address one specific PlanDaySide
 row via <int:side_id>.
 """
@@ -120,7 +120,7 @@ def reroll_day(day_date):
         return {"error": _("No more recipes available in the database!")}, 400
 
     plan_day.main_recipe_id = chosen.id
-    # Freshly rolled dish hasn't been cooked yet (see models.py:
+    # Freshly rolled dish hasn't been cooked yet (see models/calendar.py:
     # PlanDay.cooked) - regardless of whether the previous state here was
     # already marked as cooked.
     plan_day.cooked = False
@@ -143,7 +143,7 @@ def set_main_day(day_date):
 
     Also sets excluded to False: a day that is currently having a main
     dish explicitly assigned to it can, by definition, no longer be
-    "excluded from main dish planning" (see models.py: PlanDay) - this
+    "excluded from main dish planning" (see models/calendar.py: PlanDay) - this
     way an excluded day can be brought back into the plan via the pencil
     button too, without a detour through the create page.
     """
@@ -197,7 +197,7 @@ def add_side(day_date):
     """AJAX endpoint behind the side-dish "add" buttons at the end of a
     day card's side-dish list: creates a NEW side dish for this day, in
     addition to any already present (a day can have any number of them,
-    see models.py: PlanDaySide).
+    see models/calendar.py: PlanDaySide).
 
     Expects a JSON body {"recipe_id": <id> or null}:
     - If recipe_id is set (the picker button in

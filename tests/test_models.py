@@ -1,4 +1,4 @@
-"""Tests for models.py: relationships, cascade deletes, and constraints
+"""Tests for the models package: relationships, cascade deletes, and constraints
 that aren't already indirectly covered by the service/route tests."""
 from datetime import date
 
@@ -73,7 +73,7 @@ def test_plan_day_can_have_multiple_sides(app, make_recipe, make_user):
 
 
 def test_plan_day_date_is_unique_per_plan(app, make_user):
-    """(plan_id, date) is a composite unique constraint (see models.py:
+    """(plan_id, date) is a composite unique constraint (see models/calendar.py:
     PlanDay.__table_args__) - two rows for the SAME plan+day are not
     allowed, but two different plans may each independently have their
     own row for the same calendar day (see

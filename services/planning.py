@@ -8,7 +8,7 @@ Three related areas of responsibility in this file:
    "week-start date" and its seven associated calendar days, and
    determine which recipes are already planned in the same calendar
    week - handled separately for main dishes (one value per day) and
-   side dishes (any number per day, see models.py: PlanDaySide), since
+   side dishes (any number per day, see models/calendar.py: PlanDaySide), since
    the two differ structurally.
 
 2. Category balance (assign_balanced_categories): decides, when
@@ -71,7 +71,7 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish, plan_id):
     is_side_dish distinguishes WHICH table is queried: main dishes live
     directly in PlanDay.main_recipe_id (one value per day), side dishes
     in the separate PlanDaySide table instead (any number per day, see
-    models.py) - the two pools are counted separately since they're never
+    models/calendar.py) - the two pools are counted separately since they're never
     mixed during selection anyway (see choose_recipe).
 
     reference_date is deliberately NOT date.today(), but the day currently
@@ -79,7 +79,7 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish, plan_id):
     and the count should always relate to the period IMMEDIATELY BEFORE
     the day in question, regardless of the actual current date.
 
-    plan_id restricts the count to ONE plan (see models.py:
+    plan_id restricts the count to ONE plan (see models/calendar.py:
     PlanDay.plan_id) - a plan's repetition weighting should only be based
     on ITS OWN history, not that of a completely different, shared plan.
 
@@ -177,7 +177,7 @@ def parse_iso_date(value):
 
 def week_neighbor_exclude_ids(day_date, plan_id):
     """Collects the main-dish recipe IDs of all OTHER days in the same
-    calendar week as day_date, WITHIN ONE plan (plan_id, see models.py:
+    calendar week as day_date, WITHIN ONE plan (plan_id, see models/calendar.py:
     PlanDay.plan_id) - for duplicate avoidance when (re-)rolling a main
     dish (see week_side_recipe_ids below for the side-dish counterpart,
     which works differently since a day there can have multiple entries
@@ -459,7 +459,7 @@ def jsonify_side(plan_day_side, plan_id):
     this ID to specifically re-roll, manually replace, remove, or move
     this exact side-dish slot to another day, regardless of whether the
     same recipe might still be a side dish on another day. Also cooked -
-    the ACTUAL CURRENT value of the PlanDaySide row (see models.py:
+    the ACTUAL CURRENT value of the PlanDaySide row (see models/calendar.py:
     PlanDaySide.cooked), not unconditionally False: reroll_one_side()/
     set_one_side() deliberately reset it before calling this (new dish =
     not yet cooked), while move_one_side() leaves it untouched (the same

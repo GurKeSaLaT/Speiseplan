@@ -286,7 +286,7 @@ def test_add_recipe_respects_explicit_plan_id_from_selector(app, client, make_us
 def test_add_recipe_sets_updated_at(client, app, make_category):
     """For the "recently edited" list on /manage (routes/manage.py) -
     Recipe.updated_at is set on creation via the column default (see
-    models.py), without add_recipe() having to maintain it itself."""
+    models/recipe.py), without add_recipe() having to maintain it itself."""
     from models import Recipe
 
     cat_id = make_category("Frisch")

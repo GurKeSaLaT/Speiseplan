@@ -3,7 +3,7 @@ deliberately kept simple (just a name) - the actual "intelligence" around
 categories (balance across the week, adjacency rule) lives in
 services/planning.py, not here.
 
-Each plan maintains its own categories (see models.py: Category.
+Each plan maintains its own categories (see models/recipe.py: Category.
 plan_id) - if a user has access to more than one plan (own + shared),
 the page shows a tab switcher (see services/auth.py:
 selected_plan_id/user_plan_memberships) and

@@ -36,7 +36,7 @@ def create():
 def delete(plan_id):
     """Deletes a plan irrevocably (see services/plans.py:
     delete_plan) - any member may do this, not just whoever originally
-    created it (see models.py: Plan docstring, owner_user_id doesn't grant
+    created it (see models/plan.py: Plan docstring, owner_user_id doesn't grant
     any special rights). If plan_id was the currently active plan, the
     session marker is removed, so that the next current_plan() call
     resolves freshly to a remaining plan (or None), instead of pointing to

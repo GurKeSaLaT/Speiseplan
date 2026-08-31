@@ -70,7 +70,7 @@
                             <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" data-plan-id="{{ membership.plan_id }}" data-plan-name="{{ membership.plan.name }}" onclick="openRenamePlanModal(this)" title="{{ _('Rename') }}">✏️</button>
                         </span>
                         <div class="d-flex align-items-center gap-2">
-                            {# Purely per-membership flag (see models.py:
+                            {# Purely per-membership flag (see models/plan.py:
                                PlanMembership.show_in_week_overview) -
                                only controls whether THIS plan additionally
                                shows up in the day tiles of the user's

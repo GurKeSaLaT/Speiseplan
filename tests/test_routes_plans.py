@@ -60,7 +60,7 @@ def test_delete_plan_requires_membership(app, client, make_user):
 
 def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
     """Any member may delete, not just the owner (see
-    models.py: Plan docstring - owner_user_id doesn't grant any special
+    models/plan.py: Plan docstring - owner_user_id doesn't grant any special
     rights)."""
     from models import Plan, PlanMembership, db
 

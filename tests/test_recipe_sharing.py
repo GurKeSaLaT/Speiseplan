@@ -1,5 +1,5 @@
 """Tests for the recipe-to-plan link (routes/recipes.py:
-link_recipe_to_plan/unlink_recipe_from_plan, models.py: RecipePlanLink) -
+link_recipe_to_plan/unlink_recipe_from_plan, models/recipe.py: RecipePlanLink) -
 a recipe belongs to ONE plan (Recipe.owner_plan_id), but can additionally
 be linked into further plans. A real link, not a copy: changes take
 effect everywhere the recipe is linked."""

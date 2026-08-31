@@ -1,7 +1,7 @@
-"""Which recipes are usable for a given plan (see models.py:
+"""Which recipes are usable for a given plan (see models/recipe.py:
 Recipe.owner_plan_id/RecipePlanLink) - a recipe is visible to a plan if it
 either owns it OR the recipe has additionally been embedded there via
-RecipePlanLink (a real link, not a copy - see the models.py docstring
+RecipePlanLink (a real link, not a copy - see the models/recipe.py docstring
 there).
 
 Deliberately its own, extra-lean module WITHOUT further dependencies (only
@@ -32,7 +32,7 @@ def visible_recipes_query(plan_id):
 
 def is_recipe_visible_to_plan(recipe, plan_id):
     """Shorthand for a single, already-loaded Recipe record - avoids its own
-    database query if recipe.plan_links (see models.py: Recipe.plan_links)
+    database query if recipe.plan_links (see models/recipe.py: Recipe.plan_links)
     has already been (eagerly) loaded."""
     if recipe.owner_plan_id == plan_id:
         return True

@@ -90,7 +90,7 @@ def current_plan():
 
 
 def user_plan_memberships(user):
-    """All plans user has access to (own + invited, see models.py:
+    """All plans user has access to (own + invited, see models/plan.py:
     PlanMembership) - starred plan first, then alphabetically by plan name.
     Shared by app.py: inject_current_user_and_plans() (sidebar navigation)
     and the tab switchers of the "settings" pages (routes/categories.py,
@@ -101,7 +101,7 @@ def user_plan_memberships(user):
 
 
 def user_has_plan_access(user, plan_id):
-    """Whether user is a member of plan_id (see models.py: PlanMembership) -
+    """Whether user is a member of plan_id (see models/plan.py: PlanMembership) -
     the plain ownership check for routes that need to check a user's access
     against an object based on its own plan_id (as opposed to a query
     parameter like selected_plan_id() below), e.g. before a category/recipe

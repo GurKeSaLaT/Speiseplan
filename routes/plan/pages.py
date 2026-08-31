@@ -53,7 +53,7 @@ def week_view(start_date):
     (if present - ordered contains None at the respective position if
     nothing has been planned for this day yet) and derives from that four
     parallel lists sorted by day index (0=Monday...6=Sunday): plan (main
-    dishes), side_plan (a LIST of side dishes per day, see models.py:
+    dishes), side_plan (a LIST of side dishes per day, see models/calendar.py:
     PlanDay.sides - a day can have any number of them), excluded_days
     (which day indices are marked "excluded") and servings_list (number
     of servings per day, default 2 for still-unplanned days).
@@ -108,7 +108,7 @@ def week_view(start_date):
     excluded_days = {i for i, pd in enumerate(ordered) if pd and pd.excluded}
     servings_list = [pd.servings if pd else 2 for pd in ordered]
     # Whether this day's main dish has already been marked as cooked
-    # (see models.py: PlanDay.cooked) - controls the "graying out" of the
+    # (see models/calendar.py: PlanDay.cooked) - controls the "graying out" of the
     # day card (static/plan.js: renderMainDisplay). Side dishes carry
     # their own cooked field directly in the jsonify_side() dict, so they
     # don't need their own parallel list here.
@@ -135,7 +135,7 @@ def week_view(start_date):
     # Main dishes of the user's OTHER own plans for the same 7 calendar
     # days - purely informational, not interactive (see static/plan.js:
     # renderOtherPlanMeals). Only plans whose membership has
-    # show_in_week_overview set (models.py: PlanMembership - individually
+    # show_in_week_overview set (models/plan.py: PlanMembership - individually
     # toggleable per user, see routes/sharing.py: toggle_overview()), and
     # never the active plan itself (that's already shown in the tile
     # above). Side dishes are deliberately left out (only ONE dish per

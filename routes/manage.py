@@ -42,7 +42,7 @@ def manage():
     """Shows the management overview page (see templates/manage.html): a
     fixed sidebar with grouped navigation (recipes/data) plus a display
     toggle, and in the main area a small row of key figures as well as the
-    recently edited recipes (Recipe.updated_at, see models.py - updated on
+    recently edited recipes (Recipe.updated_at, see models/recipe.py - updated on
     every save in routes/recipes.py: edit_recipe()).
 
     "Ingredients merged" counts the actual alias TARGET names

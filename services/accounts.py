@@ -18,14 +18,14 @@ from services.auth import EMAIL_PATTERN, hash_password, verify_password
 from services.plans import delete_plan
 
 # The languages this app ships a UI for (see app.py: get_locale()) - kept
-# here rather than in models.py since it's a validation concern of the
+# here rather than in models/user.py since it's a validation concern of the
 # profile form, not part of the User schema itself.
 SUPPORTED_LANGUAGES = ('en', 'de')
 
 
 def update_profile(user, name, email, language):
     """Changes name (a free-form display name, no uniqueness required, see
-    models.py: User docstring), email (the LOGIN field, so it must still be
+    models/user.py: User docstring), email (the LOGIN field, so it must still be
     unique and roughly valid) and the UI language (User.language, see
     app.py: get_locale()). Returns (True, None) on success, otherwise
     (False, error text) - only commits on success."""
@@ -75,7 +75,7 @@ def delete_account(user):
       own them).
     - If there are OTHER members, the plan remains for them - only the
       user's own membership is removed. If the user was its (purely
-      informational, see models.py: Plan docstring) owner, that title
+      informational, see models/plan.py: Plan docstring) owner, that title
       passes to a remaining member, so the plan isn't left without one at
       all."""
     for membership in list(PlanMembership.query.filter_by(user_id=user.id).all()):
