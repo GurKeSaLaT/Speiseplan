@@ -1,17 +1,17 @@
-"""Tests für routes/settings.py: die Nährwert-Verwaltungsseite
-(/manage/ingredient-nutrition, /update-ingredient-nutrition) sowie den
-AJAX-Endpunkt für den Inline-Hinweis beim Zutat-Eintragen
-(/api/ingredient-nutrition/set). Referenzbasis ist immer 100g/100ml/1Stk
-(services/nutrition.py: REFERENCE_BASES) - es gibt daher bewusst KEIN
-reference_amount-Formularfeld/-Property mehr, nur noch reference_unit.
-Ebenso KEIN calories-Feld: Kalorien werden nirgends eingegeben, sondern
-immer aus protein/carbs/fat errechnet (compute_calories())."""
+"""Tests for routes/settings.py: the nutrition management page
+(/manage/ingredient-nutrition, /update-ingredient-nutrition) as well as the
+AJAX endpoint for the inline hint when entering an ingredient
+(/api/ingredient-nutrition/set). The reference base is always 100g/100ml/1pc
+(services/nutrition.py: REFERENCE_BASES) - so there is deliberately NO
+reference_amount form field/property anymore, only reference_unit.
+Likewise NO calories field: calories are never entered directly, but always
+computed from protein/carbs/fat (compute_calories())."""
 
 
 def test_ingredient_nutrition_view_empty_state(client):
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
-    assert "Noch keine gleichgesetzten Zutaten vorhanden.".encode("utf-8") in resp.data
+    assert "No merged ingredients yet.".encode("utf-8") in resp.data
 
 
 def test_ingredient_nutrition_view_lists_only_alias_targets(client, app):
@@ -24,8 +24,8 @@ def test_ingredient_nutrition_view_lists_only_alias_targets(client, app):
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
     assert b"Nudeln" in resp.data
-    # Unaliasierte Einzelzutaten (die Alias-Quellnamen selbst) tauchen
-    # hier bewusst NICHT als eigene Zeile auf.
+    # Non-aliased individual ingredients (the alias source names themselves)
+    # deliberately do NOT show up here as their own row.
     assert b'value="Spaghetti"' not in resp.data
     assert b"fuzzy_search.js" in resp.data
     assert b"wireFuzzyFilter" in resp.data
@@ -41,10 +41,10 @@ def test_ingredient_nutrition_view_prefills_existing_entry(client, app):
 
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
-    # 0*4 + 0*4 + 100*9 = 900 - errechnet, nicht gespeichert.
+    # 0*4 + 0*4 + 100*9 = 900 - computed, not stored.
     assert b'value="900"' in resp.data
-    # Referenzbasis ist ein <select>, nicht mehr ein Zahlenfeld - die
-    # gewählte Option muss "selected" tragen.
+    # The reference base is a <select>, no longer a number field - the
+    # chosen option must carry "selected".
     assert b'value="ml" selected' in resp.data
 
 
@@ -56,8 +56,8 @@ def test_ingredient_nutrition_view_infers_reference_unit_for_new_entry(client, a
 
     resp = client.get("/manage/ingredient-nutrition")
     assert resp.status_code == 200
-    # Kein bestehender Eintrag -> geratene Einheit (hier "g" mangels
-    # tatsächlich verwendeter Zutatenzeilen) als vorausgewählte Option.
+    # No existing entry -> guessed unit (here "g" for lack of actually
+    # used ingredient rows) as the preselected option.
     assert b'value="g" selected' in resp.data
 
 
@@ -131,7 +131,7 @@ def test_update_ingredient_nutrition_invalid_values_default_to_zero(client, app)
         assert entry.reference_unit == "g"
 
 
-# --- AJAX-Endpunkt für die Rezept-Formulare (api_set_ingredient_nutrition) ---
+# --- AJAX endpoint for the recipe forms (api_set_ingredient_nutrition) ---
 
 def test_api_set_ingredient_nutrition_creates_entry(client, app):
     from services.nutrition import get_nutrition_entry
@@ -180,9 +180,9 @@ def test_api_set_ingredient_nutrition_defaults_missing_fields(client):
 
 
 def test_api_set_ingredient_nutrition_rejects_arbitrary_reference_unit(client, app):
-    """Eine manipulierte Anfrage mit reference_unit="Becher" o.ä. darf NICHT
-    unverändert übernommen werden - set_nutrition() erzwingt g/ml/Stk
-    (siehe services/nutrition.py: REFERENCE_BASES)."""
+    """A manipulated request with reference_unit="Becher" or similar must NOT
+    be accepted unchanged - set_nutrition() enforces g/ml/Stk
+    (see services/nutrition.py: REFERENCE_BASES)."""
     resp = client.post("/api/ingredient-nutrition/set", json={
         "name": "Joghurt", "reference_unit": "Becher",
     })

@@ -1,4 +1,4 @@
-"""Tests für routes/settings.py: die Zutaten-Gleichsetzung-Seite
+"""Tests for routes/settings.py: the ingredient alias page
 (/manage/ingredient-aliases, /update-ingredient-aliases)."""
 
 
@@ -14,7 +14,7 @@ def test_ingredient_aliases_view_lists_known_names(client, make_recipe):
 def test_ingredient_aliases_view_empty_state(client):
     resp = client.get("/manage/ingredient-aliases")
     assert resp.status_code == 200
-    assert "Noch keine Zutaten vorhanden.".encode("utf-8") in resp.data
+    assert "No ingredients yet.".encode("utf-8") in resp.data
 
 
 def test_update_ingredient_aliases_creates_grouping(client, app, make_recipe):
@@ -58,7 +58,7 @@ def test_ingredient_aliases_view_prefills_existing_alias(client, app, make_recip
     assert b'value="Nudeln"' in resp.data
 
 
-# --- AJAX-Endpunkt für die Rezept-Formulare (api_set_ingredient_alias) ---
+# --- AJAX endpoint for the recipe forms (api_set_ingredient_alias) ---
 
 def test_api_set_ingredient_alias_creates_mapping(client, app):
     from services.ingredient_aliases import normalize_ingredient_name
@@ -66,8 +66,8 @@ def test_api_set_ingredient_alias_creates_mapping(client, app):
     resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Olivenöl", "canonical_name": "Öl"})
     assert resp.status_code == 200
     data = resp.get_json()
-    # category ist None, da "Öl" noch bei keiner bestehenden Zutat-Zeile
-    # kategorisiert ist (siehe eigene Tests für infer_category unten).
+    # category is None because "Öl" isn't yet categorized on any existing
+    # ingredient row (see the dedicated infer_category tests below).
     assert data == {"ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl", "category": None}
 
     with app.app_context():
@@ -86,13 +86,12 @@ def test_api_set_ingredient_alias_normalizes_input(client, app):
 
 
 def test_api_set_ingredient_alias_returns_inferred_category(client, app, make_recipe):
-    """Existiert bereits eine kategorisierte Zutat-Zeile für die kanonische
-    Zutat (z.B. "Nudeln" schon als "Teigwaren" einsortiert), soll das
-    Setzen eines weiteren Alias auf denselben Namen diese Kategorie direkt
-    mitliefern - static/ingredient_alias_hint.js übernimmt sie automatisch
-    ins Kategorie-Feld der aktuellen Zutatenzeile (siehe
-    fillCategoryFromAlias), damit alle gleichgesetzten Zutaten konsistent
-    einsortiert sind."""
+    """If a categorized ingredient row already exists for the canonical
+    ingredient (e.g. "Nudeln" is already filed under "Teigwaren"), setting
+    another alias to the same name should return that category directly -
+    static/ingredient_alias_hint.js automatically applies it to the
+    category field of the current ingredient row (see fillCategoryFromAlias),
+    so that all aliased ingredients are filed consistently."""
     make_recipe("Spaghetti-Gericht", ingredients=[
         {"name": "Nudeln", "amount": 500, "unit": "g", "category": "Teigwaren"},
     ])

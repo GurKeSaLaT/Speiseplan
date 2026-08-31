@@ -1,28 +1,26 @@
 /**
- * plan-shopping.js - Wochen-Nährwertübersicht und Einkaufsliste auf der
- * Plan-Seite (templates/plan.html): fasst die Nährwerte/Zutaten aller
- * geplanten Haupt- und Zusatzgerichte einer Woche zusammen, gruppiert die
- * Einkaufsliste nach fester Supermarkt-Kategorie-Reihenfolge und verwaltet
- * zusätzlich manuell hinzugefügte Einkaufslisten-Artikel, die zu keinem
- * Rezept gehören.
+ * plan-shopping.js - weekly nutrition overview and shopping list on the
+ * plan page (templates/plan.html): aggregates the nutrition/ingredients
+ * of all planned main and side dishes for a week, groups the shopping
+ * list by a fixed supermarket category order, and additionally manages
+ * manually added shopping list items that don't belong to any recipe.
  *
- * Nutzt gemeinsame Infrastruktur aus static/plan.js: die state-Arrays
+ * Uses shared infrastructure from static/plan.js: the state arrays
  * (weeklyPlanRecipes/weeklySideRecipes/weeklyExtraItems/dayServings/
- * dayDates) und postWithCsrf(). rebuildShoppingList() wird von praktisch
- * JEDER planändernden Aktion auf der Seite aufgerufen (siehe plan.js,
- * plan-sides.js) - sie lebt hier, weil sie inhaltlich zur Einkaufsliste
- * gehört, nicht weil sie nur lokal gebraucht würde.
+ * dayDates) and postWithCsrf(). rebuildShoppingList() is called by
+ * practically EVERY plan-changing action on the page (see plan.js,
+ * plan-sides.js) - it lives here because it belongs to the shopping list
+ * in terms of content, not because it's only needed locally.
  */
 
 /**
- * Summiert die Nährwerte aller Tage (Haupt- + Zusatzgericht, sofern
- * vorhanden) zu einer Wochenübersicht und einem Tagesdurchschnitt (nur über
- * tatsächlich geplante Tage gemittelt, nicht über alle 7). Die Werte
- * bleiben dabei bewusst UNskaliert bezüglich der Personenzahl: Nährwerte
- * in diesem Projekt sind immer "pro Portion/Person" gemeint, unabhängig
- * davon wie viele Personen an dem Tag mitessen - die Personenzahl
- * beeinflusst ausschließlich die Zutatenmengen der Einkaufsliste (siehe
- * rebuildShoppingList).
+ * Sums up the nutrition values of all days (main + side dish, where
+ * present) into a weekly summary and a daily average (averaged only over
+ * days actually planned, not over all 7). The values deliberately remain
+ * UNscaled with respect to the number of servings: nutrition values in
+ * this project are always meant "per portion/person", regardless of how
+ * many people are eating that day - the number of servings only affects
+ * the ingredient amounts of the shopping list (see rebuildShoppingList).
  */
 function rebuildWeeklyNutritionSummary() {
     const container = document.getElementById('weeklyNutritionSummary');
@@ -46,28 +44,28 @@ function rebuildWeeklyNutritionSummary() {
     }
 
     if (plannedDays === 0) {
-        container.innerHTML = '<span class="text-muted small">Noch keine Gerichte im Plan.</span>';
+        container.innerHTML = '<span class="text-muted small">No dishes in the plan yet.</span>';
         return;
     }
 
     container.innerHTML = `
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-1">
-            Σ Woche: ${Math.round(totals.calories)} kcal | E: ${totals.protein.toFixed(1)}g | K: ${totals.carbs.toFixed(1)}g | F: ${totals.fat.toFixed(1)}g
+            Σ week: ${Math.round(totals.calories)} kcal | P: ${totals.protein.toFixed(1)}g | C: ${totals.carbs.toFixed(1)}g | F: ${totals.fat.toFixed(1)}g
         </div>
         <div class="text-muted small font-monospace bg-light p-2 rounded">
-            Ø pro Tag (${plannedDays} geplant): ${Math.round(totals.calories / plannedDays)} kcal | E: ${(totals.protein / plannedDays).toFixed(1)}g | K: ${(totals.carbs / plannedDays).toFixed(1)}g | F: ${(totals.fat / plannedDays).toFixed(1)}g
+            Ø per day (${plannedDays} planned): ${Math.round(totals.calories / plannedDays)} kcal | P: ${(totals.protein / plannedDays).toFixed(1)}g | C: ${(totals.carbs / plannedDays).toFixed(1)}g | F: ${(totals.fat / plannedDays).toFixed(1)}g
         </div>
     `;
 }
 
 /**
- * Liefert die Sortierposition einer Einkaufslisten-Kategorie gemäß der
- * festen Reihenfolge in window.SHOPPING_CATEGORIES (siehe base.html/
- * services/shopping.py). Unbekannte oder fehlende Kategorien (null,
- * undefined, oder ein Wert, der nicht in der Liste steht - z.B. weil eine
- * Zutat aus der Zeit vor Einführung dieses Felds stammt) bekommen die
- * höchste Positionsnummer und landen dadurch immer GANZ AM ENDE der
- * Einkaufsliste, in der "Sonstiges"-Sammelgruppe.
+ * Returns the sort position of a shopping list category according to the
+ * fixed order in window.SHOPPING_CATEGORIES (see base.html/
+ * services/shopping.py). Unknown or missing categories (null,
+ * undefined, or a value that isn't in the list - e.g. because an
+ * ingredient dates from before this field was introduced) get the
+ * highest position number and therefore always end up at the VERY END
+ * of the shopping list, in the "Other" catch-all group.
  */
 function categorySortIndex(category) {
     const categories = window.SHOPPING_CATEGORIES || [];
@@ -76,33 +74,31 @@ function categorySortIndex(category) {
 }
 
 /**
- * Rechnet die komplette Einkaufsliste der Woche aus dem aktuellen
- * JavaScript-Speicher neu zusammen und rendert sie, gruppiert nach fester
- * Einkaufslisten-Kategorie-Reihenfolge (siehe categorySortIndex) und
- * innerhalb einer Gruppe alphabetisch. Wird nach JEDER Änderung am Plan
- * aufgerufen (würfeln, tauschen, Personenzahl, Beilage entfernen, Artikel
- * hinzufügen/entfernen), da praktisch jede dieser Änderungen die
- * benötigten Zutatenmengen beeinflusst. Ruft dabei auch
- * rebuildWeeklyNutritionSummary() mit auf, da beide Übersichten stets
- * gemeinsam aktuell gehalten werden.
+ * Recomputes the entire shopping list for the week from the current
+ * JavaScript state and renders it, grouped by the fixed shopping list
+ * category order (see categorySortIndex) and alphabetically within a
+ * group. Called after EVERY change to the plan (rerolling, swapping,
+ * number of servings, removing a side dish, adding/removing an item),
+ * since practically every one of these changes affects the required
+ * ingredient amounts. Also calls rebuildWeeklyNutritionSummary() along
+ * the way, since both overviews are always kept up to date together.
  *
- * Zwei Quellen fließen in die Liste ein: aus Rezept-Zutaten abgeleitete
- * Posten (nach Name+Einheit über die ganze Woche konsolidiert und mit der
- * jeweiligen Tages-Personenzahl skaliert, wie schon zuvor) sowie manuell
- * hinzugefügte Artikel aus weeklyExtraItems (unskaliert, jeder für sich
- * einzeln mit eigenem Lösch-Button, da sie zu keinem Rezept/Tag gehören).
+ * Two sources feed into the list: items derived from recipe ingredients
+ * (consolidated by name+unit across the whole week and scaled by the
+ * respective day's number of servings, as before) as well as manually
+ * added items from weeklyExtraItems (unscaled, each shown individually
+ * with its own delete button, since they don't belong to any
+ * recipe/day).
  *
- * Aus Rezepten stammende Posten, deren Kategorie in window.PANTRY_
- * CATEGORIES steht (Gewürze/Verbrauchsartikel, siehe services/shopping.py),
- * werden HIER herausgefiltert und stattdessen von renderPantryList()
- * separat dargestellt - die hat man in aller Regel schon zuhause, sie
- * sollen die eigentliche Einkaufsliste nicht jede Woche aufs Neue füllen.
- * Ein manuell hinzugefügter Artikel (isExtra) ist davon IMMER ausgenommen,
- * selbst mit einer Vorrats-Kategorie: das manuelle Hinzufügen (auch per
- * "→ Einkaufsliste"-Button von der Vorratsliste aus, siehe
- * pushPantryItemToShoppingList) ist ja bereits die explizite "das muss ich
- * wirklich kaufen"-Entscheidung, die soll nicht nochmal herausgefiltert
- * werden.
+ * Items originating from recipes whose category is in window.PANTRY_
+ * CATEGORIES (spices/consumables, see services/shopping.py) are FILTERED
+ * OUT here and instead displayed separately by renderPantryList() - as a
+ * rule you already have these at home, they shouldn't fill up the actual
+ * shopping list anew every week. A manually added item (isExtra) is
+ * ALWAYS exempt from this, even with a pantry category: manually adding
+ * it (including via the "→ Shopping list" button from the pantry list,
+ * see pushPantryItemToShoppingList) is already the explicit "I really do
+ * need to buy this" decision, which shouldn't be filtered out again.
  */
 function rebuildShoppingList() {
     rebuildWeeklyNutritionSummary();
@@ -114,27 +110,28 @@ function rebuildShoppingList() {
     container.innerHTML = '';
     let consolidated = {};
 
-    // Zutatenmengen werden pro Tag auf die dort eingestellte Personenzahl hochgerechnet
-    // (Verhältnis zur Portionsangabe des jeweiligen Rezepts) - Nährwerte bleiben davon
-    // unberührt, die sind immer pro Portion/Person.
+    // Ingredient amounts are scaled up per day to the number of servings
+    // set there (relative to the respective recipe's serving count) -
+    // nutrition values are unaffected by this, they are always per
+    // portion/person.
     for (let i = 0; i < 7; i++) {
         [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach(recipe => {
             if (recipe && recipe.ingredients) {
                 const factor = recipe.servings ? dayServings[i] / recipe.servings : 1;
                 recipe.ingredients.forEach(ing => {
-                    // Zusammenfassungs-Schlüssel aus Name+Einheit: dieselbe
-                    // Zutat in unterschiedlicher Einheit (z.B. "Mehl" in g
-                    // an einem Tag, in EL an einem anderen) wird bewusst
-                    // NICHT zusammengerechnet, da die Mengen sonst nicht
-                    // vergleichbar wären.
+                    // Consolidation key made of name+unit: the same
+                    // ingredient in a different unit (e.g. "flour" in g
+                    // on one day, in tbsp on another) is deliberately NOT
+                    // added together, since the amounts wouldn't be
+                    // comparable otherwise.
                     const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
                     const scaledAmount = ing.amount * factor;
                     if (consolidated[key]) {
                         consolidated[key].amount += scaledAmount;
-                        // Falls dieselbe Zutat in mehreren Rezepten leicht
-                        // unterschiedlich kategorisiert wurde, gewinnt die
-                        // zuletzt gesehene nicht-leere Kategorie - kein
-                        // harter Fehlerfall, kommt in der Praxis kaum vor.
+                        // If the same ingredient was categorized slightly
+                        // differently across multiple recipes, the
+                        // last-seen non-empty category wins - not a hard
+                        // error case, barely occurs in practice.
                         if (ing.category) consolidated[key].category = ing.category;
                     } else {
                         consolidated[key] = { name: ing.name, amount: scaledAmount, unit: ing.unit, category: ing.category || null };
@@ -144,13 +141,13 @@ function rebuildShoppingList() {
         });
     }
 
-    // Konsolidierte Rezept-Zutaten und manuelle Artikel zu einer
-    // gemeinsamen Liste zusammenführen, damit beide zusammen sortiert und
-    // gruppiert dargestellt werden - isExtra unterscheidet später, ob ein
-    // Eintrag einen Lösch-Button bekommt (nur manuelle Artikel sind
-    // einzeln entfernbar, Rezept-Zutaten ergeben sich automatisch aus dem
-    // Plan) UND ob er trotz Vorrats-Kategorie auf der Einkaufsliste bleibt
-    // (siehe Funktionskommentar oben).
+    // Merge consolidated recipe ingredients and manual items into one
+    // shared list, so both are sorted and grouped together for display -
+    // isExtra later determines whether an entry gets a delete button
+    // (only manual items can be individually removed, recipe ingredients
+    // follow automatically from the plan) AND whether it stays on the
+    // shopping list despite having a pantry category (see the function
+    // comment above).
     const allItems = Object.values(consolidated).map(item => ({ ...item, isExtra: false }));
     weeklyExtraItems.forEach(extra => {
         allItems.push({
@@ -166,7 +163,7 @@ function rebuildShoppingList() {
     if (counterBadge) counterBadge.textContent = items.length;
 
     if (items.length === 0) {
-        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">Keine Zutaten für diese Woche benötigt.</li>';
+        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">No ingredients needed for this week.</li>';
     } else {
         renderGroupedList(container, items, buildShoppingRow);
     }
@@ -175,20 +172,19 @@ function rebuildShoppingList() {
 }
 
 /**
- * Rundet einen Mengenwert auf 2 Nachkommastellen (vermeidet Fließkomma-
- * Artefakte durch die Personen-Skalierung, z.B. 133.33333333333334 ->
- * 133.33) und liefert null unverändert durch - ein manueller Artikel darf
- * ganz ohne Mengenangabe existieren, siehe addExtraShoppingItem.
+ * Rounds an amount value to 2 decimal places (avoids floating-point
+ * artifacts from the servings scaling, e.g. 133.33333333333334 ->
+ * 133.33) and passes null through unchanged - a manual item is allowed
+ * to exist with no amount at all, see addExtraShoppingItem.
  */
 function roundedAmount(item) {
     return (item.amount === null || item.amount === undefined) ? null : Math.round(item.amount * 100) / 100;
 }
 
 /**
- * Baut die grün hinterlegte Mengen-Pille (z.B. "250 g") - gemeinsam von
- * der Einkaufsliste und der Vorratsliste genutzt. Liefert null, wenn es
- * nichts anzuzeigen gibt (roundedAmount() ist null), statt eines leeren
- * Elements.
+ * Builds the green amount pill (e.g. "250 g") - shared by the shopping
+ * list and the pantry list. Returns null when there's nothing to display
+ * (roundedAmount() is null), instead of an empty element.
  */
 function buildAmountBadge(item) {
     const displayAmount = roundedAmount(item);
@@ -202,14 +198,13 @@ function buildAmountBadge(item) {
 }
 
 /**
- * Gemeinsame Grundlage für Einkaufs- und Vorratsliste: sortiert erst nach
- * fester Einkaufs-Kategorie-Reihenfolge (siehe categorySortIndex), dann
- * alphabetisch nach Name, fügt Gruppen-Überschriften ein, sobald sich die
- * Kategorie zum vorherigen Posten ändert, und delegiert den Aufbau JEDER
- * einzelnen Zeile an buildRowFn(item) (siehe buildShoppingRow/
- * buildPantryRow) - die beiden Listen unterscheiden sich nur darin, was
- * eine Zeile an Steuerelementen bekommt (Checkbox+Lösch-Button vs. reiner
- * "→ Einkaufsliste"-Button), nicht in Sortierung/Gruppierung.
+ * Shared basis for the shopping and pantry lists: sorts first by fixed
+ * shopping category order (see categorySortIndex), then alphabetically
+ * by name, inserts group headers whenever the category changes from the
+ * previous item, and delegates building EACH individual row to
+ * buildRowFn(item) (see buildShoppingRow/buildPantryRow) - the two lists
+ * only differ in what controls a row gets (checkbox+delete button vs. a
+ * plain "→ shopping list" button), not in sorting/grouping.
  */
 function renderGroupedList(container, items, buildRowFn) {
     items.sort((a, b) => {
@@ -231,10 +226,9 @@ function renderGroupedList(container, items, buildRowFn) {
     });
 }
 
-/** Eine Zeile der eigentlichen Einkaufsliste: Checkbox zum Abhaken beim
- * Einkaufen (rein visuell, nicht gespeichert) + Name, rechts die
- * Mengen-Pille und - nur für manuell hinzugefügte Artikel - ein
- * Lösch-Button. */
+/** One row of the actual shopping list: a checkbox to tick off while
+ * shopping (purely visual, not saved) + name, on the right the amount
+ * pill and - only for manually added items - a delete button. */
 function buildShoppingRow(item) {
     const li = document.createElement('li');
     li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
@@ -250,10 +244,10 @@ function buildShoppingRow(item) {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'text-dark fs-5';
-    // textContent statt innerHTML: item.name kann Nutzereingabe sein
-    // (sowohl ein Zutatenname aus einem Rezept als auch der frei
-    // eingetippte Name eines manuellen Artikels), textContent umgeht
-    // dadurch jedes HTML/Script-Injection-Risiko von vornherein.
+    // textContent instead of innerHTML: item.name can be user input
+    // (both an ingredient name from a recipe and the freely typed name
+    // of a manual item), textContent thereby avoids any HTML/script
+    // injection risk from the outset.
     nameSpan.textContent = item.name;
 
     label.appendChild(checkbox);
@@ -269,7 +263,7 @@ function buildShoppingRow(item) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn btn-sm text-danger border-0 p-1 ms-1';
-        deleteBtn.title = 'Artikel entfernen';
+        deleteBtn.title = 'Remove item';
         deleteBtn.textContent = '❌';
         deleteBtn.onclick = () => removeExtraShoppingItem(item.id);
         right.appendChild(deleteBtn);
@@ -278,10 +272,10 @@ function buildShoppingRow(item) {
     li.appendChild(label);
     li.appendChild(right);
 
-    // Checkbox dient rein der Anzeige beim Einkaufen (durchgestrichen +
-    // ausgegraut, sobald abgehakt) - der Zustand wird bewusst NICHT
-    // gespeichert (weder serverseitig noch in localStorage), da die
-    // Liste ohnehin bei jeder Planänderung komplett neu aufgebaut wird.
+    // The checkbox is purely for display while shopping (struck through +
+    // greyed out once ticked) - the state is deliberately NOT saved
+    // (neither server-side nor in localStorage), since the list is
+    // rebuilt from scratch on every plan change anyway.
     checkbox.addEventListener('change', function() {
         if (this.checked) {
             nameSpan.style.textDecoration = 'line-through';
@@ -296,11 +290,11 @@ function buildShoppingRow(item) {
 }
 
 /**
- * Rendert die "Vorrat prüfen"-Liste (Gewürze/Verbrauchsartikel aus den
- * geplanten Rezepten dieser Woche, siehe rebuildShoppingList) - KEINE
- * Checkbox (es gibt hier nichts abzuhaken, nur ggf. nachzukaufen),
- * stattdessen ein Button, der genau diesen Posten per
- * pushPantryItemToShoppingList() auf die echte Einkaufsliste holt.
+ * Renders the "check your pantry" list (spices/consumables from this
+ * week's planned recipes, see rebuildShoppingList) - NO checkbox
+ * (there's nothing to tick off here, only possibly to re-buy), instead a
+ * button that pulls exactly this item onto the actual shopping list via
+ * pushPantryItemToShoppingList().
  */
 function renderPantryList(pantryItems) {
     const container = document.getElementById('pantryListContainer');
@@ -311,7 +305,7 @@ function renderPantryList(pantryItems) {
     if (counterBadge) counterBadge.textContent = pantryItems.length;
 
     if (pantryItems.length === 0) {
-        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">Keine Gewürze/Verbrauchsartikel diese Woche geplant.</li>';
+        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">No spices/consumables planned this week.</li>';
         return;
     }
 
@@ -335,7 +329,7 @@ function buildPantryRow(item) {
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'btn btn-sm btn-outline-secondary ms-1';
-    addBtn.title = 'Auf die Einkaufsliste';
+    addBtn.title = 'Add to shopping list';
     addBtn.textContent = '→ 🛒';
     addBtn.onclick = () => pushPantryItemToShoppingList(item);
     right.appendChild(addBtn);
@@ -346,15 +340,15 @@ function buildPantryRow(item) {
 }
 
 /**
- * Holt einen einzelnen Posten von der Vorratsliste auf die echte
- * Einkaufsliste - technisch identisch zu addExtraShoppingItem() (derselbe
- * Server-Endpunkt, legt einen ExtraShoppingItem-Eintrag an), nur dass die
- * Werte hier bereits aus dem angeklickten Vorrats-Posten kommen statt aus
- * dem Mini-Formular. Ein amount von 0 (z.B. Salz "nach Geschmack", ohne
- * echte Mengenangabe) wird dabei bewusst zu null, damit auf der
- * Einkaufsliste nicht sinnlos "0 g" steht - der neue Eintrag ist ein
- * isExtra-Artikel und bleibt dadurch auch mit Vorrats-Kategorie auf der
- * Einkaufsliste stehen (siehe rebuildShoppingList).
+ * Pulls a single item from the pantry list onto the actual shopping list
+ * - technically identical to addExtraShoppingItem() (same server
+ * endpoint, creates an ExtraShoppingItem entry), only that the values
+ * here already come from the clicked pantry item instead of the mini
+ * form. An amount of 0 (e.g. salt "to taste", with no real amount) is
+ * deliberately turned into null here, so the shopping list doesn't
+ * pointlessly show "0 g" - the new entry is an isExtra item and
+ * therefore stays on the shopping list even with a pantry category (see
+ * rebuildShoppingList).
  */
 function pushPantryItemToShoppingList(item) {
     postWithCsrf(`/plan/${dayDates[0]}/shopping-item/add`, {
@@ -367,7 +361,7 @@ function pushPantryItemToShoppingList(item) {
         }),
     })
     .then(response => {
-        if (!response.ok) throw new Error('Hinzufügen fehlgeschlagen.');
+        if (!response.ok) throw new Error('Adding failed.');
         return response.json();
     })
     .then(newItem => {
@@ -375,17 +369,17 @@ function pushPantryItemToShoppingList(item) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }
 
 /**
- * Liest das "Artikel hinzufügen"-Mini-Formular aus (siehe plan.html), legt
- * den Artikel serverseitig für die aktuell angezeigte Woche an (dayDates[0]
- * ist der Montag dieser Woche) und hängt ihn bei Erfolg an weeklyExtraItems
- * an, bevor die Einkaufsliste neu aufgebaut wird. name ist die einzige
- * Pflichtangabe - ist das Feld leer, passiert nichts (kein Fehler nötig,
- * der Button/Enter-Druck bleibt einfach wirkungslos).
+ * Reads out the "add item" mini form (see plan.html), creates the item
+ * server-side for the currently displayed week (dayDates[0] is this
+ * week's Monday) and, on success, appends it to weeklyExtraItems before
+ * the shopping list is rebuilt. name is the only required field - if the
+ * field is empty, nothing happens (no error needed, the button/Enter
+ * press simply has no effect).
  */
 function addExtraShoppingItem() {
     const nameInput = document.getElementById('extraItemName');
@@ -407,15 +401,15 @@ function addExtraShoppingItem() {
         }),
     })
     .then(response => {
-        if (!response.ok) throw new Error('Hinzufügen fehlgeschlagen.');
+        if (!response.ok) throw new Error('Adding failed.');
         return response.json();
     })
     .then(newItem => {
         weeklyExtraItems.push(newItem);
         rebuildShoppingList();
-        // Formular für den nächsten Artikel zurücksetzen und den Fokus
-        // gleich wieder ins Namensfeld legen, damit mehrere Artikel
-        // hintereinander schnell per Enter eingetragen werden können.
+        // Reset the form for the next item and immediately return focus
+        // to the name field, so several items can be entered quickly in
+        // a row via Enter.
         nameInput.value = '';
         amountInput.value = '';
         unitInput.value = '';
@@ -423,22 +417,22 @@ function addExtraShoppingItem() {
         nameInput.focus();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }
 
 /**
- * Entfernt einen manuell hinzugefügten Artikel wieder aus der Einkaufsliste
- * (serverseitig endgültig gelöscht, nicht nur ausgeblendet).
+ * Removes a manually added item from the shopping list again (deleted
+ * permanently server-side, not just hidden).
  */
 function removeExtraShoppingItem(itemId) {
     postWithCsrf(`/shopping-item/${itemId}/delete`)
     .then(response => {
-        if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
+        if (!response.ok) throw new Error('Removing failed.');
         weeklyExtraItems = weeklyExtraItems.filter(item => item.id !== itemId);
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }

@@ -1,5 +1,5 @@
-"""Tests für services/settings.py: Speicherung der Anzeige-Einheiten-
-Einstellung (AppSettings) - eine Zeile PRO Plan."""
+"""Tests for services/settings.py: storage of the display unit setting
+(AppSettings) - one row PER plan."""
 
 
 def test_get_settings_creates_row_with_defaults(app, test_plan_id):
@@ -50,7 +50,7 @@ def test_update_display_units_rejects_invalid_mass_unit(app, test_plan_id):
     with app.app_context():
         ok = update_display_units(test_plan_id, "pfund", "ml")
         assert ok is False
-        # Unveränderte Standardeinstellung, da der Wert abgelehnt wurde.
+        # Default setting unchanged, since the value was rejected.
         assert get_display_units(test_plan_id) == {"mass": "g", "volume": "ml"}
 
 

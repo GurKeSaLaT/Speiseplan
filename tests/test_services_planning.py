@@ -1,5 +1,5 @@
-"""Tests für services/planning.py: Datums-Helfer, Kategorie-Balance und
-Rezept-Auswahl (das Herzstück der automatischen Wochenplanung)."""
+"""Tests for services/planning.py: date helpers, category balancing and
+recipe selection (the core of automatic weekly planning)."""
 from datetime import date, timedelta
 
 import pytest
@@ -18,10 +18,10 @@ from services.planning import (
 )
 
 
-# --- Datums-Helfer ---
+# --- Date helpers ---
 
 def test_monday_of_returns_same_date_for_a_monday():
-    monday = date(2026, 6, 15)  # ist ein Montag
+    monday = date(2026, 6, 15)  # is a Monday
     assert monday_of(monday) == monday
 
 
@@ -47,7 +47,7 @@ def test_parse_iso_date_invalid_returns_none(value):
     assert parse_iso_date(value) is None
 
 
-# --- weighted_recipe_choice: Gewichtungs-Berechnung ---
+# --- weighted_recipe_choice: weight computation ---
 
 class FakeRecipe:
     def __init__(self, id, is_favorite=False):
@@ -112,11 +112,11 @@ class FakeFinalPlanEntry:
 def test_assign_balanced_categories_avoids_neighbor_category():
     cats = [FakeCategory(1), FakeCategory(2)]
     final_plan = [None] * 7
-    final_plan[0] = FakeFinalPlanEntry(category_id=1)  # Montag ist fest Kategorie 1
+    final_plan[0] = FakeFinalPlanEntry(category_id=1)  # Monday is fixed as category 1
 
-    # Dienstag (Index 1) neu zu befüllen - direkter Nachbar von Montag
+    # Tuesday (index 1) to be filled in - direct neighbor of Monday
     assigned = assign_balanced_categories(cats, [1], final_plan)
-    assert assigned[1] == 2  # weicht der Nachbarkategorie aus
+    assert assigned[1] == 2  # avoids the neighboring category
 
 
 def test_assign_balanced_categories_falls_back_to_neighbor_if_only_one_category():
@@ -125,15 +125,15 @@ def test_assign_balanced_categories_falls_back_to_neighbor_if_only_one_category(
     final_plan[0] = FakeFinalPlanEntry(category_id=1)
 
     assigned = assign_balanced_categories(cats, [1], final_plan)
-    assert assigned[1] == 1  # keine Alternative vorhanden
+    assert assigned[1] == 1  # no alternative available
 
 
 def test_assign_balanced_categories_balances_counts_over_multiple_days():
     cats = [FakeCategory(1), FakeCategory(2)]
     final_plan = [None] * 7
 
-    # Alle 7 Tage frei aufzufüllen, keine Nachbarn vorbelegt -> sollte am
-    # Ende möglichst gleichmäßig zwischen beiden Kategorien aufgeteilt sein.
+    # All 7 days free to fill, no neighbors preassigned -> should end up
+    # split as evenly as possible between the two categories.
     assigned = assign_balanced_categories(cats, list(range(7)), final_plan)
     counts = {1: 0, 2: 0}
     for cid in assigned.values():
@@ -148,17 +148,17 @@ def test_assign_balanced_categories_returns_empty_without_categories():
 def test_assign_balanced_categories_preexisting_counts_influence_balance():
     cats = [FakeCategory(1), FakeCategory(2)]
     final_plan = [None] * 7
-    # Kategorie 1 ist bereits stark überrepräsentiert -> neue Tage sollten
-    # bevorzugt Kategorie 2 bekommen. Tage 3 und 5 sind NICHT direkt
-    # benachbart (anders als 3/4), damit hier ausschließlich die Balance-
-    # Regel (Priorität 2) greift, nicht die Nachbarschaftsregel (Priorität 1).
+    # Category 1 is already heavily overrepresented -> new days should
+    # preferentially get category 2. Days 3 and 5 are NOT directly
+    # adjacent (unlike 3/4), so that only the balance rule (priority 2)
+    # applies here, not the neighbor rule (priority 1).
     assigned = assign_balanced_categories(
         cats, [3, 5], final_plan, preexisting_counts={1: 10, 2: 0}
     )
     assert list(assigned.values()) == [2, 2]
 
 
-# --- choose_recipe / recent_usage_counts / jsonify_* (mit echter DB) ---
+# --- choose_recipe / recent_usage_counts / jsonify_* (with real DB) ---
 
 def test_choose_recipe_respects_side_dish_pool_separation(app, test_plan_id, make_recipe):
     main_id = make_recipe("Hauptgericht", is_side_dish=False)
@@ -201,9 +201,9 @@ def test_choose_recipe_season_preference_falls_back_when_none_available(app, tes
     from models import RecipeSeason, db
     from services.seasons import SEASON_PRESETS
 
-    # Einziges Rezept ist nur im Winter verfügbar - unabhängig vom
-    # tatsächlichen heutigen Datum darf choose_recipe trotzdem NICHT leer
-    # ausgehen (Saison darf die Auswahl nie komplett blockieren).
+    # The only recipe is available only in winter - regardless of the
+    # actual current date, choose_recipe must still NOT come up empty
+    # (a season must never completely block the selection).
     recipe_id = make_recipe("Nur Winter")
     with app.app_context():
         db.session.add(RecipeSeason(recipe_id=recipe_id, start_month=SEASON_PRESETS["Winter"][0],
@@ -225,11 +225,11 @@ def test_recent_usage_counts_only_counts_within_lookback_window(app, make_recipe
     _, plan_id = make_user()
 
     with app.app_context():
-        # Innerhalb der letzten 8 Wochen
+        # Within the last 8 weeks
         db.session.add(PlanDay(plan_id=plan_id, date=reference - timedelta(weeks=2), main_recipe_id=recipe_id, servings=2))
-        # Zu lange her (9 Wochen), darf NICHT mitgezählt werden
+        # Too long ago (9 weeks), must NOT be counted
         db.session.add(PlanDay(plan_id=plan_id, date=reference - timedelta(weeks=9), main_recipe_id=recipe_id, servings=2))
-        # Genau am reference_date selbst (exklusiv, siehe date < reference_date)
+        # Exactly on reference_date itself (exclusive, see date < reference_date)
         db.session.add(PlanDay(plan_id=plan_id, date=reference, main_recipe_id=recipe_id, servings=2))
         db.session.commit()
 
@@ -256,9 +256,9 @@ def test_recent_usage_counts_side_dish_pool_uses_plan_day_side(app, make_recipe,
 
 
 def test_recent_usage_counts_only_counts_within_own_plan(app, make_recipe, make_user):
-    """Die Wiederholungs-Gewichtung eines Plans darf sich nicht an der
-    Historie eines KOMPLETT ANDEREN, geteilten Plans orientieren (siehe
-    services/planning.py: recent_usage_counts()-Docstring)."""
+    """A plan's repetition weighting must not be influenced by the
+    history of a COMPLETELY DIFFERENT, shared plan (see
+    services/planning.py: recent_usage_counts()'s docstring)."""
     from models import PlanDay, db
 
     recipe_id = make_recipe("In fremdem Plan gekocht")
@@ -384,10 +384,10 @@ def test_jsonify_side_includes_cooked_flag(app, test_plan_id, make_recipe):
 
 
 def shared_category(app, plan_id, name="Testkategorie"):
-    """Kleiner, lokaler Helfer (kein pytest-Fixture, absichtlich mit
-    unverwechselbarem Namenspräfix) für Tests, die mehrere Rezepte
-    DERSELBEN Kategorie brauchen - make_recipe legt ohne category_id sonst
-    für jedes Rezept eine eigene neue Kategorie an."""
+    """Small, local helper (not a pytest fixture, deliberately given an
+    unmistakable name prefix) for tests that need several recipes in the
+    SAME category - without category_id, make_recipe otherwise creates a
+    new category of its own for each recipe."""
     from models import Category, db
 
     with app.app_context():

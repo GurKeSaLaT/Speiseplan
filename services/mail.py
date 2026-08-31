@@ -1,21 +1,20 @@
-"""Mail-Versand für Plan-Einladungen (siehe routes/sharing.py:
-invite_member()) - bewusst nur EIN Aufrufpunkt (send_invite_email), damit
-sich echter Versand später an genau dieser Stelle nachrüsten lässt, ohne
-den Rest der App anzufassen.
+"""Email sending for plan invitations (see routes/sharing.py:
+invite_member()) - deliberately just ONE call site (send_invite_email), so
+that actual sending can be retrofitted later at exactly this spot, without
+touching the rest of the app.
 
-Aktuell noch KEIN echter Versand (kein SMTP-Server/keine Zugangsdaten
-vorhanden, siehe Klärung mit dem Nutzer) - die Einladung wird stattdessen
-geloggt UND direkt auf /manage/sharing angezeigt (siehe
-routes/sharing.py: sharing_view(), templates/sharing.html: "Ausstehende
-Einladungen"), der Log-Eintrag ist nur die zweite, redundante Fundstelle.
-Ein echter Versand später (z.B. per smtplib aus der Standardbibliothek,
-keine neue Abhängigkeit nötig) würde ausschließlich den Funktionskörper
-hier ersetzen."""
+Currently there is NO actual sending yet (no SMTP server/credentials
+available, see clarification with the user) - the invitation is instead
+logged AND shown directly on /manage/sharing (see routes/sharing.py:
+sharing_view(), templates/sharing.html: "Pending invitations"), the log
+entry is just the second, redundant place to find it. Actual sending later
+(e.g. via smtplib from the standard library, no new dependency needed)
+would replace only the function body here."""
 
 from flask import current_app
 
 
 def send_invite_email(to_email, plan_name, invite_link):
     current_app.logger.info(
-        "Einladung an %s für Plan '%s': %s", to_email, plan_name, invite_link
+        "Invitation to %s for plan '%s': %s", to_email, plan_name, invite_link
     )

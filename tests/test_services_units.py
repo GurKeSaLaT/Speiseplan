@@ -1,5 +1,5 @@
-"""Tests für services/units.py: Einheiten-Normalisierung (Masse -> Gramm,
-Volumen inkl. Küchenmaßen -> Milliliter) und die Umrechnung für die Anzeige."""
+"""Tests for services/units.py: unit normalization (mass -> grams,
+volume including kitchen measures -> milliliters) and the conversion for display."""
 import pytest
 
 from services.units import (
@@ -12,7 +12,7 @@ from services.units import (
 )
 
 
-# --- normalize_amount_unit: Masse ---
+# --- normalize_amount_unit: mass ---
 
 @pytest.mark.parametrize("unit", ["g", "G", "gr", "gramm", "Gramm"])
 def test_normalize_mass_gram_variants_stay_at_factor_one(unit):
@@ -30,11 +30,11 @@ def test_normalize_mass_milligram_divides():
 
 @pytest.mark.parametrize("unit", ["dkg", "deka", "dekagramm"])
 def test_normalize_mass_deka_austrian_variant(unit):
-    # In Österreich gebräuchlich: 1 dkg = 10 g.
+    # Common in Austria: 1 dkg = 10 g.
     assert normalize_amount_unit(5, unit) == (50, "g")
 
 
-# --- normalize_amount_unit: Volumen (inkl. Küchenmaßen) ---
+# --- normalize_amount_unit: volume (including kitchen measures) ---
 
 @pytest.mark.parametrize("unit", ["ml", "milliliter", "Milliliter"])
 def test_normalize_volume_milliliter_variants_stay_at_factor_one(unit):
@@ -65,7 +65,7 @@ def test_normalize_volume_cup_is_250ml(unit):
     assert normalize_amount_unit(1, unit) == (250, "ml")
 
 
-# --- normalize_amount_unit: 1kg == 1000g (Kernanforderung) ---
+# --- normalize_amount_unit: 1kg == 1000g (core requirement) ---
 
 def test_1kg_equals_1000g_after_normalization():
     assert normalize_amount_unit(1, "kg") == normalize_amount_unit(1000, "g")
@@ -75,7 +75,7 @@ def test_2el_equals_30ml_after_normalization():
     assert normalize_amount_unit(2, "EL") == normalize_amount_unit(30, "ml")
 
 
-# --- normalize_amount_unit: nicht umrechenbare/unbekannte Einheiten ---
+# --- normalize_amount_unit: non-convertible/unknown units ---
 
 @pytest.mark.parametrize("unit", ["Stk", "stk", "Prise", "Bund", "Dose", "Zehe"])
 def test_normalize_non_convertible_units_pass_through_unchanged(unit):
@@ -129,29 +129,29 @@ def test_convert_for_display_rounds_to_avoid_float_artifacts():
 
 
 def test_convert_for_display_non_base_unit_passes_through():
-    # z.B. "Stk" - keine Basiseinheit einer Familie, bleibt unangetastet.
+    # e.g. "Stk" - not a base unit of any family, stays untouched.
     assert convert_for_display(3, "Stk", {MASS: "kg", VOLUME: "l"}) == (3, "Stk")
 
 
 def test_convert_for_display_is_reversible_via_normalize():
-    # Kernanforderung: eine für die Anzeige umgerechnete Menge muss beim
-    # erneuten Speichern (normalize_amount_unit) wieder exakt den
-    # ursprünglichen kanonischen Wert ergeben (siehe routes/recipes.py:
-    # edit_recipe - vorbefüllte, angezeigte Werte werden unverändert
-    # zurückgeschickt, wenn der Nutzer nichts ändert).
+    # Core requirement: an amount converted for display must, when saved
+    # again (normalize_amount_unit), produce exactly the original
+    # canonical value once more (see routes/recipes.py: edit_recipe -
+    # prefilled, displayed values are sent back unchanged when the user
+    # doesn't change anything).
     canonical_amount, canonical_unit = 1500, "g"
     display_amount, display_unit = convert_for_display(canonical_amount, canonical_unit, {MASS: "kg", VOLUME: "ml"})
     assert normalize_amount_unit(display_amount, display_unit) == (canonical_amount, canonical_unit)
 
 
-# --- renormalize_existing_ingredients: Migration von Bestandsdaten ---
+# --- renormalize_existing_ingredients: migration of existing data ---
 
 def test_renormalize_existing_ingredients_migrates_legacy_units(app, make_recipe):
     from models import Ingredient, db
 
-    # make_recipe legt Ingredient-Zeilen OHNE Normalisierung an (anders als
-    # routes/recipes.py) - simuliert damit gezielt "Altbestand" aus der Zeit
-    # vor der Einheiten-Vereinheitlichung.
+    # make_recipe creates Ingredient rows WITHOUT normalization (unlike
+    # routes/recipes.py) - this deliberately simulates "legacy data" from
+    # before the unit unification.
     recipe_id = make_recipe("Alt", ingredients=[
         {"name": "Mehl", "amount": 1, "unit": "kg"},
         {"name": "Milch", "amount": 2, "unit": "EL"},
@@ -164,7 +164,7 @@ def test_renormalize_existing_ingredients_migrates_legacy_units(app, make_recipe
         by_name = {i.name: (i.amount, i.unit) for i in Ingredient.query.filter_by(recipe_id=recipe_id).all()}
         assert by_name["Mehl"] == (1000, "g")
         assert by_name["Milch"] == (30, "ml")
-        # Nicht umrechenbare Einheit bleibt unverändert.
+        # Non-convertible unit stays unchanged.
         assert by_name["Salz"] == (1, "Prise")
 
 
@@ -175,7 +175,7 @@ def test_renormalize_existing_ingredients_is_idempotent(app, make_recipe):
 
     with app.app_context():
         renormalize_existing_ingredients()
-        renormalize_existing_ingredients()  # zweiter Aufruf darf nichts mehr ändern
+        renormalize_existing_ingredients()  # second call must no longer change anything
 
         ing = Ingredient.query.filter_by(recipe_id=recipe_id).first()
         assert (ing.amount, ing.unit) == (1000, "g")

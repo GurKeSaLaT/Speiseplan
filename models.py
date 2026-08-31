@@ -1,28 +1,27 @@
-"""SQLAlchemy-Datenmodelle der Speiseplan-App.
+"""SQLAlchemy data models for the Speiseplan app.
 
-Sieben Tabellen mit folgenden Beziehungen:
+Seven tables with the following relationships:
 
     Category 1---n Recipe 1---n Ingredient
                       |  1
                       |  n
                 RecipeSeason
 
-    Recipe 1---n PlanDay (als main_recipe)
+    Recipe 1---n PlanDay (as main_recipe)
     Recipe 1---n PlanDaySide n---1 PlanDay
 
-    ExtraShoppingItem (eigenständig, nur über week_start lose an eine
-                        Kalenderwoche gebunden - kein Fremdschlüssel)
+    ExtraShoppingItem (standalone, only loosely tied to a calendar week via
+                        week_start - no foreign key)
 
-Rezepte (Recipe) sind die zentrale Entität: sie gehören zu genau einer
-Kategorie, tragen ihre eigenen Zutaten sowie optional mehrere
-Verfügbarkeitszeiträume (RecipeSeason). Der Wochenplan-Kalender (PlanDay)
-verweist pro Kalendertag auf höchstens ein Hauptgericht, aber über
-PlanDaySide auf BELIEBIG VIELE Zusatzgerichte (Beilagen) - anders als das
-Hauptgericht (eine einzelne Fremdschlüssel-Spalte main_recipe_id direkt auf
-PlanDay) ist das deshalb eine eigene 1:n-Tabelle statt einer einzelnen
-Spalte. ExtraShoppingItem ergänzt die aus den Rezept-Zutaten abgeleitete
-Einkaufsliste um manuell hinzugefügte Posten (z.B. Hygieneartikel), die zu
-keinem Rezept gehören.
+Recipes (Recipe) are the central entity: they belong to exactly one
+category, carry their own ingredients, and optionally several availability
+windows (RecipeSeason). The weekly-plan calendar (PlanDay) references at
+most one main dish per calendar day, but via PlanDaySide ANY NUMBER of
+extra dishes (side dishes) - unlike the main dish (a single foreign-key
+column main_recipe_id directly on PlanDay), this is therefore its own
+1:n table instead of a single column. ExtraShoppingItem supplements the
+shopping list derived from recipe ingredients with manually added items
+(e.g. toiletries) that don't belong to any recipe.
 """
 
 from flask_sqlalchemy import SQLAlchemy
@@ -31,19 +30,19 @@ db = SQLAlchemy()
 
 
 class Category(db.Model):
-    """Eine Rezept-Kategorie (z.B. "Fleisch", "Vegetarisch", "Pasta").
+    """A recipe category (e.g. "Meat", "Vegetarian", "Pasta").
 
-    Kategorien werden bei der automatischen Wochenplan-Erstellung genutzt,
-    um die Auswahl über die Woche hinweg möglichst gleichmäßig zu verteilen
-    (siehe services/planning.py: assign_balanced_categories). Eine Kategorie
-    lässt sich erst löschen, wenn ihr keine Rezepte mehr zugeordnet sind
-    (siehe routes/categories.py: delete_category).
+    Categories are used during automatic weekly-plan generation to spread
+    the selection as evenly as possible across the week (see
+    services/planning.py: assign_balanced_categories). A category can only
+    be deleted once no recipes are assigned to it anymore (see
+    routes/categories.py: delete_category).
 
-    plan_id bindet die Kategorie an EINEN Plan (siehe Plan/PlanMembership
-    weiter unten) - jeder Plan pflegt seine eigene Kategorie-Liste, analog
-    zu den übrigen "Einstellungen" (AppSettings/IngredientAlias/
-    IngredientNutrition). name ist deshalb nur noch INNERHALB eines Plans
-    eindeutig (siehe __table_args__), nicht mehr global.
+    plan_id ties the category to ONE plan (see Plan/PlanMembership further
+    below) - each plan maintains its own category list, just like the
+    other "settings" (AppSettings/IngredientAlias/IngredientNutrition).
+    name is therefore only unique WITHIN a plan (see __table_args__), no
+    longer globally.
     """
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
@@ -53,29 +52,28 @@ class Category(db.Model):
 
 
 class Recipe(db.Model):
-    """Ein Gericht: entweder ein Hauptgericht oder eine Beilage, mit
-    Nährwertangaben, einer beliebigen Zutatenliste und optionalen
-    Saison-Einschränkungen.
+    """A dish: either a main dish or a side dish, with nutritional
+    information, an arbitrary ingredient list, and optional season
+    restrictions.
 
-    is_side_dish unterscheidet zwei komplett getrennte Auswahl-Pools: bei
-    der automatischen Wochenplanung werden Hauptgerichte (is_side_dish=False)
-    und Beilagen (is_side_dish=True) nie miteinander vermischt (siehe
+    is_side_dish distinguishes two completely separate selection pools:
+    during automatic weekly planning, main dishes (is_side_dish=False) and
+    side dishes (is_side_dish=True) are never mixed together (see
     services/planning.py: choose_recipe).
 
-    owner_plan_id ist der Plan, unter dem das Rezept ursprünglich angelegt
-    wurde ("an den eigenen Plan gebunden") - RecipePlanLink (siehe unten)
-    ergänzt das um beliebig viele WEITERE Pläne, in denen dasselbe Rezept
-    zusätzlich sichtbar/nutzbar ist (echte Verknüpfung, keine Kopie: eine
-    Änderung an Name/Zutaten/Anleitung wirkt sich überall aus, wo das
-    Rezept eingebunden ist). services/planning.py: visible_recipes_query()
-    ist die einzige Stelle, die "für Plan X nutzbare Rezepte" tatsächlich
-    auflöst (owner_plan_id == X ODER ein RecipePlanLink auf X) - alle
-    Routen fragen darüber ab statt Recipe.query direkt, damit diese Regel
-    nicht an mehreren Stellen dupliziert wird. category_id zeigt dabei
-    IMMER auf eine Kategorie des EIGENTÜMER-Plans (owner_plan_id) - wird
-    das Rezept in einen anderen Plan eingebunden, übernimmt es dessen
-    Kategorie unverändert mit, unabhängig von der Kategorie-Liste des
-    Ziel-Plans.
+    owner_plan_id is the plan under which the recipe was originally
+    created ("tied to its own plan") - RecipePlanLink (see below)
+    supplements that with any number of ADDITIONAL plans in which the same
+    recipe is also visible/usable (a real link, not a copy: a change to
+    the name/ingredients/instructions takes effect everywhere the recipe
+    is embedded). services/planning.py: visible_recipes_query() is the
+    single place that actually resolves "recipes usable for plan X"
+    (owner_plan_id == X OR a RecipePlanLink pointing at X) - all routes
+    query through it instead of Recipe.query directly, so this rule isn't
+    duplicated in multiple places. category_id here ALWAYS points to a
+    category of the OWNER plan (owner_plan_id) - when the recipe is
+    embedded into another plan, it carries its category over unchanged,
+    regardless of the target plan's category list.
     """
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -83,94 +81,94 @@ class Recipe(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     is_side_dish = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Favoriten werden bei der automatischen Auswahl höher gewichtet
-    # (FAVORITE_WEIGHT in services/planning.py), blockieren aber nichts -
-    # nur ein weicher Bonus, kein Ausschlusskriterium für andere Rezepte.
+    # Favorites are weighted higher in automatic selection (FAVORITE_WEIGHT
+    # in services/planning.py), but don't block anything - just a soft
+    # bonus, not an exclusion criterion for other recipes.
     is_favorite = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Für wie viele Personen die unten gepflegten Zutatenmengen ausgelegt
-    # sind. Die Nährwerte (calories/protein/carbs/fat) bleiben davon
-    # unberührt, da sie immer PRO PORTION gelten - nur die Zutatenmengen für
-    # die Einkaufsliste werden im Frontend anhand des Verhältnisses aus
-    # gewünschter Personenzahl zu diesem Wert hoch- oder runtergerechnet
-    # (siehe static/plan.js: rebuildShoppingList).
+    # How many people the ingredient amounts maintained below are sized
+    # for. The nutrition values (calories/protein/carbs/fat) are unaffected
+    # by this, since they always apply PER SERVING - only the ingredient
+    # amounts for the shopping list are scaled up or down in the frontend
+    # based on the ratio between the desired number of people and this
+    # value (see static/plan.js: rebuildShoppingList).
     servings = db.Column(db.Integer, nullable=False, default=2)
 
-    # Nährwerte, jeweils pro Portion (nicht für das gesamte Rezept/alle
-    # servings zusammen). Alle vier Felder sind optional und defaulten auf 0.
+    # Nutrition values, each per serving (not for the whole recipe/all
+    # servings combined). All four fields are optional and default to 0.
     #
-    # Werden standardmäßig NICHT mehr von Hand gepflegt, sondern beim
-    # Speichern automatisch aus den Zutaten berechnet (siehe
-    # services/nutrition.py: compute_recipe_nutrition(), aufgerufen aus
-    # routes/recipes.py: add_recipe()/edit_recipe()) - die Summe der
-    # Zutaten-Nährwerte (services/nutrition.py: IngredientNutrition) wird
-    # dabei durch servings geteilt, da Ingredient.amount für die GANZE
-    # Portionsanzahl gilt, diese Felder hier aber PRO Portion. Bleiben
-    # trotzdem direkt beschreibbare Spalten (nicht rein berechnet/nicht
-    # gespeichert): nutrition_override=True erlaubt weiterhin eine manuell
-    # eingetragene, nie automatisch überschriebene Angabe für protein/
-    # carbs/fat - z.B. wenn für ein Fertigprodukt nur der Nährwert auf der
-    # Packung bekannt ist, nicht aber der einzelner Zutaten. calories
-    # selbst wird dabei NIE direkt eingegeben, auch nicht im Override-Fall
-    # - es ergibt sich immer aus protein/carbs/fat (services/nutrition.py:
-    # compute_calories(), Atwater-Faustregel 4/4/9 kcal je g), um die
-    # Angabe nicht redundant und potenziell widersprüchlich zu machen.
+    # By default these are NO LONGER maintained by hand, but computed
+    # automatically from the ingredients on save (see
+    # services/nutrition.py: compute_recipe_nutrition(), called from
+    # routes/recipes.py: add_recipe()/edit_recipe()) - the sum of the
+    # ingredient nutrition values (services/nutrition.py:
+    # IngredientNutrition) is divided by servings, since Ingredient.amount
+    # applies to the WHOLE serving count, but these fields here are PER
+    # serving. They remain directly writable columns nonetheless (not
+    # purely computed/not stored): nutrition_override=True still allows a
+    # manually entered value for protein/carbs/fat that is never
+    # automatically overwritten - e.g. when only the nutrition info printed
+    # on the packaging of a ready-made product is known, not that of its
+    # individual ingredients. calories itself is NEVER entered directly,
+    # even in the override case - it always results from protein/carbs/fat
+    # (services/nutrition.py: compute_calories(), the Atwater rule of thumb
+    # of 4/4/9 kcal per g), so as to not make the figure redundant and
+    # potentially contradictory.
     calories = db.Column(db.Integer, default=0)
     protein = db.Column(db.Float, default=0.0)
     carbs = db.Column(db.Float, default=0.0)
     fat = db.Column(db.Float, default=0.0)
     nutrition_override = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Herkunfts-Link (z.B. die chefkoch.de-Seite, von der importiert wurde,
-    # oder ein von Hand eingetragener Link zu einem Rezept anderswo) und die
-    # Zubereitungsanleitung als freier Text. Beide optional und unabhängig
-    # vom Import nutzbar - auch ein komplett manuell angelegtes Rezept darf
-    # einen Link/eine Anleitung haben. Siehe services/recipe_import.py für
-    # den automatischen Import von chefkoch.de, der beide Felder befüllt.
+    # Source link (e.g. the chefkoch.de page it was imported from, or a
+    # manually entered link to a recipe elsewhere) and the preparation
+    # instructions as free text. Both optional and usable independently of
+    # the import - even a completely manually created recipe may have a
+    # link/instructions. See services/recipe_import.py for the automatic
+    # import from chefkoch.de, which fills in both fields.
     source_url = db.Column(db.String(500), nullable=True)
     instructions = db.Column(db.Text, nullable=True)
 
-    # Für die "Zuletzt bearbeitet"-Liste auf der Verwaltungs-Übersichtsseite
-    # (routes/manage.py) - default setzt den Zeitpunkt beim Anlegen
-    # (routes/recipes.py: add_recipe()). BEWUSST kein onupdate=...: das
-    # würde nur greifen, wenn sich mindestens ein SPALTENWERT tatsächlich
-    # ändert (SQLAlchemy markiert eine Zuweisung auf denselben Wert nicht
-    # als "dirty") - speichert ein Nutzer ein Rezept unverändert erneut
-    # (z.B. nur die Zutatenliste angefasst, alle anderen Felder identisch
-    # gelassen), würde der Zeitpunkt sonst NICHT aktualisiert. edit_recipe()
-    # setzt dieses Feld deshalb explizit bei jedem Speichern.
+    # For the "recently edited" list on the management overview page
+    # (routes/manage.py) - default sets the timestamp on creation (see
+    # routes/recipes.py: add_recipe()). DELIBERATELY no onupdate=...: that
+    # would only trigger if at least one COLUMN VALUE actually changes
+    # (SQLAlchemy doesn't mark an assignment to the same value as "dirty")
+    # - if a user saves a recipe again unchanged (e.g. only touched the
+    # ingredient list, left all other fields identical), the timestamp
+    # would otherwise NOT be updated. edit_recipe() therefore sets this
+    # field explicitly on every save.
     updated_at = db.Column(db.DateTime, default=db.func.now())
 
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
     owner_plan = db.relationship('Plan', foreign_keys=[owner_plan_id])
-    # cascade="all, delete-orphan": Zutaten werden automatisch mitgelöscht,
-    # sobald das Rezept gelöscht wird - es gibt keine "verwaisten" Zutaten.
+    # cascade="all, delete-orphan": ingredients are automatically deleted
+    # along with the recipe - there are no "orphaned" ingredients.
     ingredients = db.relationship('Ingredient', backref='recipe', cascade="all, delete-orphan")
 
-    # Keine Einträge = ganzjährig verfügbar (Standardfall für die meisten
-    # Rezepte). Mit einem oder mehreren Einträgen ist das Rezept nur dann
-    # "verfügbar" (siehe services/seasons.py: recipe_available_now), wenn
-    # das heutige Datum (Monat/Tag, jahresunabhängig) in mindestens einen
-    # der hinterlegten Zeiträume fällt. Das schränkt nur die AUTOMATISCHE
-    # Auswahl ein, nie die manuelle Auswahl über die Suche.
+    # No entries = available year-round (the default case for most
+    # recipes). With one or more entries, the recipe is only "available"
+    # (see services/seasons.py: recipe_available_now) if today's date
+    # (month/day, year-independent) falls within at least one of the
+    # stored windows. This only restricts AUTOMATIC selection, never
+    # manual selection via search.
     seasons = db.relationship('RecipeSeason', backref='recipe', cascade="all, delete-orphan")
 
-    # cascade="all, delete-orphan": Verknüpfungen zu weiteren Plänen
-    # verschwinden automatisch mit, sobald das Rezept selbst gelöscht wird.
+    # cascade="all, delete-orphan": links to further plans automatically
+    # disappear along with it as soon as the recipe itself is deleted.
     plan_links = db.relationship('RecipePlanLink', backref='recipe', cascade="all, delete-orphan")
 
 
 class RecipeSeason(db.Model):
-    """Ein einzelner Verfügbarkeitszeitraum eines Rezepts, als Monat/Tag
-    ohne Jahresbezug (z.B. "1.6. bis 31.8." für Sommer).
+    """A single availability window of a recipe, as month/day without a
+    year (e.g. "6/1 to 8/31" for summer).
 
-    Ein Rezept kann mehrere davon gleichzeitig haben: sowohl mehrere
-    angehakte Standard-Saisons (Frühling/Sommer/Herbst/Winter, deren feste
-    Monat/Tag-Grenzen in services/seasons.py als SEASON_PRESETS hinterlegt
-    sind) als auch einen selbst definierten Zeitraum. Ein Zeitraum, dessen
-    Ende vor seinem Start liegt (z.B. Winter: 1.12. bis 28.2.), läuft über
-    den Jahreswechsel - das Auswerten dieser Zeiträume übernimmt
-    services/seasons.py: date_in_range.
+    A recipe can have several of these at once: both several checked
+    standard seasons (spring/summer/autumn/winter, whose fixed month/day
+    boundaries are stored in services/seasons.py as SEASON_PRESETS) and a
+    self-defined window. A window whose end lies before its start (e.g.
+    winter: 12/1 to 2/28) runs across the turn of the year - evaluating
+    these windows is handled by services/seasons.py: date_in_range.
     """
     id = db.Column(db.Integer, primary_key=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
@@ -181,21 +179,20 @@ class RecipeSeason(db.Model):
 
 
 class RecipePlanLink(db.Model):
-    """Bindet ein Rezept ZUSÄTZLICH an einen weiteren Plan, über seinen
-    eigentlichen Eigentümer-Plan (Recipe.owner_plan_id) hinaus - "Gericht
-    zu einem anderen Plan hinzufügen" legt genau eine solche Zeile an.
+    """Ties a recipe ADDITIONALLY to another plan, beyond its actual owner
+    plan (Recipe.owner_plan_id) - "add dish to another plan" creates
+    exactly one such row.
 
-    Das ist eine ECHTE Verknüpfung, keine Kopie: dieselbe Recipe-Zeile
-    (inkl. all ihrer Ingredient-/RecipeSeason-Zeilen) wird für den
-    verknüpften Plan sichtbar und voll bearbeitbar - eine Änderung wirkt
-    sich für ALLE Pläne aus, in denen das Rezept eingebunden ist. Siehe
-    services/planning.py: visible_recipes_query() für die einzige Stelle,
-    die diese Sichtbarkeitsregel auswertet.
+    This is a REAL link, not a copy: the same Recipe row (including all
+    its Ingredient/RecipeSeason rows) becomes visible and fully editable
+    for the linked plan - a change takes effect for ALL plans the recipe
+    is embedded in. See services/planning.py: visible_recipes_query() for
+    the single place that evaluates this visibility rule.
 
-    Kein unique-Constraint gegen den EIGENTÜMER-Plan selbst (Recipe.
-    owner_plan_id) auf Datenbankebene - wird stattdessen von der Route
-    verhindert (siehe routes/recipes.py: link_recipe_to_plan), die dafür
-    ohnehin bereits current_plan()/Mitgliedschaften nachschlagen muss.
+    No unique constraint against the OWNER plan itself (Recipe.
+    owner_plan_id) at the database level - that's instead prevented by the
+    route (see routes/recipes.py: link_recipe_to_plan), which already has
+    to look up current_plan()/memberships for that anyway.
     """
     id = db.Column(db.Integer, primary_key=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False, index=True)
@@ -207,20 +204,20 @@ class RecipePlanLink(db.Model):
 
 
 class Ingredient(db.Model):
-    """Eine einzelne Zutat eines Rezepts mit Menge und Einheit.
+    """A single ingredient of a recipe with amount and unit.
 
-    amount/unit sind bewusst freie Werte (kein kontrolliertes Vokabular):
-    unit ist Freitext (z.B. "g", "Stk", "EL"), amount gilt für die auf
-    Recipe.servings festgelegte Personenzahl. Beim Zusammenstellen der
-    Einkaufsliste wird amount clientseitig mit der pro Wochentag
-    eingestellten Personenzahl skaliert (siehe static/plan.js).
+    amount/unit are deliberately free-form values (no controlled
+    vocabulary): unit is free text (e.g. "g", "pc", "tbsp"), amount
+    applies to the number of people set on Recipe.servings. When
+    assembling the shopping list, amount is scaled client-side to the
+    number of people set per weekday (see static/plan.js).
 
-    category ist optional und einer der festen Werte aus
-    services/shopping.py: SHOPPING_CATEGORIES (kein eigener Fremdschlüssel,
-    da die Liste bewusst klein/fest ist) - bestimmt, in welchem
-    Supermarkt-Bereich diese Zutat in der Einkaufsliste einsortiert wird.
-    None (z.B. bei Zutaten aus der Zeit vor Einführung dieses Felds) landet
-    dort in der Sonstiges-Sammelgruppe.
+    category is optional and one of the fixed values from
+    services/shopping.py: SHOPPING_CATEGORIES (no dedicated foreign key,
+    since the list is deliberately small/fixed) - determines which
+    supermarket section this ingredient is sorted into on the shopping
+    list. None (e.g. for ingredients from before this field was
+    introduced) ends up in the catch-all "misc" group there.
     """
     id = db.Column(db.Integer, primary_key=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
@@ -231,42 +228,40 @@ class Ingredient(db.Model):
 
 
 class PlanDay(db.Model):
-    """Der dauerhafte Wochenplan-Kalender: ein Datensatz pro echtem
-    Kalendertag, für den jemals ein Plan erstellt oder bearbeitet wurde.
+    """The persistent weekly-plan calendar: one record per actual calendar
+    day for which a plan was ever created or edited.
 
-    Anders als in früheren Versionen der App wird der Wochenplan nicht mehr
-    nur einmalig serverseitig gerendert und anschließend nur im Browser
-    gehalten (ein Neuladen der Seite hätte alles verworfen) - jede Änderung
-    (Würfeln, Tauschen, Beilage hinzufügen, Personenzahl ändern) schreibt
-    sofort in diese Tabelle (siehe routes/plan/).
+    Unlike in earlier versions of the app, the weekly plan is no longer
+    rendered server-side just once and then only held in the browser (a
+    page reload would have discarded everything) - every change (rerolling,
+    swapping, adding a side dish, changing the number of people) writes
+    immediately into this table (see routes/plan/).
 
-    Ein Tag ohne PlanDay-Zeile bedeutet "für diese Woche wurde noch nie ein
-    Plan erstellt" - die Wochenansicht zeigt in dem Fall den
-    "Neuen Wochenplan erstellen"-Button statt Tageskarten (has_any_data in
-    routes/plan/pages.py: week_view). Sobald eine Woche einmal erstellt wurde,
-    bekommen alle 7 Tage eine Zeile, auch wenn main_recipe_id leer bleibt
-    und keine einzige PlanDaySide existiert (z.B. bei einem ausgenommenen
-    Tag ohne Beilagen).
+    A day without a PlanDay row means "no plan has ever been created for
+    this week" - in that case the week view shows the "Create new weekly
+    plan" button instead of day cards (has_any_data in
+    routes/plan/pages.py: week_view). Once a week has been created, all 7
+    days get a row, even if main_recipe_id stays empty and not a single
+    PlanDaySide exists (e.g. for an excluded day with no side dishes).
 
-    main_recipe_id ist ein optionaler Fremdschlüssel für GENAU EIN
-    Hauptgericht; die (beliebig vielen) Beilagen hängen dagegen über die
-    separate PlanDaySide-Tabelle an dieser Zeile (siehe unten). Ein Tag kann
-    also nur ein Hauptgericht haben, aber null bis N Beilagen, unabhängig
-    davon - excluded schließt nur das Hauptgericht von der automatischen
-    Planung aus, niemals die Beilagen.
+    main_recipe_id is an optional foreign key for EXACTLY ONE main dish;
+    the (arbitrarily many) side dishes, by contrast, hang off this row via
+    the separate PlanDaySide table (see below). So a day can only have one
+    main dish, but zero to N side dishes, independent of that - excluded
+    only excludes the main dish from automatic planning, never the side
+    dishes.
     """
     id = db.Column(db.Integer, primary_key=True)
-    # Zu welchem Plan (siehe Plan/PlanMembership unten) dieser Kalendertag
-    # gehört - jeder Plan hat seinen eigenen, unabhängigen Kalender. Das
-    # frühere unique=True direkt auf date (ein Tag konnte höchstens EINE
-    # Zeile in der GESAMTEN App haben) ist deshalb einem zusammengesetzten
-    # Unique (plan_id, date) gewichen (siehe __table_args__ unten): zwei
-    # verschiedene Pläne dürfen für denselben Kalendertag jeweils eine
-    # eigene Zeile haben.
+    # Which plan (see Plan/PlanMembership below) this calendar day belongs
+    # to - each plan has its own, independent calendar. The former
+    # unique=True directly on date (a day could have at most ONE row in
+    # the ENTIRE app) has therefore given way to a composite unique
+    # (plan_id, date) (see __table_args__ below): two different plans are
+    # allowed to each have their own row for the same calendar day.
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
-    # index=True (statt zusätzlich unique=True, das jetzt über
-    # __table_args__ läuft): die Wochenansicht fragt regelmäßig nach
-    # Datumsbereichen (date.in_(...)).
+    # index=True (instead of additionally unique=True, which now runs via
+    # __table_args__): the week view regularly queries date ranges
+    # (date.in_(...)).
     date = db.Column(db.Date, nullable=False, index=True)
     excluded = db.Column(db.Boolean, default=False, nullable=False)
     servings = db.Column(db.Integer, nullable=False, default=2)
@@ -274,70 +269,70 @@ class PlanDay(db.Model):
 
     __table_args__ = (db.UniqueConstraint('plan_id', 'date', name='uq_plan_day_plan_id_date'),)
 
-    # Ob das Hauptgericht DIESES Tages bereits gekocht wurde (Checkbox im
-    # Rezept-Detail-Fenster, siehe static/plan.js: openRecipeDetail/
-    # toggleCooked) - steuert das "Ausgrauen" der Tageskarte im Wochenplan.
-    # Bezieht sich bewusst auf die AKTUELLE Zuweisung, nicht das Rezept an
-    # sich: wird das Hauptgericht neu gewürfelt/manuell ersetzt, setzen
-    # routes/plan/day_actions.py: reroll_day()/set_main_day() dieses Feld
-    # automatisch zurück auf False, da es sich dann um ein anderes,
-    # noch nicht gekochtes Gericht handelt. Bei swap_days() wandert der
-    # Wert dagegen MIT dem Hauptgericht auf den jeweils anderen Tag.
+    # Whether the main dish for THIS day has already been cooked (checkbox
+    # in the recipe detail window, see static/plan.js: openRecipeDetail/
+    # toggleCooked) - controls the "greying out" of the day card in the
+    # weekly plan. Deliberately refers to the CURRENT assignment, not the
+    # recipe itself: if the main dish is rerolled/manually replaced,
+    # routes/plan/day_actions.py: reroll_day()/set_main_day() automatically
+    # reset this field back to False, since it's then a different, not
+    # yet cooked dish. With swap_days(), by contrast, the value travels
+    # WITH the main dish to the respective other day.
     cooked = db.Column(db.Boolean, default=False, nullable=False)
 
     main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
-    # cascade="all, delete-orphan": wird ein PlanDay gelöscht (kommt in der
-    # aktuellen App nicht vor, aber zur Sicherheit), verschwinden auch seine
-    # Beilagen-Zeilen mit, statt als Datenleichen zurückzubleiben.
-    # order_by sorgt für eine stabile, chronologische Reihenfolge beim
-    # Anzeigen (zuletzt hinzugefügte Beilage erscheint zuletzt).
+    # cascade="all, delete-orphan": if a PlanDay is deleted (doesn't happen
+    # in the current app, but as a safeguard), its side-dish rows
+    # disappear along with it instead of being left behind as orphaned
+    # data. order_by ensures a stable, chronological order when
+    # displaying (the most recently added side dish appears last).
     sides = db.relationship('PlanDaySide', cascade="all, delete-orphan", order_by='PlanDaySide.id')
 
 
 class PlanDaySide(db.Model):
-    """Eine einzelne Beilage, die einem Kalendertag zugeordnet ist. Ein
-    PlanDay kann beliebig viele davon haben (siehe PlanDay.sides) - anders
-    als das Hauptgericht (eine einzelne Spalte direkt auf PlanDay) ist das
-    hier bewusst eine eigene 1:n-Tabelle, damit die Anzahl der Beilagen pro
-    Tag nicht auf einen festen Wert begrenzt ist.
+    """A single side dish assigned to a calendar day. A PlanDay can have any
+    number of these (see PlanDay.sides) - unlike the main dish (a single
+    column directly on PlanDay), this here is deliberately its own 1:n
+    table, so that the number of side dishes per day isn't capped at a
+    fixed value.
 
-    Kein unique-Constraint auf (plan_day_id, recipe_id): serverseitig wird
-    zwar durchgängig verhindert, dieselbe Beilage zweimal in derselben
-    Woche zu vergeben (siehe services/planning.py:
-    week_side_recipe_ids/choose_recipe), das ist aber eine weiche,
-    anwendungsseitige Regel und keine Datenbank-Integritätsbedingung.
+    No unique constraint on (plan_day_id, recipe_id): the server does
+    consistently prevent assigning the same side dish twice in the same
+    week (see services/planning.py:
+    week_side_recipe_ids/choose_recipe), but that's a soft,
+    application-side rule and not a database integrity constraint.
     """
     id = db.Column(db.Integer, primary_key=True)
     plan_day_id = db.Column(db.Integer, db.ForeignKey('plan_day.id'), nullable=False)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
 
-    # Wie PlanDay.cooked oben, nur für diese eine Beilage statt das
-    # Hauptgericht des Tages - routes/plan/day_actions.py: reroll_one_side()/
-    # set_one_side() setzen es beim Ersetzen der Beilage zurück auf False,
-    # move_one_side() (nur ein Verschieben auf einen anderen Tag, dieselbe
-    # Zeile bleibt bestehen) lässt es dagegen unangetastet.
+    # Like PlanDay.cooked above, just for this one side dish instead of the
+    # day's main dish - routes/plan/day_actions.py: reroll_one_side()/
+    # set_one_side() reset it back to False when replacing the side dish,
+    # while move_one_side() (just moving it to another day, the same row
+    # remains) leaves it untouched.
     cooked = db.Column(db.Boolean, default=False, nullable=False)
 
     recipe = db.relationship('Recipe')
 
 
 class ExtraShoppingItem(db.Model):
-    """Ein manuell zur Einkaufsliste einer Woche hinzugefügter Posten, der zu
-    keinem Rezept gehört (z.B. Hygieneartikel oder Getränke, die nicht als
-    Zutat irgendeines Gerichts eingetragen sind).
+    """An item manually added to a week's shopping list that doesn't belong
+    to any recipe (e.g. toiletries or drinks that aren't entered as an
+    ingredient of any dish).
 
-    week_start ist bewusst NUR ein Datum (der Montag der betreffenden
-    Kalenderwoche, wie start_date überall sonst im Projekt) statt eines
-    Fremdschlüssels auf PlanDay/eine eigene "Week"-Tabelle - es gibt kein
-    eigenes Wochen-Modell, Wochen existieren nur implizit über die 7
-    zusammengehörigen PlanDay-Zeilen. amount/unit sind wie bei Ingredient
-    optional und frei, werden aber (anders als Zutaten aus Rezepten) NICHT
-    mit der Personenzahl eines Wochentags skaliert, da sie an keinen
-    bestimmten Tag oder ein bestimmtes Rezept gebunden sind.
+    week_start is deliberately JUST a date (the Monday of the calendar week
+    in question, like start_date everywhere else in the project) instead of
+    a foreign key to PlanDay/a dedicated "Week" table - there is no
+    dedicated week model, weeks only exist implicitly via the 7 PlanDay
+    rows that belong together. amount/unit are, like with Ingredient,
+    optional and free-form, but (unlike ingredients from recipes) are NOT
+    scaled with a weekday's number of people, since they aren't tied to a
+    specific day or a specific recipe.
 
-    plan_id ordnet den Posten (wie PlanDay.plan_id) einem bestimmten Plan
-    zu - dieselbe Kalenderwoche kann in zwei verschiedenen Plänen jeweils
-    eigene manuelle Posten haben.
+    plan_id assigns the item (like PlanDay.plan_id) to a specific plan -
+    the same calendar week can have its own manual items in two different
+    plans.
     """
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
@@ -349,16 +344,16 @@ class ExtraShoppingItem(db.Model):
 
 
 class AppSettings(db.Model):
-    """Anzeige-Einstellungen EINES Plans - aktuell nur die bevorzugten
-    Einheiten für Masse (g/kg) und Volumen (ml/l), in denen Zutatenmengen
-    dargestellt werden sollen (siehe services/units.py: convert_for_display,
-    routes/settings.py). Eine Zeile PRO Plan (plan_id unique) statt einer
-    einzelnen globalen Singleton-Zeile wie früher - services/settings.py:
-    get_settings(plan_id) legt sie bei Bedarf lazy mit diesen Defaults an,
-    kein eigener Migrationsschritt für NEUE Pläne nötig (nur für bereits
-    bestehende Bestandsdaten, siehe app.py: init_db()). Ändert NICHT die
-    kanonisch in Ingredient.amount/.unit gespeicherten Werte (immer Gramm/
-    Milliliter), sondern nur, wie sie beim Anzeigen umgerechnet werden."""
+    """Display settings for ONE plan - currently only the preferred units
+    for mass (g/kg) and volume (ml/l) in which ingredient amounts should be
+    displayed (see services/units.py: convert_for_display,
+    routes/settings.py). One row PER plan (plan_id unique) instead of a
+    single global singleton row like before - services/settings.py:
+    get_settings(plan_id) creates it lazily with these defaults when
+    needed, no dedicated migration step needed for NEW plans (only for
+    already-existing legacy data, see app.py: init_db()). Does NOT change
+    the values stored canonically in Ingredient.amount/.unit (always grams/
+    milliliters), only how they're converted when displayed."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), unique=True, nullable=False, index=True)
     mass_unit = db.Column(db.String(10), nullable=False, default='g')
@@ -366,27 +361,27 @@ class AppSettings(db.Model):
 
 
 class IngredientAlias(db.Model):
-    """Ordnet einen konkreten Zutatennamen (z.B. "Spaghetti", "Olivenöl")
-    einem übergeordneten, gemeinsamen Namen zu (z.B. "Nudeln", "Öl") - für
-    die Einkaufsliste, die sonst "Spaghetti" und "Fusilli" als zwei
-    getrennte Posten führen würde, obwohl man dafür meist einfach
-    "Nudeln" einkauft. Siehe services/ingredient_aliases.py:
-    normalize_ingredient_name() und routes/settings.py: die Verwaltungs-
-    Seite, auf der Nutzer diese Zuordnung selbst pflegen können.
+    """Maps a specific ingredient name (e.g. "spaghetti", "olive oil") to a
+    parent, shared name (e.g. "pasta", "oil") - for the shopping list,
+    which would otherwise list "spaghetti" and "fusilli" as two separate
+    items even though what you usually buy for that is simply "pasta". See
+    services/ingredient_aliases.py: normalize_ingredient_name() and
+    routes/settings.py: the management page where users can maintain this
+    mapping themselves.
 
-    ÄNDERT NICHT den in Ingredient.name gespeicherten/im Rezept
-    angezeigten Namen - ein Rezept zeigt weiterhin "Spaghetti" in seiner
-    eigenen Zutatenliste. Nur beim Aufbau der Einkaufsliste (siehe
-    services/planning.py: jsonify_recipe) wird raw_name durch
-    canonical_name ersetzt, damit sich Posten über mehrere Rezepte hinweg
-    sinnvoll zusammenfassen lassen. Ein Zutatenname ohne Eintrag hier
-    bleibt einfach er selbst (kein Alias = keine Gruppierung nötig).
+    Does NOT change the name stored in Ingredient.name/shown in the
+    recipe - a recipe still shows "spaghetti" in its own ingredient list.
+    Only when building the shopping list (see services/planning.py:
+    jsonify_recipe) is raw_name replaced by canonical_name, so that items
+    can be meaningfully consolidated across multiple recipes. An
+    ingredient name with no entry here simply stays itself (no alias = no
+    grouping needed).
 
-    raw_name ist bereits in der Form gespeichert, in der jsonify_recipe()
-    nachschlägt (.strip().title(), siehe dort) - Groß-/Kleinschreibung und
-    Leerraum spielen beim Zuordnen daher keine Rolle. plan_id bindet die
-    Zuordnung an EINEN Plan (jeder Plan pflegt seine eigene Gleichsetzung),
-    raw_name ist deshalb nur noch INNERHALB eines Plans eindeutig.
+    raw_name is already stored in the form that jsonify_recipe() looks up
+    (.strip().title(), see there) - capitalization and whitespace
+    therefore don't matter when mapping. plan_id ties the mapping to ONE
+    plan (each plan maintains its own equivalences), so raw_name is
+    therefore only unique WITHIN a plan.
     """
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
@@ -397,33 +392,33 @@ class IngredientAlias(db.Model):
 
 
 class IngredientNutrition(db.Model):
-    """Nährwert-Referenz für eine kanonische Zutat (denselben Namen, den
-    auch IngredientAlias/normalize_ingredient_name() liefert - für eine
-    alias-gruppierte Zutat wie "Nudeln" also EIN gemeinsamer Eintrag statt
-    einem pro Schreibweise wie "Spaghetti"/"Fusilli"). Siehe
-    services/nutrition.py: compute_recipe_nutrition() nutzt das, um die
-    Rezept-Nährwerte (Recipe.calories/.protein/.carbs/.fat) automatisch
-    aus den eingetragenen Zutaten zu berechnen, statt sie von Hand pflegen
-    zu müssen (siehe Recipe.nutrition_override für den Opt-out).
+    """Nutrition reference for a canonical ingredient (the same name that
+    IngredientAlias/normalize_ingredient_name() also produces - so for an
+    alias-grouped ingredient like "pasta", ONE shared entry instead of one
+    per spelling like "spaghetti"/"fusilli"). See services/nutrition.py:
+    compute_recipe_nutrition() uses this to automatically compute the
+    recipe's nutrition values (Recipe.calories/.protein/.carbs/.fat) from
+    the entered ingredients instead of them having to be maintained by
+    hand (see Recipe.nutrition_override for the opt-out).
 
-    Werte gelten je reference_amount/reference_unit (z.B. 100/"g" oder
-    1/"Stk") - beides bewusst frei statt fest auf "je 100g", da nicht
-    jede Zutat sinnvoll in Gramm/Milliliter bemessen wird (z.B. Eier
-    typischerweise in "Stk"). Ein Zutatenname ohne Eintrag hier ODER mit
-    abweichender Einheit zur tatsächlichen Ingredient-Zeile eines Rezepts
-    (z.B. Referenz in "g" hinterlegt, aber in diesem Rezept in "Stk"
-    verwendet) trägt beim Berechnen einfach 0 bei - kein Fehler, nur eine
-    unvollständige Angabe, die sich jederzeit nachtragen lässt.
+    Values apply per reference_amount/reference_unit (e.g. 100/"g" or
+    1/"pc") - both deliberately free-form instead of fixed to "per 100g",
+    since not every ingredient is sensibly measured in grams/milliliters
+    (e.g. eggs are typically measured in "pc"). An ingredient name with no
+    entry here, OR with a unit that differs from the actual Ingredient row
+    of a recipe (e.g. reference stored in "g" but used in this recipe in
+    "pc"), simply contributes 0 when computing - not an error, just an
+    incomplete entry that can be filled in at any time.
 
-    Bewusst KEINE eigene calories-Spalte: Kalorien lassen sich aus
-    Eiweiß/Kohlenhydraten/Fett errechnen (4 kcal/g je Eiweiß und
-    Kohlenhydrate, 9 kcal/g Fett - die Atwater-Faustregel) und wären als
-    zusätzlich gepflegter Wert nur eine redundante, potenziell
-    widersprüchliche Angabe. Siehe services/nutrition.py: compute_calories().
+    Deliberately NO dedicated calories column: calories can be computed
+    from protein/carbs/fat (4 kcal/g for protein and carbs, 9 kcal/g for
+    fat - the Atwater rule of thumb) and would only be a redundant,
+    potentially contradictory figure if maintained separately. See
+    services/nutrition.py: compute_calories().
 
-    plan_id bindet den Eintrag an EINEN Plan (jeder Plan pflegt seine
-    eigenen Nährwert-Referenzen), canonical_name ist deshalb nur noch
-    INNERHALB eines Plans eindeutig."""
+    plan_id ties the entry to ONE plan (each plan maintains its own
+    nutrition references), so canonical_name is therefore only unique
+    WITHIN a plan."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     canonical_name = db.Column(db.String(100), nullable=False, index=True)
@@ -437,21 +432,21 @@ class IngredientNutrition(db.Model):
 
 
 class User(db.Model):
-    """Ein Nutzer-Konto - siehe services/auth.py für Login/Session-Handling.
+    """A user account - see services/auth.py for login/session handling.
 
-    password_hash speichert NIE das Klartext-Passwort, sondern einen über
-    werkzeug.security.generate_password_hash() erzeugten Hash (PBKDF2 mit
-    Salt) - services/auth.py: check_password() vergleicht damit beim
-    Login über werkzeug.security.check_password_hash(), ohne das
-    Passwort selbst je wieder rekonstruieren zu können.
+    password_hash NEVER stores the plaintext password, but a hash produced
+    via werkzeug.security.generate_password_hash() (PBKDF2 with salt) -
+    services/auth.py: check_password() compares against it on login via
+    werkzeug.security.check_password_hash(), without ever being able to
+    reconstruct the password itself.
 
-    Login erfolgt über email (immer klein geschrieben gespeichert, siehe
-    routes/auth.py: login()/register()) - name ist reiner Anzeigename OHNE
-    Eindeutigkeit, zwei Nutzer dürfen also gleich heißen. Registrierung
-    läuft über routes/auth.py: register() (Button auf der Login-Seite);
-    beim App-Start in app.py: init_db() werden zusätzlich weiterhin zwei
-    generische Demo-Konten ("Nutzer1"/"Nutzer2") gesät (Platzhalter-
-    E-Mails nach dem Schema <name>@example.com, siehe dort).
+    Login happens via email (always stored lowercased, see
+    routes/auth.py: login()/register()) - name is a pure display name
+    WITHOUT uniqueness, so two users are allowed to have the same name.
+    Registration runs via routes/auth.py: register() (button on the login
+    page); at app start, app.py: init_db() additionally still seeds two
+    generic demo accounts ("Nutzer1"/"Nutzer2") (placeholder emails
+    following the pattern <name>@example.com, see there).
 
     language is the ISO 639-1 code Flask-Babel uses to pick this user's
     translation catalog (see app.py: get_locale()) - defaults to 'en'
@@ -466,29 +461,29 @@ class User(db.Model):
 
 
 class Plan(db.Model):
-    """Ein eigenständiger Wochenplan-"Haushalt": eine unabhängige Sammlung
-    von PlanDay-Zeilen (siehe dort: PlanDay.plan_id) samt Einkaufsliste
-    (ExtraShoppingItem.plan_id) UND eigenem Kochbuch/eigenen Einstellungen
+    """A standalone weekly-plan "household": an independent collection of
+    PlanDay rows (see there: PlanDay.plan_id) along with a shopping list
+    (ExtraShoppingItem.plan_id) AND its own cookbook/its own settings
     (Recipe.owner_plan_id, Category.plan_id, AppSettings.plan_id,
-    IngredientAlias.plan_id, IngredientNutrition.plan_id) - jeder Plan
-    verwaltet seine Rezepte, Kategorien, Zutaten-Gleichsetzungen, Nährwert-
-    Referenzen und Anzeige-Einheiten komplett unabhängig von anderen
-    Plänen. Ein Rezept lässt sich zusätzlich per RecipePlanLink in einen
-    ANDEREN Plan einbinden (siehe dort) - eine echte Verknüpfung, kein
-    eigenes Kochbuch pro Plan im Sinne getrennter Kopien.
+    IngredientAlias.plan_id, IngredientNutrition.plan_id) - each plan
+    manages its recipes, categories, ingredient equivalences, nutrition
+    references and display units completely independently of other plans.
+    A recipe can additionally be embedded into ANOTHER plan via
+    RecipePlanLink (see there) - a real link, not a separate cookbook per
+    plan in the sense of separate copies.
 
-    Jeder Nutzer bekommt beim Anlegen automatisch genau einen eigenen Plan
-    (owner_user_id, siehe app.py: init_db()); über PlanMembership (unten)
-    lassen sich weitere Nutzer mit vollem Zugriff zu einem Plan hinzufügen
-    (siehe routes/sharing.py: invite_member).
+    Every user automatically gets exactly one plan of their own when
+    created (owner_user_id, see app.py: init_db()); via PlanMembership
+    (below), further users can be added to a plan with full access (see
+    routes/sharing.py: invite_member).
 
-    owner_user_id ist rein informativ (zeigt z.B. auf der Freigabeseite,
-    wer den Plan ursprünglich angelegt hat) - für die eigentliche
-    Zugriffskontrolle zählt ausschließlich, ob eine PlanMembership-Zeile
-    für den jeweiligen Nutzer existiert (auch der Eigentümer selbst bekommt
-    beim Anlegen eine ganz normale, nur zusätzlich gesternte Mitgliedschaft,
-    siehe unten) - kein Nutzer hat also über owner_user_id allein weitere
-    Rechte, die ein eingeladenes Mitglied nicht auch hätte.
+    owner_user_id is purely informational (shown e.g. on the sharing page,
+    who originally created the plan) - actual access control is based
+    solely on whether a PlanMembership row exists for the respective user
+    (even the owner themselves gets a perfectly normal membership on
+    creation, just additionally starred, see below) - so no user has any
+    additional rights via owner_user_id alone that an invited member
+    wouldn't also have.
     """
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -499,29 +494,28 @@ class Plan(db.Model):
 
 
 class PlanMembership(db.Model):
-    """Verknüpft einen Nutzer mit einem Plan, auf den er Zugriff hat (voller
-    Lese-/Schreibzugriff für alle Mitglieder, kein Unterschied zwischen
-    Eigentümer und eingeladenem Mitglied - siehe Plan.owner_user_id oben).
+    """Links a user to a plan they have access to (full read/write access
+    for all members, no distinction between owner and invited member - see
+    Plan.owner_user_id above).
 
-    is_starred markiert PRO NUTZER (nicht global) den einen Plan, der nach
-    dem Login automatisch geöffnet wird und oben in der Navigation steht
-    (siehe services/auth.py: current_plan()). Dass wirklich immer nur EINE
-    Mitgliedschaft desselben Nutzers gleichzeitig gesternt ist, wird nicht
-    über ein Datenbank-Constraint erzwungen (SQLite kennt keinen "at most
-    one true per user_id"-Constraint ohne Umwege), sondern auf
-    Anwendungsebene: routes/sharing.py: star_plan() entsternt in
-    DERSELBEN Transaktion zuerst alle anderen Mitgliedschaften desselben
-    Nutzers, bevor die neue gesetzt wird.
+    is_starred marks, PER USER (not globally), the one plan that opens
+    automatically after login and appears at the top of the navigation
+    (see services/auth.py: current_plan()). That truly only ONE membership
+    of the same user is ever starred at a time is not enforced via a
+    database constraint (SQLite has no "at most one true per user_id"
+    constraint without workarounds), but at the application level:
+    routes/sharing.py: star_plan() unstars all other memberships of the
+    same user in the SAME transaction before setting the new one.
 
-    show_in_week_overview steuert, analog PRO NUTZER (nicht global), ob
-    dieser Plan in DEN WOCHENPLAN-TAGESKACHELN ANDERER Pläne desselben
-    Nutzers als zusätzlicher, nur lesbarer Eintrag auftaucht (siehe
-    routes/plan/pages.py: week_view() - "otherPlanMeals"). Betrifft NICHT
-    die Ansicht des Plans selbst (der bleibt, wenn er der aktive Plan ist,
-    immer normal sichtbar) - nur, ob er bei einem GETEILTEN Plan für DIESEN
-    einen Nutzer zusätzlich in die Kacheln der übrigen eigenen Pläne
-    einfließt. Default True (neue Mitgliedschaften fließen automatisch mit
-    ein), abschaltbar über die Checkbox auf /manage/sharing.
+    show_in_week_overview controls, likewise PER USER (not globally),
+    whether this plan shows up in the WEEK-PLAN DAY TILES OF OTHER plans
+    belonging to the same user as an additional, read-only entry (see
+    routes/plan/pages.py: week_view() - "otherPlanMeals"). Does NOT affect
+    the view of the plan itself (which, when it's the active plan, always
+    stays visible normally) - only whether it additionally flows into the
+    tiles of the user's other plans for a SHARED plan, for THIS one user.
+    Default True (new memberships flow in automatically), togglable via
+    the checkbox on /manage/sharing.
     """
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
@@ -536,18 +530,18 @@ class PlanMembership(db.Model):
 
 
 class PendingPlanInvite(db.Model):
-    """Eine per E-Mail ausgesprochene Plan-Einladung an eine NOCH NICHT
-    registrierte Adresse (siehe routes/sharing.py: invite_member() - für
-    eine bereits existierende E-Mail entsteht stattdessen sofort eine
-    echte PlanMembership, keine Zeile hier).
+    """A plan invite sent by email to an address that is NOT YET
+    registered (see routes/sharing.py: invite_member() - for an email
+    that already exists, a real PlanMembership is created immediately
+    instead, no row here).
 
-    Registriert sich später jemand mit genau dieser E-Mail (klein
-    geschrieben, siehe routes/auth.py: register()), wird die Einladung
-    automatisch in eine echte PlanMembership umgewandelt und diese Zeile
-    dabei gelöscht (services/plans.py: accept_pending_invites()) - bis
-    dahin bleibt sie hier als sichtbarer "ausstehend"-Eintrag auf
-    /manage/sharing stehen (samt erneut abrufbarem Einladungs-Link, da noch
-    kein echter Mail-Versand angebunden ist, siehe services/mail.py)."""
+    If someone later registers with exactly this email (lowercased, see
+    routes/auth.py: register()), the invite is automatically converted
+    into a real PlanMembership and this row is deleted in the process
+    (services/plans.py: accept_pending_invites()) - until then it stays
+    here as a visible "pending" entry on /manage/sharing (including a
+    re-fetchable invite link, since real email sending isn't wired up
+    yet, see services/mail.py)."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     email = db.Column(db.String(255), nullable=False, index=True)

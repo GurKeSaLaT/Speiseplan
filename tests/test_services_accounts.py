@@ -1,5 +1,5 @@
-"""Tests für services/accounts.py: Profil ändern, Passwort ändern,
-Konto löschen."""
+"""Tests for services/accounts.py: change profile, change password,
+delete account."""
 
 
 def test_update_profile_success(app, client):
@@ -33,7 +33,7 @@ def test_update_profile_rejects_duplicate_email(app, client, make_user):
         other_email = User.query.get(other_id).email
         ok, error = update_profile(User.query.get(client.user_id), "X", other_email, "en")
         assert ok is False
-        assert "existiert bereits" in error
+        assert "already exists" in error
 
 
 def test_update_profile_rejects_malformed_email(app, client):
@@ -43,7 +43,7 @@ def test_update_profile_rejects_malformed_email(app, client):
     with app.app_context():
         ok, error = update_profile(User.query.get(client.user_id), "X", "keine-email", "en")
         assert ok is False
-        assert "gültige E-Mail" in error
+        assert "valid email address" in error
 
 
 def test_update_profile_rejects_empty_fields(app, client):
@@ -82,7 +82,7 @@ def test_update_password_requires_correct_current_password(app, client):
     with app.app_context():
         ok, error = update_password(User.query.get(client.user_id), "falsch", "neuespw")
         assert ok is False
-        assert "falsch" in error
+        assert "incorrect" in error
 
 
 def test_update_password_success(app, client):

@@ -1,39 +1,38 @@
-{# Nährwert-Verwaltung (/manage/ingredient-nutrition): eine Zeile pro
-   Alias-Zielname (services/nutrition.py: list_alias_canonical_names() -
-   z.B. "Nudeln", "Öl", NICHT jede einzelne unaliasierte Zutat wie
-   "Spaghetti") mit editierbaren Nährwert-Feldern - siehe
+{# Nutrition management (/manage/ingredient-nutrition): one row per
+   alias target name (services/nutrition.py: list_alias_canonical_names() -
+   e.g. "Noodles", "Oil", NOT every single unaliased ingredient like
+   "Spaghetti") with editable nutrition fields - see
    routes/settings.py: ingredient_nutrition_view()/
-   update_ingredient_nutrition(). Rezept-Nährwerte werden daraus
-   automatisch berechnet (services/nutrition.py: compute_recipe_nutrition,
-   aufgerufen aus routes/recipes.py: add_recipe()/edit_recipe()), sofern
-   ein Rezept nicht auf "manuell überschreiben" gestellt ist.
+   update_ingredient_nutrition(). Recipe nutrition values are computed
+   from this automatically (services/nutrition.py: compute_recipe_nutrition,
+   called from routes/recipes.py: add_recipe()/edit_recipe()), unless
+   a recipe is set to "override manually".
 
-   Referenzbasis ist immer 100 g / 100 ml / 1 Stk (services/nutrition.py:
-   REFERENCE_BASES) - dafür ein festes <select> statt einer frei
-   eingebbaren Menge+Einheit, sowohl damit alle Einträge miteinander
-   vergleichbar bleiben als auch weil ein schmales Zahlenfeld auf
-   kleinen Bildschirmen den Wert (z.B. "100") sichtbar auf "1" abschneiden
-   konnte.
+   The reference basis is always 100 g / 100 ml / 1 pc (services/nutrition.py:
+   REFERENCE_BASES) - hence a fixed <select> instead of a freely
+   enterable amount+unit, both so all entries remain comparable
+   with each other and because a narrow number field on
+   small screens could visibly truncate the value (e.g. "100") to "1".
 
-   Kcal ist bewusst KEIN eigenes Eingabefeld: es gibt sich immer aus
-   Eiweiß/Kohlenhydraten/Fett (services/nutrition.py: compute_calories(),
-   Atwater-Faustregel 4/4/9 kcal je g) - eine zusätzlich gepflegte Angabe
-   wäre nur redundant und könnte den anderen drei Werten widersprechen.
-   Die Kcal-Spalte zeigt stattdessen nur den daraus errechneten Wert an,
-   live per JS aktualisiert (siehe unten), sobald Eiweiß/Kohlenhydrate/
-   Fett geändert werden.
+   Kcal is deliberately NOT its own input field: it always results from
+   protein/carbs/fat (services/nutrition.py: compute_calories(),
+   Atwater rule of thumb 4/4/9 kcal per g) - an additionally maintained
+   value would only be redundant and could contradict the other three
+   values. The kcal column instead only shows the value computed from
+   those, updated live via JS (see below) as soon as protein/carbs/
+   fat are changed.
 
-   Unaliasierte Einzelzutaten tauchen hier bewusst NICHT auf - für die
-   gibt es stattdessen den Inline-Hinweis direkt beim Zutat-Eintragen
-   (siehe static/ingredient_alias_hint.js). #}
+   Unaliased individual ingredients deliberately do NOT show up here -
+   for those there is instead the inline hint directly where the
+   ingredient is entered (see static/ingredient_alias_hint.js). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-md-10">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">🍎 Nährwerte</h4>
-                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
+                <h4 class="card-title mb-0 fw-bold">🍎 {{ _('Nutrition') }}</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
                 {% if user_plans|length > 1 %}
@@ -48,27 +47,22 @@
                 </ul>
                 {% endif %}
                 <p class="text-muted">
-                    Nährwerte je Grundzutat (z.B. "Nudeln", "Öl") - gilt automatisch für alle
-                    gleichgesetzten Schreibweisen (z.B. "Spaghetti", "Fusilli"). Rezept-Nährwerte
-                    werden daraus automatisch berechnet, solange ein Rezept nicht auf "manuell
-                    überschreiben" gestellt ist. Zeilen mit <span class="text-muted">grauer</span>
-                    Schrift haben noch keinen eigenen Eintrag - die Referenzeinheit wurde anhand der
-                    tatsächlich verwendeten Zutatenmengen geraten, lässt sich aber jederzeit anpassen.
+                    {{ _('Nutrition values per base ingredient (e.g. "Noodles", "Oil") - automatically applies to all merged spellings (e.g. "Spaghetti", "Fusilli"). Recipe nutrition values are computed from this automatically, as long as a recipe is not set to "override manually". Rows in') }} <span class="text-muted">{{ _('gray') }}</span> {{ _("text don't have their own entry yet - the reference unit was guessed from the ingredient amounts actually used, but can be adjusted at any time.") }}
                 </p>
 
                 {% if rows %}
-                <input type="text" id="nutritionFilter" class="form-control mb-3" placeholder="🔍 Zutat suchen..." autocomplete="off">
+                <input type="text" id="nutritionFilter" class="form-control mb-3" placeholder="🔍 {{ _('Search ingredient...') }}" autocomplete="off">
 
                 <form action="/update-ingredient-nutrition" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="plan_id" value="{{ plan_id }}">
                     <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2 d-none d-md-flex">
-                        <div class="col-md-3">Zutat</div>
-                        <div class="col-md-2">Referenz</div>
-                        <div style="flex: 0 0 auto; width: 12.5%;">Eiweiß (g)</div>
-                        <div style="flex: 0 0 auto; width: 12.5%;">Kohlh. (g)</div>
-                        <div class="col-md-2">Fett (g)</div>
-                        <div class="col-md-1">Kcal</div>
+                        <div class="col-md-3">{{ _('Ingredient') }}</div>
+                        <div class="col-md-2">{{ _('Reference') }}</div>
+                        <div style="flex: 0 0 auto; width: 12.5%;">{{ _('Protein (g)') }}</div>
+                        <div style="flex: 0 0 auto; width: 12.5%;">{{ _('Carbs (g)') }}</div>
+                        <div class="col-md-2">{{ _('Fat (g)') }}</div>
+                        <div class="col-md-1">{{ _('Kcal') }}</div>
                     </div>
                     <div id="nutritionRows">
                         {% for row in rows %}
@@ -78,25 +72,25 @@
                                 <input type="text" class="form-control form-control-sm{% if not row.has_entry %} text-muted{% endif %}" value="{{ row.canonical_name }}" disabled>
                             </div>
                             <div class="col-6 col-md-2">
-                                <select name="reference_unit[]" class="form-select form-select-sm" title="Referenzbasis">
-                                    <option value="g" {% if row.reference_unit == 'g' %}selected{% endif %}>pro 100 g</option>
-                                    <option value="ml" {% if row.reference_unit == 'ml' %}selected{% endif %}>pro 100 ml</option>
-                                    <option value="Stk" {% if row.reference_unit == 'Stk' %}selected{% endif %}>pro 1 Stk</option>
+                                <select name="reference_unit[]" class="form-select form-select-sm" title="{{ _('Reference basis') }}">
+                                    <option value="g" {% if row.reference_unit == 'g' %}selected{% endif %}>{{ _('per 100 g') }}</option>
+                                    <option value="ml" {% if row.reference_unit == 'ml' %}selected{% endif %}>{{ _('per 100 ml') }}</option>
+                                    <option value="Stk" {% if row.reference_unit == 'Stk' %}selected{% endif %}>{{ _('per 1 pc') }}</option>
                                 </select>
                             </div>
-                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="protein[]" class="form-control form-control-sm nutrition-protein" value="{{ row.protein }}" placeholder="Eiweiß"></div>
-                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm nutrition-carbs" value="{{ row.carbs }}" placeholder="Kohlh."></div>
-                            <div class="col-4 col-md-2"><input type="number" step="0.1" name="fat[]" class="form-control form-control-sm nutrition-fat" value="{{ row.fat }}" placeholder="Fett"></div>
+                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="protein[]" class="form-control form-control-sm nutrition-protein" value="{{ row.protein }}" placeholder="{{ _('Protein') }}"></div>
+                            <div class="col-4 col-md-1" style="flex: 0 0 auto; width: 12.5%;"><input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm nutrition-carbs" value="{{ row.carbs }}" placeholder="{{ _('Carbs') }}"></div>
+                            <div class="col-4 col-md-2"><input type="number" step="0.1" name="fat[]" class="form-control form-control-sm nutrition-fat" value="{{ row.fat }}" placeholder="{{ _('Fat') }}"></div>
                             <div class="col-6 col-md-1">
-                                <input type="text" class="form-control form-control-sm text-muted nutrition-calories-display" value="{{ row.calories }}" title="Errechnet aus Eiweiß/Kohlenhydraten/Fett" disabled>
+                                <input type="text" class="form-control form-control-sm text-muted nutrition-calories-display" value="{{ row.calories }}" title="{{ _('Computed from protein/carbs/fat') }}" disabled>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
-                    <button type="submit" class="btn btn-dark fw-bold mt-3">Speichern</button>
+                    <button type="submit" class="btn btn-dark fw-bold mt-3">{{ _('Save') }}</button>
                 </form>
                 {% else %}
-                <div class="text-center p-5 text-muted">Noch keine gleichgesetzten Zutaten vorhanden.</div>
+                <div class="text-center p-5 text-muted">{{ _('No merged ingredients yet.') }}</div>
                 {% endif %}
             </div>
         </div>
@@ -105,18 +99,18 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Rein clientseitiger Fuzzy-Filter (siehe static/fuzzy_search.js) - kein
-// Server-Roundtrip nötig.
+// Purely client-side fuzzy filter (see static/fuzzy_search.js) - no
+// server round-trip needed.
 wireFuzzyFilter(
     document.getElementById('nutritionFilter'), '.nutrition-row',
     row => row.querySelector('input[name="canonical_name[]"]').value
 );
 
-// Kcal-Anzeige live aus Eiweiß/Kohlenhydraten/Fett nachführen (Atwater-
-// Faustregel 4/4/9 kcal je g - dieselbe Formel wie services/nutrition.py:
-// compute_calories()) - rein informativ, wird nicht mit abgeschickt (das
-// Feld ist disabled), der Server errechnet den Wert beim Anzeigen ohnehin
-// selbst neu.
+// Update the kcal display live from protein/carbs/fat (Atwater
+// rule of thumb 4/4/9 kcal per g - same formula as services/nutrition.py:
+// compute_calories()) - purely informational, not submitted (the
+// field is disabled), the server recomputes the value itself when
+// displaying it anyway.
 document.querySelectorAll('.nutrition-row').forEach(row => {
     const proteinInput = row.querySelector('.nutrition-protein');
     const carbsInput = row.querySelector('.nutrition-carbs');

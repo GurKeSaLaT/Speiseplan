@@ -1,10 +1,11 @@
-"""AJAX-Endpunkte für manuell zur Einkaufsliste hinzugefügte Posten
-(ExtraShoppingItem), die zu keinem Rezept gehören - z.B. Hygieneartikel
-oder Getränke. Anlegen ist wochenbezogen (start_date), Löschen dagegen
-postenbezogen (die id reicht, ohne Wochenbezug).
+"""AJAX endpoints for items manually added to the shopping list
+(ExtraShoppingItem) that don't belong to any recipe - e.g. toiletries or
+drinks. Creation is week-based (start_date), while deletion is
+item-based (the id is enough, no week reference needed).
 """
 
 from flask import abort, request
+from flask_babel import gettext as _
 
 from models import db, ExtraShoppingItem
 from services.auth import current_plan
@@ -16,28 +17,28 @@ from routes.plan import plan_bp
 
 @plan_bp.route('/plan/<start_date>/shopping-item/add', methods=['POST'])
 def add_shopping_item(start_date):
-    """AJAX-Endpunkt hinter dem "Artikel hinzufügen"-Mini-Formular auf der
-    Plan-Seite (siehe static/plan-shopping.js: addExtraShoppingItem): legt
-    einen manuellen Einkaufslisten-Posten an, der zu keinem Rezept gehört
-    (z.B. Hygieneartikel). start_date wird wie überall sonst auf den
-    Wochenmontag normalisiert, damit ein Artikel unabhängig davon, über
-    welches Datum innerhalb der Woche die Seite gerade aufgerufen wurde,
-    konsistent DER EINEN Woche zugeordnet wird.
+    """AJAX endpoint behind the "add item" mini-form on the plan page
+    (see static/plan-shopping.js: addExtraShoppingItem): creates a
+    manual shopping-list item that doesn't belong to any recipe (e.g.
+    toiletries). start_date is normalized to the week's Monday like
+    everywhere else, so an item is consistently assigned to THE ONE week
+    regardless of which date within the week the page was accessed
+    through.
 
-    Erwartet einen JSON-Body {"name": str, "amount": Zahl oder null,
-    "unit": str, "category": str}. name ist die einzige Pflichtangabe -
-    ohne ihn ergibt der Eintrag keinen Sinn; amount/unit/category dürfen
-    leer bleiben (z.B. "Klopapier" ganz ohne Mengenangabe).
+    Expects a JSON body {"name": str, "amount": number or null,
+    "unit": str, "category": str}. name is the only required field -
+    without it the entry wouldn't make sense; amount/unit/category may
+    be left empty (e.g. "toilet paper" with no amount at all).
     """
     start = parse_iso_date(start_date)
     if start is None:
-        return {"error": "Ungültiges Datum"}, 400
+        return {"error": _("Invalid date")}, 400
     start = monday_of(start)
 
     data = request.get_json() or {}
     name = (data.get('name') or '').strip()
     if not name:
-        return {"error": "Name darf nicht leer sein."}, 400
+        return {"error": _("Name must not be empty.")}, 400
 
     try:
         raw_amount = data.get('amount')
@@ -48,10 +49,10 @@ def add_shopping_item(start_date):
     unit = (data.get('unit') or '').strip() or None
     category = (data.get('category') or '').strip() or None
 
-    # Wie bei Rezept-Zutaten (routes/recipes.py) auf die kanonische Form
-    # bringen, sofern eine Menge angegeben wurde - amount darf hier (anders
-    # als bei Ingredient) None sein ("Klopapier" ganz ohne Mengenangabe),
-    # normalize_amount_unit() käme mit None als Menge nicht klar.
+    # Bring into canonical form like with recipe ingredients
+    # (routes/recipes.py), provided an amount was given - amount may be
+    # None here (unlike with Ingredient) ("toilet paper" with no amount
+    # at all), normalize_amount_unit() couldn't handle None as an amount.
     if amount is not None and unit is not None:
         amount, unit = normalize_amount_unit(amount, unit)
 
@@ -70,14 +71,14 @@ def add_shopping_item(start_date):
 
 @plan_bp.route('/shopping-item/<int:item_id>/delete', methods=['POST'])
 def delete_shopping_item(item_id):
-    """AJAX-Endpunkt hinter dem ❌-Button eines manuell hinzugefügten
-    Einkaufslisten-Postens: löscht ihn endgültig (im Gegensatz zur
-    Ankreuzen-Funktion der übrigen Einkaufsliste, die rein clientseitig und
-    nicht dauerhaft ist).
+    """AJAX endpoint behind the X button of a manually added shopping-
+    list item: deletes it permanently (unlike the checkbox function of
+    the rest of the shopping list, which is purely client-side and not
+    persistent).
 
-    Zusätzlicher Besitz-Check (plan_id muss zum aktiven Plan passen, sonst
-    404 statt still zu löschen) - item_id allein wäre sonst über
-    Plan-Grenzen hinweg erratbar/nutzbar."""
+    Additional ownership check (plan_id must match the active plan,
+    otherwise 404 instead of silently deleting) - item_id alone would
+    otherwise be guessable/usable across plan boundaries."""
     item = ExtraShoppingItem.query.get_or_404(item_id)
     if item.plan_id != current_plan().id:
         abort(404)

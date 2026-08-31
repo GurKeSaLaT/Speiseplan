@@ -1,4 +1,4 @@
-"""Tests für services/shopping.py: die feste Einkaufslisten-Kategorie-Liste."""
+"""Tests for services/shopping.py: the fixed shopping-list category list."""
 from services.shopping import PANTRY_CATEGORIES, SHOPPING_CATEGORIES, UNCATEGORIZED, infer_category
 
 
@@ -19,26 +19,26 @@ def test_shopping_categories_order():
 
 
 def test_uncategorized_not_part_of_fixed_list():
-    # Sonstiges ist die Auffangkategorie, sortiert separat ans Ende
-    # (siehe categorySortIndex() in static/plan-shopping.js) - kein
-    # eigener Eintrag in SHOPPING_CATEGORIES.
+    # "Sonstiges" is the catch-all category, sorted separately to the end
+    # (see categorySortIndex() in static/plan-shopping.js) - it's not
+    # its own entry in SHOPPING_CATEGORIES.
     assert UNCATEGORIZED not in SHOPPING_CATEGORIES
 
 
 def test_pantry_categories_are_valid_shopping_categories():
-    # Jede Vorrats-Kategorie muss auch eine echte Einkaufslisten-Kategorie
-    # sein (sonst würde sie z.B. nicht im Kategorie-Dropdown auftauchen).
+    # Every pantry category must also be a genuine shopping-list category
+    # (otherwise it wouldn't show up in the category dropdown, for example).
     assert PANTRY_CATEGORIES == {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}
     assert PANTRY_CATEGORIES.issubset(set(SHOPPING_CATEGORIES))
-    # Backwaren ist bewusst NICHT Teil der Vorrats-Kategorien - Brot ist
-    # typischerweise ein frischer wöchentlicher Einkauf.
+    # "Backwaren" is deliberately NOT part of the pantry categories - bread
+    # is typically a fresh weekly purchase.
     assert "Backwaren" not in PANTRY_CATEGORIES
 
 
 def test_shopping_categories_injected_into_templates(client):
     resp = client.get("/manage")
     assert resp.status_code == 200
-    # tojson escaped Umlaute als \uXXXX statt roher UTF-8-Bytes, siehe
+    # tojson escapes umlauts as \uXXXX instead of raw UTF-8 bytes, see
     # templates/base.html: window.SHOPPING_CATEGORIES.
     assert b"Gew\\u00fcrze" in resp.data
     assert b"Verbrauchsartikel" in resp.data
@@ -66,10 +66,10 @@ def test_infer_category_returns_existing_category(app, test_plan_id, make_recipe
 
 
 def test_infer_category_resolves_via_alias(app, test_plan_id, make_recipe):
-    """Eine Zutat-Zeile bleibt in der DB unter ihrem ursprünglichen Namen
-    ("Spaghetti") gespeichert - infer_category muss sie trotzdem finden,
-    wenn nach der ALIAS-ZIEL-Kategorie ("Nudeln") gefragt wird, da es
-    intern jede Zeile über normalize_ingredient_name() auflöst."""
+    """An ingredient row stays stored in the DB under its original name
+    ("Spaghetti") - infer_category must still find it when asked for the
+    ALIAS-TARGET category ("Nudeln"), since it internally resolves every
+    row via normalize_ingredient_name()."""
     from services.ingredient_aliases import set_alias
 
     make_recipe("Nudelgericht", ingredients=[

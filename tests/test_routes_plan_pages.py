@@ -1,5 +1,5 @@
-"""Tests für routes/plan/pages.py: Seiten-Routen des Wochenplan-Kalenders
-(Übersicht, Erstellen-Formular, automatisches Auffüllen+Speichern)."""
+"""Tests for routes/plan/pages.py: page routes of the weekly plan calendar
+(overview, create form, automatic filling+saving)."""
 import json
 import re
 from datetime import date, timedelta
@@ -43,7 +43,7 @@ def test_week_view_shows_create_prompt_without_plan(client):
     monday = date(2026, 6, 15)
     resp = client.get(f"/plan/{monday.isoformat()}")
     assert resp.status_code == 200
-    assert "noch keinen Plan".encode("utf-8") in resp.data
+    assert "no plan for this week".encode("utf-8") in resp.data
 
 
 def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
@@ -57,22 +57,22 @@ def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
 
     resp = client.get(f"/plan/{monday.isoformat()}")
     assert resp.status_code == 200
-    assert "noch keinen Plan".encode("utf-8") not in resp.data
-    assert "Dein Wochenplan".encode("utf-8") in resp.data
+    assert "no plan for this week".encode("utf-8") not in resp.data
+    assert "Your weekly plan".encode("utf-8") in resp.data
     assert b'"name": "Montagsgericht"' in resp.data or "Montagsgericht".encode("utf-8") in resp.data
-    # Rezept-Detail-Fenster (siehe static/plan.js: openRecipeDetail) muss
-    # als Markup vorhanden sein, unabhängig davon, ob für diese Woche
-    # bereits ein Plan existiert.
+    # Recipe detail window (see static/plan.js: openRecipeDetail) must
+    # be present as markup, regardless of whether a plan already exists
+    # for this week.
     assert b'id="recipeDetailModal"' in resp.data
     assert b'id="recipeDetailCookedCheckbox"' in resp.data
 
 
 def test_week_view_has_pantry_list_panel(client, app, make_recipe):
-    """Gewürze/Verbrauchsartikel (siehe services/shopping.py:
-    PANTRY_CATEGORIES) landen nicht direkt auf der Einkaufsliste, sondern
-    auf einer separaten "Vorrat prüfen"-Liste (siehe
-    static/plan-shopping.js: renderPantryList) - deren leere Hülle muss
-    unabhängig vom Planzustand immer vorhanden sein, JS befüllt sie."""
+    """Spices/consumables (see services/shopping.py:
+    PANTRY_CATEGORIES) don't end up directly on the shopping list, but
+    on a separate "check pantry" list (see
+    static/plan-shopping.js: renderPantryList) - its empty shell must
+    always be present regardless of plan state, JS fills it in."""
     from models import PlanDay, db
 
     monday = date(2026, 6, 15)
@@ -85,7 +85,7 @@ def test_week_view_has_pantry_list_panel(client, app, make_recipe):
     assert resp.status_code == 200
     assert b'id="pantryListContainer"' in resp.data
     assert b'id="pantryItemsCount"' in resp.data
-    assert "Vorrat prüfen".encode("utf-8") in resp.data
+    assert "Check pantry".encode("utf-8") in resp.data
 
 
 def test_week_view_plan_data_reflects_excluded_and_servings(client, app):
@@ -157,9 +157,10 @@ def test_week_create_view_lists_recipes_with_category_badge(client, make_categor
     resp = client.get("/plan/2026-06-15/create")
     assert resp.status_code == 200
     assert b"Erstellbares Gericht" in resp.data
-    # "categories" wird an create_week.html durchgereicht, aber dort NICHT
-    # separat gerendert - nur ueber das data-category-Attribut/Badge jedes
-    # einzelnen Suchtreffers taucht der Kategorie-Name im HTML auf.
+    # "categories" is passed through to create_week.html, but NOT
+    # rendered separately there - the category name only shows up in the
+    # HTML via the data-category attribute/badge of each individual
+    # search result.
     assert b"Vegan" in resp.data
 
 
@@ -170,7 +171,7 @@ def test_week_create_view_invalid_date_returns_404(client):
 
 def test_week_create_view_normalizes_non_monday_without_redirect(client):
     resp = client.get("/plan/2026-06-17/create")
-    assert resp.status_code == 200  # kein Redirect, siehe Docstring in pages.py
+    assert resp.status_code == 200  # no redirect, see docstring in pages.py
 
 
 # --- week_generate ---
@@ -254,7 +255,7 @@ def test_week_generate_rerun_replaces_previous_sides(client, app, make_recipe):
         assert side_recipe_ids == {side_b}
 
 
-# --- otherPlanMeals (Wochenplan-Kachel über mehrere eigene Pläne hinweg) ---
+# --- otherPlanMeals (weekly plan tile spanning multiple own plans) ---
 
 def test_other_plan_meals_shows_dish_from_second_plan_same_day(app, client, make_recipe, make_user):
     from models import PlanDay, PlanMembership, db
@@ -277,7 +278,7 @@ def test_other_plan_meals_shows_dish_from_second_plan_same_day(app, client, make
     assert len(other_meals_monday) == 1
     assert other_meals_monday[0]["recipeName"] == "Anderes Gericht"
     assert other_meals_monday[0]["planId"] == other_plan_id
-    # Kein anderer Plan mit Gericht an den übrigen Tagen dieser Woche.
+    # No other plan with a dish on the remaining days of this week.
     assert all(plan_data["otherPlanMeals"][i] == [] for i in range(1, 7))
 
 
@@ -296,11 +297,10 @@ def test_other_plan_meals_empty_when_no_other_plan_has_a_dish(app, client, make_
 
 
 def test_other_plan_meals_respects_per_membership_overview_flag(app, client, make_recipe, make_user):
-    """show_in_week_overview gilt individuell PRO NUTZER (models.py:
-    PlanMembership) - schaltet client seine eigene Mitgliedschaft an einem
-    geteilten Plan aus der Übersicht aus, bleibt das für einen ANDEREN
-    Mitglied desselben Plans (mit unverändert eingeschaltetem Flag)
-    unbeeinflusst."""
+    """show_in_week_overview applies individually PER USER (models.py:
+    PlanMembership) - if client turns off their own membership in a
+    shared plan from the overview, that has no effect on an OTHER
+    member of the same plan (whose flag remains unchanged/on)."""
     from models import PlanDay, PlanMembership, db
 
     monday = date(2026, 6, 15)

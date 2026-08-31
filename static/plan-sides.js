@@ -1,32 +1,30 @@
 /**
- * plan-sides.js - Alles rund um Beilagen auf der Plan-Seite
- * (templates/plan.html): Rendern des Beilagen-Bereichs einer Tageskarte,
- * neue Beilagen hinzufügen (gewürfelt oder manuell ausgewählt), eine
- * bestehende Beilage neu würfeln/manuell ersetzen/entfernen, sowie das
- * Verschieben EINER einzelnen Beilage per Drag-and-Drop auf einen anderen
- * Tag (unabhängig vom kompletten Tages-Tausch, der in static/plan.js
- * lebt).
+ * plan-sides.js - everything related to side dishes on the plan page
+ * (templates/plan.html): rendering the side dish section of a day card,
+ * adding new side dishes (rolled randomly or manually selected),
+ * rerolling/manually replacing/removing an existing side dish, as well
+ * as moving A SINGLE side dish via drag-and-drop to another day
+ * (independent of the full day swap, which lives in static/plan.js).
  *
- * Nutzt gemeinsame Infrastruktur aus den anderen plan-*.js-Dateien:
- * weeklySideRecipes/dayDates/postWithCsrf (siehe static/plan.js),
- * buildManualSelectHtml/wireManualSelectBox (siehe
- * static/plan-manual-select.js) und rebuildShoppingList (siehe
- * static/plan-shopping.js) - alle drei müssen VOR oder NACH dieser Datei
- * eingebunden sein (die Reihenfolge der <script>-Tags in plan.html spielt
- * hier keine Rolle, da diese Datei ihre Funktionen nur deklariert, aber
- * nichts davon beim Laden sofort AUFRUFT - erst spätere Nutzerinteraktionen
- * tun das, wenn längst alle Skripte geladen sind).
+ * Uses shared infrastructure from the other plan-*.js files:
+ * weeklySideRecipes/dayDates/postWithCsrf (see static/plan.js),
+ * buildManualSelectHtml/wireManualSelectBox (see
+ * static/plan-manual-select.js) and rebuildShoppingList (see
+ * static/plan-shopping.js) - all three must be included BEFORE or AFTER
+ * this file (the order of the <script> tags in plan.html doesn't matter
+ * here, since this file only declares its functions but doesn't CALL any
+ * of them immediately on load - only later user interactions do, by
+ * which point all scripts are long since loaded).
  */
 
 /**
- * Baut den kompletten Beilagen-Bereich einer Tageskarte auf: eine Zeile
- * pro aktuell zugewiesener Beilage (jeweils mit eigenem Drag-Handle für
- * moveSideDish sowie 🎲/✏️/❌-Buttons für genau DIESEN Slot) plus eine
- * abschließende "Beilage hinzufügen"-Zeile (🎲 würfelt eine neue zufällige
- * Beilage dazu, ✏️ öffnet die manuelle Auswahl für einen NEUEN Slot). Jede
- * Zeile bekommt eine eigene id (side-item-<dayIndex>-<sideId> bzw.
- * side-add-row-<dayIndex>), über die openSideManualSelect() gezielt genau
- * diese eine Zeile durch die Auswahlbox ersetzen kann.
+ * Builds the complete side dish section of a day card: one row per
+ * currently assigned side dish (each with its own drag handle for
+ * moveSideDish plus 🎲/✏️/❌ buttons for exactly THIS slot) plus a final
+ * "add side dish" row (🎲 rolls a new random side dish, ✏️ opens manual
+ * selection for a NEW slot). Each row gets its own id (side-item-<dayIndex>-<sideId>
+ * or side-add-row-<dayIndex>), which openSideManualSelect() uses to
+ * replace exactly that one row with the selection box.
  */
 function renderSidesSection(dayIndex) {
     const sides = weeklySideRecipes[dayIndex] || [];
@@ -38,44 +36,44 @@ function renderSidesSection(dayIndex) {
                  id="side-item-${dayIndex}-${side.side_id}"
                  draggable="true"
                  ondragstart="sideDragStart(event, ${dayIndex}, ${side.side_id})">
-                <div class="dish-clickable${cookedClass}" role="button" title="Details anzeigen" onclick="openRecipeDetail(${dayIndex}, ${side.side_id})">
+                <div class="dish-clickable${cookedClass}" role="button" title="Show details" onclick="openRecipeDetail(${dayIndex}, ${side.side_id})">
                     <span class="fw-bold text-dark side-dish-name">🥗 ${side.name}</span>
                     <span class="badge badge-category side-dish-category ms-1">${side.category_name}</span>
                     <span class="text-muted small side-dish-kcal">(${side.calories} kcal)</span>
                 </div>
                 <div class="d-flex align-items-center gap-1">
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Diese Beilage neu würfeln" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Andere Beilage auswählen" onclick="openSideManualSelect(${dayIndex}, ${side.side_id})">✏️</button>
-                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Beilage entfernen" onclick="removeOneSide(${dayIndex}, ${side.side_id})">❌</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Reroll this side dish" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Choose a different side dish" onclick="openSideManualSelect(${dayIndex}, ${side.side_id})">✏️</button>
+                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Remove side dish" onclick="removeOneSide(${dayIndex}, ${side.side_id})">❌</button>
                 </div>
             </div>
         `;
     });
     html += `
         <div id="side-add-row-${dayIndex}" class="d-flex gap-1">
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" onclick="addRandomSide(${dayIndex})">🎲 Beilage würfeln</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" title="Beilage auswählen" onclick="openSideManualSelect(${dayIndex}, null)">✏️</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" onclick="addRandomSide(${dayIndex})">🎲 Roll a side dish</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Choose a side dish" onclick="openSideManualSelect(${dayIndex}, null)">✏️</button>
         </div>
     `;
     return html;
 }
 
-/** Rendert nur den Beilagen-Bereich einer Tageskarte neu (side-row-<dayIndex>), ohne Personenzeile/Hauptgericht anzutasten. */
+/** Re-renders only the side dish section of a day card (side-row-<dayIndex>), without touching the servings row/main dish. */
 function refreshSidesSection(dayIndex) {
     const container = document.getElementById(`side-row-${dayIndex}`);
     if (container) container.innerHTML = renderSidesSection(dayIndex);
 }
 
 /**
- * Öffnet die manuelle Beilagenauswahl-Box: entweder ANSTELLE einer
- * bestehenden Beilagen-Zeile (sideId gesetzt - ersetzt genau diesen Slot,
- * siehe setOneSide) oder ANSTELLE der "Hinzufügen"-Zeile (sideId null -
- * legt einen NEUEN Slot an, siehe addSide). Beide Fälle nutzen denselben
- * Mechanismus: die Ziel-Zeile per id finden, ihr aktuelles Markup merken,
- * gegen die Auswahlbox (siehe static/plan-manual-select.js) tauschen. Nach
- * einer erfolgreichen Auswahl rendert refreshSidesSection() ohnehin den
- * kompletten Bereich neu (siehe addSide/setOneSide), ein manuelles
- * Wiederherstellen bei Erfolg ist daher nicht nötig - nur bei "Abbrechen".
+ * Opens the manual side dish selection box: either IN PLACE OF an
+ * existing side dish row (sideId set - replaces exactly that slot, see
+ * setOneSide) or IN PLACE OF the "add" row (sideId null - creates a NEW
+ * slot, see addSide). Both cases use the same mechanism: find the target
+ * row by id, remember its current markup, swap it for the selection box
+ * (see static/plan-manual-select.js). After a successful selection,
+ * refreshSidesSection() re-renders the whole section anyway (see
+ * addSide/setOneSide), so a manual restore on success isn't needed -
+ * only on "Cancel".
  */
 function openSideManualSelect(dayIndex, sideId) {
     const container = sideId
@@ -99,12 +97,12 @@ function openSideManualSelect(dayIndex, sideId) {
 }
 
 /**
- * Legt eine NEUE Beilage für einen Tag an (ruft serverseitig
- * routes/plan/day_actions.py: add_side() auf) - zusätzlich zu bereits
- * vorhandenen, ein Tag kann beliebig viele haben. recipeId ist optional:
- * gesetzt (manuelle Auswahl über ✏️) wird genau dieses Rezept übernommen,
- * fehlt es (🎲-Button), würfelt der Server zufällig unter Berücksichtigung
- * von Wochen-Dubletten und der weichen Wiederholungs-Gewichtung.
+ * Creates a NEW side dish for a day (calls
+ * routes/plan/day_actions.py: add_side() server-side) - in addition to
+ * any already present, a day can have any number. recipeId is optional:
+ * if set (manual selection via ✏️), exactly that recipe is used; if
+ * missing (🎲 button), the server rolls one at random, taking weekly
+ * duplicates and the soft repetition weighting into account.
  */
 function addSide(dayIndex, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/add`, {
@@ -112,7 +110,7 @@ function addSide(dayIndex, recipeId) {
         body: JSON.stringify({ recipe_id: recipeId || null }),
     })
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine Beilage verfügbar.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'No side dish available.'); });
         return response.json();
     })
     .then(newSide => {
@@ -121,25 +119,24 @@ function addSide(dayIndex, recipeId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }
 
-/** Kurzer Alias für den 🎲-Button der "Beilage hinzufügen"-Zeile - würfelt eine neue Beilage ohne manuelle Auswahl. */
+/** Short alias for the 🎲 button of the "add side dish" row - rolls a new side dish without manual selection. */
 function addRandomSide(dayIndex) {
     addSide(dayIndex, null);
 }
 
 /**
- * Würfelt EINE bestehende Beilage neu (ersetzt sie durch ein anderes,
- * zufällig gewähltes Rezept - im Gegensatz zu addSide, das einen
- * ZUSÄTZLICHEN Slot anlegt). sideId identifiziert die PlanDaySide-Zeile,
- * nicht das Rezept.
+ * Rerolls A SINGLE existing side dish (replaces it with a different,
+ * randomly chosen recipe - unlike addSide, which creates an ADDITIONAL
+ * slot). sideId identifies the PlanDaySide row, not the recipe.
  */
 function rerollOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/reroll`)
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Keine Alternative verfügbar.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'No alternative available.'); });
         return response.json();
     })
     .then(newSide => {
@@ -149,18 +146,18 @@ function rerollOneSide(dayIndex, sideId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }
 
-/** Ersetzt EINE bestehende Beilage durch ein vom Nutzer manuell gewähltes Rezept (das manuelle Pendant zu rerollOneSide). */
+/** Replaces A SINGLE existing side dish with a recipe manually chosen by the user (the manual counterpart to rerollOneSide). */
 function setOneSide(dayIndex, sideId, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/set`, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recipe_id: recipeId }),
     })
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Auswahl fehlgeschlagen.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Selection failed.'); });
         return response.json();
     })
     .then(newSide => {
@@ -170,15 +167,15 @@ function setOneSide(dayIndex, sideId, recipeId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }
 
-/** Entfernt EINE bestehende Beilage endgültig, ohne die übrigen Beilagen desselben Tages anzutasten. */
+/** Permanently removes A SINGLE existing side dish, without touching the other side dishes of the same day. */
 function removeOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/remove`)
     .then(response => {
-        if (!response.ok) throw new Error('Entfernen fehlgeschlagen.');
+        if (!response.ok) throw new Error('Removing failed.');
     })
     .then(() => {
         weeklySideRecipes[dayIndex] = weeklySideRecipes[dayIndex].filter(s => s.side_id !== sideId);
@@ -186,36 +183,35 @@ function removeOneSide(dayIndex, sideId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }
 
-// --- EINZELNE BEILAGE PER DRAG-AND-DROP VERSCHIEBEN ---
-// Siehe static/plan.js für den kompletten Tages-Tausch (ganze Karte ziehen)
-// und den gemeinsamen dayCardDrop()-Handler, der anhand der im DataTransfer
-// codierten {type: 'side', ...}-Payload hierher (moveSideDish) verzweigt.
+// --- MOVING A SINGLE SIDE DISH VIA DRAG-AND-DROP ---
+// See static/plan.js for the full day swap (dragging the whole card) and
+// the shared dayCardDrop() handler, which branches here (moveSideDish)
+// based on the {type: 'side', ...} payload encoded in the DataTransfer.
 
-/** Merkt beim Start des Ziehens EINER Beilagen-Zeile deren Herkunft (Tag + PlanDaySide-ID) im DataTransfer. stopPropagation verhindert, dass zusätzlich (redundant) auch noch dayCardDragStart der umschließenden Karte feuert. */
+/** Remembers the origin (day + PlanDaySide ID) of A SINGLE side dish row in the DataTransfer when dragging starts. stopPropagation prevents the enclosing card's dayCardDragStart from ALSO (redundantly) firing. */
 function sideDragStart(event, dayIndex, sideId) {
     event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'side', dayIndex: dayIndex, sideId: sideId }));
     event.stopPropagation();
 }
 
 /**
- * Verschiebt EINE einzelne Beilage von sourceDayIndex zu targetDayIndex
- * (ruft serverseitig routes/plan/day_actions.py: move_one_side() auf) -
- * ein einseitiges Verschieben, kein Tausch: der Zieltag behält alles, was
- * er bereits hatte, und bekommt die Beilage zusätzlich. Aktualisiert nach
- * Erfolg beide betroffenen Beilagen-Bereiche (nicht die ganze Karte, das
- * Hauptgericht bleibt ja unangetastet). Wird von static/plan.js:
- * dayCardDrop() aufgerufen.
+ * Moves A SINGLE side dish from sourceDayIndex to targetDayIndex (calls
+ * routes/plan/day_actions.py: move_one_side() server-side) - a one-way
+ * move, not a swap: the target day keeps everything it already had, and
+ * gets the side dish in addition. On success, updates both affected side
+ * dish sections (not the whole card, the main dish stays untouched after
+ * all). Called by static/plan.js: dayCardDrop().
  */
 function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
     if (sourceDayIndex === targetDayIndex) return;
 
     postWithCsrf(`/day/${dayDates[sourceDayIndex]}/side/${sideId}/move/${dayDates[targetDayIndex]}`)
     .then(response => {
-        if (!response.ok) throw new Error('Verschieben fehlgeschlagen.');
+        if (!response.ok) throw new Error('Moving failed.');
         return response.json();
     })
     .then(movedSide => {
@@ -226,6 +222,6 @@ function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Hinweis: ' + err.message);
+        alert('Notice: ' + err.message);
     });
 }

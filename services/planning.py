@@ -1,39 +1,39 @@
-"""Kern-Planungslogik der App: alles, was bestimmt, WELCHER Wochentag WELCHES
-Datum hat und WELCHES Rezept an einem Tag landet.
+"""Core planning logic of the app: everything that determines WHICH
+weekday has WHICH date and WHICH recipe ends up on a given day.
 
-Drei zusammenhängende Aufgabenbereiche in dieser Datei:
+Three related areas of responsibility in this file:
 
-1. Wochen-/Datums-Helfer (monday_of, week_dates_for, parse_iso_date,
-   week_neighbor_exclude_ids, week_side_recipe_ids): rechnen zwischen
-   "Wochenstart-Datum" und den sieben zugehörigen Kalendertagen um, und
-   ermitteln, welche Rezepte in derselben Kalenderwoche bereits verplant
-   sind - für Hauptgerichte (ein Wert pro Tag) und Beilagen (beliebig viele
-   pro Tag, siehe models.py: PlanDaySide) getrennt, da sich beide
-   strukturell unterscheiden.
+1. Week/date helpers (monday_of, week_dates_for, parse_iso_date,
+   week_neighbor_exclude_ids, week_side_recipe_ids): convert between a
+   "week-start date" and its seven associated calendar days, and
+   determine which recipes are already planned in the same calendar
+   week - handled separately for main dishes (one value per day) and
+   side dishes (any number per day, see models.py: PlanDaySide), since
+   the two differ structurally.
 
-2. Kategorie-Balance (assign_balanced_categories): entscheidet beim
-   automatischen Auffüllen einer Woche, welche KATEGORIE (nicht welches
-   Rezept) an welchem Tag drankommt - möglichst gleichmäßig über alle
-   Kategorien verteilt und nach Möglichkeit ohne Wiederholung an
-   aufeinanderfolgenden Tagen.
+2. Category balance (assign_balanced_categories): decides, when
+   auto-filling a week, which CATEGORY (not which recipe) goes on which
+   day - distributed as evenly as possible across all categories and,
+   where possible, without repeating on consecutive days.
 
-3. Rezept-Auswahl (choose_recipe, weighted_recipe_choice, recent_usage_counts,
-   jsonify_recipe, jsonify_side): wählt dann tatsächlich EIN konkretes
-   Rezept aus einer Kategorie/einem Pool aus, unter Berücksichtigung von
-   Favoriten-Gewichtung, Saison-Verfügbarkeit und einer weichen
-   Wiederholungs-Gewichtung (je häufiger ein Rezept kürzlich im Plan
-   vorkam, desto seltener wird es erneut gezogen - keine harte Sperre,
-   siehe recent_usage_counts). jsonify_recipe/jsonify_side serialisieren
-   das Ergebnis für die JSON-Antworten der AJAX-Endpunkte in routes/plan/.
+3. Recipe selection (choose_recipe, weighted_recipe_choice,
+   recent_usage_counts, jsonify_recipe, jsonify_side): then actually
+   picks ONE concrete recipe from a category/pool, taking into account
+   favorite weighting, season availability, and a soft repetition
+   weighting (the more often a recipe recently appeared in the plan, the
+   less often it gets picked again - not a hard block, see
+   recent_usage_counts). jsonify_recipe/jsonify_side serialize the
+   result for the JSON responses of the AJAX endpoints in routes/plan/.
 
-Wird vom routes/plan/-Paket sowohl beim Neu-Erstellen einer ganzen Woche
-(pages.py) als auch beim Einzel-Tag-Reroll über HTTP-Endpunkte
-(day_actions.py) verwendet.
+Used by the routes/plan/ package both when generating a whole new week
+(pages.py) and for a single-day reroll via HTTP endpoints (day_actions.py).
 """
 
 import random
 from collections import Counter
 from datetime import date, timedelta
+
+from flask_babel import lazy_gettext as _l
 
 from models import db, Recipe, PlanDay, PlanDaySide
 from services.recipe_visibility import visible_recipes_query
@@ -42,55 +42,49 @@ from services.ingredient_aliases import normalize_ingredient_name
 from services.settings import get_display_units
 from services.units import convert_for_display
 
-# Deutsche Wochentagsnamen in ISO-Reihenfolge (Montag = Index 0), passend zu
-# date.weekday(). Wird sowohl für die Berechnung des Wochenstarts als auch
-# als Kontextvariable "days" an die Templates plan.html/create_week.html
-# durchgereicht, damit der Name nicht doppelt gepflegt werden muss.
-DAY_NAMES_DE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag']
+# Weekday names in ISO order (Monday = index 0), matching date.weekday().
+# Passed through both for computing the week start and as the "days"
+# context variable to the plan.html/create_week.html templates, so the
+# name isn't maintained twice. lazy_gettext (not gettext): this is a
+# module-level constant evaluated at import time, outside any request.
+DAY_NAMES = [_l('Monday'), _l('Tuesday'), _l('Wednesday'), _l('Thursday'), _l('Friday'), _l('Saturday'), _l('Sunday')]
 
-# Wie viel wahrscheinlicher ein als Favorit markiertes Rezept bei der
-# automatischen/Zufalls-Auswahl gezogen wird, verglichen mit einem nicht
-# favorisierten Rezept (3 = dreimal so wahrscheinlich). Reines
-# Geschmacks-/Stimmungsgewicht, kein harter Filter - Nicht-Favoriten bleiben
-# immer im Auswahl-Pool.
+# How much more likely a recipe marked as a favorite is to be picked
+# during automatic/random selection, compared to a non-favorite recipe
+# (3 = three times as likely). A pure taste/mood weighting, not a hard
+# filter - non-favorites always stay in the selection pool.
 FAVORITE_WEIGHT = 3
 
-# Wie viele Wochen zurück recent_usage_counts() für die weiche
-# Wiederholungs-Gewichtung schaut - Verwendungen, die länger her sind,
-# fließen nicht mehr in die Zählung ein (das Rezept ist dann wieder "wie
-# neu", volle Gewichtung). Bewusst als eigene Konstante, falls sich in der
-# Praxis ein anderer Zeitraum als sinnvoller herausstellt.
+# How many weeks back recent_usage_counts() looks for the soft repetition
+# weighting - uses further back than this no longer count. A separate
+# constant on purpose, in case practice shows a different window works
+# better.
 REPETITION_LOOKBACK_WEEKS = 8
 
 
 def recent_usage_counts(recipe_ids, reference_date, is_side_dish, plan_id):
-    """Zählt für jede der übergebenen Rezept-IDs, wie oft sie in den
-    letzten REPETITION_LOOKBACK_WEEKS Wochen VOR reference_date im
-    Plan-Kalender verwendet wurde. Gibt ein Dict {Rezept-ID: Anzahl}
-    zurück - Rezepte ohne jede Verwendung in diesem Zeitraum fehlen darin
-    einfach (kein Eintrag mit 0).
+    """For each of the given recipe IDs, counts how often it was used in
+    the plan calendar in the REPETITION_LOOKBACK_WEEKS weeks BEFORE
+    reference_date. Returns a dict {recipe ID: count} - recipes with no
+    use at all in this period are simply absent from it (no entry with 0).
 
-    is_side_dish unterscheidet, WELCHE Tabelle abgefragt wird:
-    Hauptgerichte stecken direkt in PlanDay.main_recipe_id (ein Wert pro
-    Tag), Beilagen dagegen in der separaten PlanDaySide-Tabelle (beliebig
-    viele pro Tag, siehe models.py) - beide Pools werden dabei getrennt
-    gezählt, da sie bei der Auswahl ohnehin nie vermischt werden (siehe
-    choose_recipe).
+    is_side_dish distinguishes WHICH table is queried: main dishes live
+    directly in PlanDay.main_recipe_id (one value per day), side dishes
+    in the separate PlanDaySide table instead (any number per day, see
+    models.py) - the two pools are counted separately since they're never
+    mixed during selection anyway (see choose_recipe).
 
-    reference_date ist bewusst NICHT date.today(), sondern der Tag, für den
-    gerade geplant wird - die Wochenplanung erlaubt auch vergangene oder
-    zukünftige Wochen, die Zählung soll sich immer auf den Zeitraum
-    UNMITTELBAR VOR dem betrachteten Tag beziehen, unabhängig vom
-    tatsächlichen heutigen Datum.
+    reference_date is deliberately NOT date.today(), but the day currently
+    being planned for - week planning also allows past or future weeks,
+    and the count should always relate to the period IMMEDIATELY BEFORE
+    the day in question, regardless of the actual current date.
 
-    plan_id grenzt die Zählung auf EINEN Plan ein (siehe models.py:
-    PlanDay.plan_id) - die Wiederholungs-Gewichtung eines Plans soll sich
-    nur an dessen EIGENER Historie orientieren, nicht an der eines
-    komplett anderen, geteilten Plans.
+    plan_id restricts the count to ONE plan (see models.py:
+    PlanDay.plan_id) - a plan's repetition weighting should only be based
+    on ITS OWN history, not that of a completely different, shared plan.
 
-    Wird von choose_recipe() genutzt, um weighted_recipe_choice() eine
-    weiche (nicht ausschließende) Wiederholungs-Gewichtung mitzugeben -
-    siehe dort.
+    Used by choose_recipe() to hand weighted_recipe_choice() a soft
+    (non-exclusive) repetition weighting - see there.
     """
     if not recipe_ids:
         return {}
@@ -116,29 +110,29 @@ def recent_usage_counts(recipe_ids, reference_date, is_side_dish, plan_id):
 
 
 def weighted_recipe_choice(recipes, usage_counts=None):
-    """Wählt zufällig ein Rezept aus einer Liste, funktional wie
-    random.choice(), aber gewichtet nach zwei voneinander unabhängigen
-    Kriterien, die multiplikativ kombiniert werden:
+    """Randomly picks a recipe from a list, functionally like
+    random.choice(), but weighted by two independent criteria that are
+    combined multiplicatively:
 
-    1. Favoriten (is_favorite) bekommen FAVORITE_WEIGHT-fache
-       Basis-Gewichtung gegenüber allen anderen (Basis-Gewicht 1).
-    2. Weiche Wiederholungs-Gewichtung: usage_counts (siehe
-       recent_usage_counts, optional - fehlt es, verhält sich diese
-       Funktion wie vor Einführung dieser Gewichtung) gibt an, wie oft ein
-       Rezept kürzlich im Plan vorkam. Der Faktor 1/(Anzahl+1) sorgt dafür,
-       dass die Wahrscheinlichkeit mit jeder zusätzlichen kürzlichen
-       Verwendung SINKT (nie verwendet: Faktor 1, einmal: 0.5, zweimal:
-       0.33, ...), aber NIE auf 0 fällt - anders als eine harte Sperre
-       bleibt jedes Rezept theoretisch immer wählbar, nur unwahrscheinlicher.
+    1. Favorites (is_favorite) get FAVORITE_WEIGHT times the base
+       weighting compared to everything else (base weight 1).
+    2. Soft repetition weighting: usage_counts (see recent_usage_counts,
+       optional - if absent, this function behaves as it did before this
+       weighting was introduced) indicates how often a recipe recently
+       appeared in the plan. The factor 1/(count+1) makes the probability
+       DECREASE with each additional recent use (never used: factor 1,
+       once: 0.5, twice: 0.33, ...), but it NEVER drops to 0 - unlike a
+       hard block, every recipe theoretically stays selectable, just less
+       likely.
 
-    Da choose_recipe() diese Funktion erst NACH der Saison-Filterung
-    aufruft (siehe dort), wirkt sich das automatisch auch auf gerade
-    saisonale Rezepte begünstigend aus, ganz ohne einen dritten Faktor hier:
-    ist die Saison-Vorauswahl aktiv, sind schlicht nur noch saisonale
-    Kandidaten überhaupt im Pool, unter denen dann wie gewohnt gewichtet wird.
+    Since choose_recipe() only calls this function AFTER season filtering
+    (see there), this automatically also favors currently seasonal
+    recipes, with no need for a third factor here: when season
+    pre-filtering is active, simply only seasonal candidates remain in
+    the pool at all, which are then weighted as usual among themselves.
 
-    random.choices() (mit s!) übernimmt die eigentliche gewichtete Ziehung;
-    k=1 liefert genau ein Element, das per [0] ausgepackt wird.
+    random.choices() (note the s!) does the actual weighted draw; k=1
+    returns exactly one element, which is unpacked via [0].
     """
     usage_counts = usage_counts or {}
     weights = [
@@ -148,33 +142,33 @@ def weighted_recipe_choice(recipes, usage_counts=None):
     return random.choices(recipes, weights=weights, k=1)[0]
 
 
-# --- WOCHEN-KALENDER-HELFER ---
-# Der Wochenplan arbeitet durchgehend mit echten Kalendertagen (date-Objekte),
-# nicht mit einem abstrakten "Tag 0-6"-Konzept ohne Datumsbezug. Diese vier
-# kleinen Funktionen sind die einzige Stelle, an der zwischen "irgendein
-# Datum" und "Montag-Start einer Kalenderwoche" umgerechnet wird.
+# --- WEEK CALENDAR HELPERS ---
+# The week plan works throughout with real calendar days (date objects),
+# not an abstract "day 0-6" concept without a date reference. These four
+# small functions are the only place where conversion happens between
+# "some date" and "Monday start of a calendar week".
 
 def monday_of(d):
-    """Liefert den Montag der Kalenderwoche, in der das Datum d liegt.
-    date.weekday() liefert 0 für Montag bis 6 für Sonntag, daher zieht man
-    genau so viele Tage ab, wie d von seinem Wochenanfang entfernt ist."""
+    """Returns the Monday of the calendar week that date d falls in.
+    date.weekday() returns 0 for Monday through 6 for Sunday, so exactly
+    that many days are subtracted from d's distance from its week start."""
     return d - timedelta(days=d.weekday())
 
 
 def week_dates_for(start):
-    """Baut aus einem (als Montag angenommenen) Startdatum die Liste der 7
-    Kalendertage dieser Woche, Montag zuerst. Es wird NICHT geprüft, ob
-    start tatsächlich ein Montag ist - das übernimmt monday_of() vorher an
-    den Aufrufstellen (siehe routes/plan/)."""
+    """Builds the list of the 7 calendar days of the week from a start
+    date (assumed to be a Monday), Monday first. It is NOT checked
+    whether start is actually a Monday - monday_of() takes care of that
+    beforehand at the call sites (see routes/plan/)."""
     return [start + timedelta(days=i) for i in range(7)]
 
 
 def parse_iso_date(value):
-    """Parst einen String im ISO-Format ("YYYY-MM-DD", z.B. aus einem
-    URL-Pfadsegment oder einem <input type="date">) zu einem date-Objekt.
-    Gibt bei ungültiger oder fehlender Eingabe None statt einer Exception
-    zurück, damit Aufrufer (typischerweise Route-Handler) das einheitlich
-    mit einem 404/400 statt einem 500-Fehler beantworten können."""
+    """Parses a string in ISO format ("YYYY-MM-DD", e.g. from a URL path
+    segment or an <input type="date">) into a date object. Returns None
+    instead of raising an exception on invalid or missing input, so
+    callers (typically route handlers) can respond consistently with a
+    404/400 instead of a 500 error."""
     try:
         return date.fromisoformat(value)
     except (TypeError, ValueError):
@@ -182,19 +176,19 @@ def parse_iso_date(value):
 
 
 def week_neighbor_exclude_ids(day_date, plan_id):
-    """Sammelt die Hauptgericht-Rezept-IDs aller ANDEREN Tage in derselben
-    Kalenderwoche wie day_date, INNERHALB EINES Plans (plan_id, siehe
-    models.py: PlanDay.plan_id) - für die Dubletten-Vermeidung beim
-    (Neu-)Würfeln eines Hauptgerichts (siehe week_side_recipe_ids weiter
-    unten für das Beilagen-Pendant, das anders arbeitet, weil ein Tag dort
-    mehrere Einträge gleichzeitig haben kann).
+    """Collects the main-dish recipe IDs of all OTHER days in the same
+    calendar week as day_date, WITHIN ONE plan (plan_id, see models.py:
+    PlanDay.plan_id) - for duplicate avoidance when (re-)rolling a main
+    dish (see week_side_recipe_ids below for the side-dish counterpart,
+    which works differently since a day there can have multiple entries
+    at once).
 
-    day_date selbst wird bewusst AUSGESCHLOSSEN (siehe "if pd.date ==
-    day_date: continue") - der Tag, der gerade neu gewürfelt wird, soll
-    sein eigenes aktuelles Rezept nicht als "belegt" an sich selbst zählen
-    lassen. Die Aufrufer in routes/plan/day_actions.py fügen das aktuelle Rezept des
-    Zieltags bei Bedarf explizit wieder hinzu, um zu verhindern, dass ein
-    Reroll dasselbe Rezept erneut auswürfelt.
+    day_date itself is deliberately EXCLUDED (see "if pd.date ==
+    day_date: continue") - the day currently being re-rolled shouldn't
+    count its own current recipe as "taken" against itself. The callers
+    in routes/plan/day_actions.py explicitly re-add the target day's
+    current recipe when needed, to prevent a reroll from drawing the same
+    recipe again.
     """
     start = monday_of(day_date)
     dates = week_dates_for(start)
@@ -209,21 +203,20 @@ def week_neighbor_exclude_ids(day_date, plan_id):
 
 
 def week_side_recipe_ids(day_date, plan_id):
-    """Sammelt die Rezept-IDs ALLER Beilagen, die bereits irgendwo in der
-    Kalenderwoche verwendet werden, die day_date enthält - innerhalb EINES
-    Plans, über alle 7 Tage hinweg, OHNE einen Tag oder eine einzelne
-    Beilage auszunehmen.
+    """Collects the recipe IDs of ALL side dishes already used anywhere
+    in the calendar week that day_date falls in - within one plan, across
+    all 7 days, without excluding any particular day or side dish.
 
-    Anders als week_neighbor_exclude_ids() (die den betrachteten Tag selbst
-    bewusst ausschließt, damit ein Reroll sein eigenes aktuelles Rezept
-    nicht als "belegt an sich selbst" zählt) braucht es hier keine solche
-    Ausnahme: da ein Tag mehrere Beilagen gleichzeitig haben kann, würde ein
-    Reroll EINER Beilage sonst versehentlich eine andere, an DEMSELBEN Tag
-    bereits vorhandene Beilage duplizieren können - die Beilagen desselben
-    Tages müssen also mit ausgeschlossen bleiben. Die gerade neu zu
-    würfelnde Beilage selbst ist ohnehin bereits Teil dieser Menge (sie ist
-    ja schon zugewiesen) - genau das verhindert automatisch, dass ein
-    Reroll dasselbe Rezept erneut liefert, ganz ohne eigenen Sonderfall.
+    Unlike week_neighbor_exclude_ids() (which deliberately excludes the
+    day in question itself, so a reroll doesn't count its own current
+    recipe as "taken against itself"), no such exception is needed here:
+    since a day can have multiple side dishes at once, rerolling ONE side
+    dish could otherwise accidentally duplicate another side dish already
+    present on the SAME day - so that day's side dishes must stay
+    excluded too. The side dish currently being re-rolled is already part
+    of this set anyway (it's already assigned) - which automatically
+    prevents a reroll from returning the same recipe again, without any
+    special case of its own.
     """
     start = monday_of(day_date)
     dates = week_dates_for(start)
@@ -236,67 +229,64 @@ def week_side_recipe_ids(day_date, plan_id):
     return {rid for (rid,) in rows}
 
 
-# --- KATEGORIE-BALANCE & REZEPT-AUSWAHL ---
+# --- CATEGORY BALANCE & RECIPE SELECTION ---
 
 def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexisting_counts=None):
-    """Weist jedem noch aufzufüllenden Tag (days_to_fill, eine Liste von
-    Tag-Indizes 0-6 innerhalb EINER Woche) eine Kategorie zu - noch KEIN
-    konkretes Rezept, nur die Kategorie, aus der später eines gewürfelt
-    wird (siehe choose_recipe).
+    """Assigns a category to each day still to be filled (days_to_fill, a
+    list of day indices 0-6 within ONE week) - not yet a concrete recipe,
+    just the category a recipe will later be drawn from (see
+    choose_recipe).
 
-    Zwei Ziele werden gleichzeitig verfolgt, mit klarer Priorität:
-    1. (höhere Priorität) Nach Möglichkeit nie dieselbe Kategorie wie der
-       direkte Vorgänger- oder Nachfolgetag - damit z.B. nicht Montag UND
-       Dienstag beide "Pasta" sind. Bereits fest zugewiesene Tage (die
-       schon ein Rezept haben, in final_plan sichtbar) zählen dabei als
-       bekannter Nachbar, auch wenn sie selbst nicht mehr neu zugewiesen
-       werden.
-    2. (niedrigere Priorität) Über alle 7 Tage der Woche hinweg möglichst
-       gleichmäßige Verteilung der Kategorien (siehe counts/preexisting_counts).
+    Two goals are pursued at the same time, with a clear priority:
+    1. (higher priority) Where possible, never the same category as the
+       direct predecessor or successor day - so, e.g., Monday AND Tuesday
+       aren't both "Pasta". Days already fixed (which already have a
+       recipe, visible in final_plan) count as a known neighbor here even
+       if they aren't being newly assigned themselves.
+    2. (lower priority) As even a distribution of categories as possible
+       across all 7 days of the week (see counts/preexisting_counts).
 
-    Ist Ziel 1 nicht erreichbar (z.B. weil insgesamt nur eine einzige
-    Kategorie existiert), wird die Nachbarschaftsregel stillschweigend
-    zugunsten von Ziel 2 aufgeweicht - es ist wichtiger, dass jeder Tag
-    überhaupt eine Kategorie bekommt, als die Nachbarschaftsregel um jeden
-    Preis durchzusetzen.
+    If goal 1 can't be reached (e.g. because only a single category
+    exists in total), the neighbor rule is silently relaxed in favor of
+    goal 2 - it's more important that every day gets a category at all
+    than enforcing the neighbor rule at any cost.
 
-    Die Priorisierung wird über sort_key() umgesetzt: ein Tupel
-    (ist_Nachbar_Kategorie, aktuelle_Anzahl). Da False < True in Python gilt,
-    sortieren Nicht-Nachbar-Kategorien immer vor Nachbar-Kategorien, und
-    innerhalb dieser beiden Gruppen gewinnt die bisher am seltensten
-    verwendete Kategorie. min() über alle sort_key()-Werte findet dann den
-    besten erreichbaren Kompromiss, random.choice() sorgt für Abwechslung
-    bei mehreren gleich guten Kandidaten.
+    The prioritization is implemented via sort_key(): a tuple
+    (is_neighbor_category, current_count). Since False < True in Python,
+    non-neighbor categories always sort before neighbor categories, and
+    within each of these two groups, the category used least so far
+    wins. min() over all sort_key() values then finds the best reachable
+    compromise; random.choice() adds variety among several equally good
+    candidates.
 
-    Gibt ein Dict {Tag-Index: Kategorie-ID} zurück, eines pro Eintrag in
+    Returns a dict {day index: category ID}, one per entry in
     days_to_fill.
     """
     cat_ids = [c.id for c in all_categories]
     if not cat_ids:
         return {}
 
-    # Startbelegung der Zähler: bereits fest zugewiesene Tage fließen über
-    # preexisting_counts in die Balance ein, damit sich die automatische
-    # Auswahl NICHT nur an den eigenen 7 (oder weniger) neu vergebenen
-    # Slots orientiert, sondern an der gesamten Woche.
+    # Initial counter state: days already fixed flow into the balance via
+    # preexisting_counts, so the automatic selection is NOT based only on
+    # its own 7 (or fewer) newly assigned slots, but on the whole week.
     counts = Counter(preexisting_counts or {})
     for cid in cat_ids:
         counts.setdefault(cid, 0)
 
-    # Bekannte Nachbarn zu Beginn: alle Tage, die schon ein fest zugewiesenes
-    # Rezept haben (final_plan[i] ist bereits gesetzt). Wird im Lauf der
-    # Schleife um jeden frisch zugewiesenen Tag erweitert, damit z.B. bei
-    # zwei aufeinanderfolgenden freien Tagen auch der erste als Nachbar des
-    # zweiten erkannt wird.
+    # Known neighbors at the start: all days that already have a fixed
+    # recipe (final_plan[i] is already set). Extended over the course of
+    # the loop with each freshly assigned day, so that e.g. with two
+    # consecutive free days, the first is also recognized as a neighbor
+    # of the second.
     known_category_by_day = {
         i: final_plan[i].category_id for i in range(7) if final_plan[i] is not None
     }
 
     assigned = {}
     for day_index in days_to_fill:
-        # Kategorien der direkten Nachbartage (Vortag/Folgetag), soweit
-        # bereits bekannt. Tage außerhalb 0-6 (gäbe es nicht) werden über
-        # die Bereichsprüfung ignoriert.
+        # Categories of the direct neighbor days (previous/next day), as
+        # far as already known. Days outside 0-6 (which wouldn't exist)
+        # are filtered out by the range check.
         neighbor_cats = {
             known_category_by_day[n] for n in (day_index - 1, day_index + 1)
             if 0 <= n <= 6 and n in known_category_by_day
@@ -311,67 +301,64 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
 
         assigned[day_index] = choice
         counts[choice] += 1
-        # Direkt merken, damit der NÄCHSTE Tag in dieser Schleife diesen
-        # hier bereits als bekannten Nachbarn berücksichtigt.
+        # Record immediately, so the NEXT day in this loop already takes
+        # this one into account as a known neighbor.
         known_category_by_day[day_index] = choice
 
     return assigned
 
 
 def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_season=True, reference_date=None):
-    """Die zentrale Rezept-Auswahlfunktion: wählt EIN passendes, noch nicht
-    verwendetes Rezept aus der Datenbank aus. Wird sowohl beim Erstellen
-    einer kompletten Woche als auch bei jedem Einzel-Reroll aufgerufen.
+    """The central recipe-selection function: picks ONE suitable,
+    not-yet-used recipe from the database. Called both when generating a
+    whole week and on every single-day reroll.
 
-    plan_id grenzt den Auswahl-Pool auf die für DIESEN Plan sichtbaren
-    Rezepte ein (Eigentümer ODER per RecipePlanLink eingebunden, siehe
-    services/recipe_visibility.py) und wird zusätzlich an
-    recent_usage_counts() (siehe unten) durchgereicht, damit sich auch die
-    Wiederholungs-Gewichtung an der Historie GENAU dieses Plans orientiert,
-    nicht an der eines anderen, komplett unabhängigen Plans.
+    plan_id restricts the selection pool to the recipes visible to THIS
+    plan (owner OR linked via RecipePlanLink, see
+    services/recipe_visibility.py) and is also passed through to
+    recent_usage_counts() (see below), so the repetition weighting is
+    also based on the history of EXACTLY this plan, not that of another,
+    completely independent plan.
 
-    Filterreihenfolge:
-    1. is_side_dish trennt strikt zwischen Hauptgericht- und Beilagen-Pool -
-       diese beiden werden nie vermischt.
-    2. exclude_ids schließt Rezepte aus, die (je nach Aufrufer) bereits in
-       derselben Woche verwendet werden oder das aktuell an diesem Tag
-       stehende Rezept sind (verhindert Dubletten bzw. ein "Reroll" auf
-       dasselbe Ergebnis). Das ist die einzige HARTE Ausschluss-Regel hier -
-       alles Weitere unten ist weiche Gewichtung, kein weiterer Ausschluss.
-    3. category_id (optional) schränkt zusätzlich auf eine bestimmte
-       Kategorie ein - wird beim automatischen Auffüllen genutzt, um die
-       von assign_balanced_categories() bestimmte Kategorie auch wirklich
-       zu treffen. Bleibt sie leer (None), kommt jede Kategorie infrage
-       (Fallback, wenn die gewünschte Kategorie keine Kandidaten mehr hat).
+    Filter order:
+    1. is_side_dish strictly separates the main-dish and side-dish pools -
+       the two are never mixed.
+    2. exclude_ids excludes recipes that (depending on the caller) are
+       already used in the same week or are the recipe currently on this
+       day (prevents duplicates or a "reroll" landing on the same
+       result). This is the only HARD exclusion rule here - everything
+       below is soft weighting, not a further exclusion.
+    3. category_id (optional) additionally restricts to a specific
+       category - used during automatic filling to actually hit the
+       category determined by assign_balanced_categories(). If left
+       empty (None), any category is eligible (fallback for when the
+       desired category has no candidates left).
 
-    Gibt es nach diesen drei Filtern keinen einzigen Kandidaten, wird sofort
-    None zurückgegeben (kein weiterer Fallback hier - das übernehmen die
-    Aufrufer, z.B. durch einen zweiten choose_recipe()-Aufruf ohne
-    category_id).
+    If no candidate remains after these three filters, None is returned
+    immediately (no further fallback here - that's left to the callers,
+    e.g. via a second choose_recipe() call without category_id).
 
-    Danach kommt die Saison-Bevorzugung (prefer_season, Standard: an): aus
-    den verbleibenden Kandidaten wird zuerst versucht, nur unter den GERADE
-    jahreszeitlich verfügbaren (recipe_available_now()) zu würfeln. Gibt es
-    davon mindestens einen, wird NUR aus dieser Teilmenge gewählt; gibt es
-    keinen einzigen (z.B. weil in dieser Kategorie ausschließlich
-    Winter-Rezepte existieren und gerade Sommer ist), wird stillschweigend
-    auf ALLE Kandidaten ausgewichen - eine Saison-Zuordnung darf die
-    automatische Auswahl also nie komplett blockieren.
+    Season preference comes next (prefer_season, default: on): among the
+    remaining candidates, an attempt is first made to draw only from
+    those CURRENTLY seasonally available (recipe_available_now()). If at
+    least one exists, selection happens ONLY from this subset; if none
+    exists at all (e.g. because this category only has winter recipes and
+    it's currently summer), it silently falls back to ALL candidates - a
+    season assignment must never completely block automatic selection.
 
-    reference_date (der Tag, für den gerade gewürfelt wird) steuert die
-    weiche Wiederholungs-Gewichtung: recent_usage_counts() zählt, wie oft
-    jeder verbliebene Kandidat in den letzten REPETITION_LOOKBACK_WEEKS
-    Wochen VOR diesem Tag bereits verwendet wurde, und weighted_recipe_choice()
-    reduziert deren Ziehungswahrscheinlichkeit entsprechend (nie auf 0 - siehe
-    dort). Bleibt reference_date leer (None), findet keine Wiederholungs-
-    Gewichtung statt (nur Favoriten zählen dann wie zuvor) - kommt in der
-    aktuellen App nicht vor, alle Aufrufer übergeben den Tag, ist aber ein
-    harmloser Fallback für z.B. zukünftige Aufrufe außerhalb eines
-    Kalendertag-Kontexts.
+    reference_date (the day currently being drawn for) controls the soft
+    repetition weighting: recent_usage_counts() counts how often each
+    remaining candidate was already used in the REPETITION_LOOKBACK_WEEKS
+    weeks BEFORE this day, and weighted_recipe_choice() reduces their
+    draw probability accordingly (never to 0 - see there). If
+    reference_date is left empty (None), no repetition weighting takes
+    place (only favorites count as before) - doesn't occur in the current
+    app, all callers pass the day, but it's a harmless fallback for e.g.
+    future calls outside a calendar-day context.
 
-    In beiden Fällen entscheidet letztlich weighted_recipe_choice() (nicht
-    ein einfaches random.choice()), sodass Favoriten und selten verwendete
-    Rezepte unter den verbliebenen Kandidaten bevorzugt gezogen werden.
+    In both cases, weighted_recipe_choice() (not a plain random.choice())
+    ultimately decides, so favorites and rarely used recipes are
+    preferred among the remaining candidates.
     """
     base_query = visible_recipes_query(plan_id).filter(
         Recipe.is_side_dish.is_(is_side_dish),
@@ -397,50 +384,48 @@ def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_s
 
 
 def jsonify_recipe(recipe, plan_id):
-    """Serialisiert ein Recipe-ORM-Objekt in ein einfaches Dict, das sich
-    sowohl direkt als Flask-JSON-Response zurückgeben lässt (Flask
-    konvertiert ein zurückgegebenes Dict automatisch zu einer
-    JSON-Response) als auch über den Jinja-Filter `tojson` in
-    templates/plan.html in das window.PLAN_DATA-JavaScript-Objekt
-    eingebettet werden kann.
+    """Serializes a Recipe ORM object into a plain dict that can be
+    returned either directly as a Flask JSON response (Flask
+    automatically converts a returned dict into a JSON response) or
+    embedded into the window.PLAN_DATA JavaScript object via the Jinja
+    filter `tojson` in templates/plan.html.
 
-    is_favorite/source_url/instructions sind zusätzlich zu den eigentlich
-    für die Einkaufsliste/Nährwertsumme nötigen Feldern mit dabei - werden
-    für die Berechnungen selbst nicht gebraucht, aber vom read-only
-    Rezept-Detail-Fenster auf der Plan-Seite angezeigt (siehe
-    static/plan.js: openRecipeDetail), das direkt aus den bereits im
-    Frontend vorliegenden weeklyPlanRecipes/weeklySideRecipes-Objekten
-    baut statt einen eigenen Server-Roundtrip zu brauchen.
+    is_favorite/source_url/instructions are included in addition to the
+    fields actually needed for the shopping list/nutrition total - not
+    needed for the calculations themselves, but shown by the read-only
+    recipe detail popup on the plan page (see static/plan.js:
+    openRecipeDetail), which builds directly from the
+    weeklyPlanRecipes/weeklySideRecipes objects already present in the
+    frontend instead of needing its own server round trip.
 
-    Zutatennamen werden dabei über normalize_ingredient_name() (services/
-    ingredient_aliases.py) aufbereitet: zunächst .strip().title() (führende/
-    nachgestellte Leerzeichen entfernt, erster Buchstabe jedes Worts groß),
-    damit z.B. "  nudeln" und "Nudeln" in der clientseitig konsolidierten
-    Einkaufsliste (siehe static/plan-shopping.js: rebuildShoppingList) als
-    derselbe Eintrag erkannt werden, UND zusätzlich durch eine vom Nutzer
-    gepflegte Alias-Zuordnung ersetzt, falls vorhanden (z.B. "Spaghetti" ->
-    "Nudeln", "Olivenöl" -> "Öl") - so werden auch verschiedene konkrete
-    Zutaten, die für den Einkauf dasselbe sind, zu einem Posten
-    zusammengefasst. Das Rezept selbst (Anlegen-/Bearbeiten-Formular) zeigt
-    weiterhin den ursprünglich eingetragenen Namen unverändert. Die
-    Einkaufslisten-Kategorie jeder Zutat (siehe services/shopping.py) wird
-    unverändert mitgegeben - sie bestimmt dort, in welcher Gruppe/
-    Reihenfolge die Zutat einsortiert wird.
+    Ingredient names are processed here via normalize_ingredient_name()
+    (services/ingredient_aliases.py): first .strip().title() (leading/
+    trailing whitespace removed, first letter of each word capitalized),
+    so e.g. "  noodles" and "Noodles" are recognized as the same entry in
+    the client-side consolidated shopping list (see
+    static/plan-shopping.js: rebuildShoppingList), AND additionally
+    replaced by a user-maintained alias mapping if one exists (e.g.
+    "Spaghetti" -> "Noodles", "Olive oil" -> "Oil") - so different
+    concrete ingredients that amount to the same thing for shopping are
+    combined into one item. The recipe itself (add/edit form) still shows
+    the originally entered name unchanged. Each ingredient's shopping-list
+    category (see services/shopping.py) is passed through unchanged - it
+    determines the group/order the ingredient is sorted into there.
 
-    Mengen/Einheiten werden dabei von der kanonischen Speicherform (immer
-    g/ml, siehe services/units.py) in die vom Nutzer gewählte Anzeige-
-    Einheit umgerechnet (services/settings.py) - IMMER dieselbe Einheit für
-    dieselbe Familie, egal welches Rezept, weshalb die rein clientseitige
-    Aggregation nach "Name+Einheit" in rebuildShoppingList() weiterhin ohne
-    eigene Umrechnung korrekt gleichnamige Zutaten über mehrere Rezepte
-    hinweg zusammenfasst.
+    Amounts/units are converted here from the canonical storage form
+    (always g/ml, see services/units.py) to the display unit chosen by
+    the user (services/settings.py) - ALWAYS the same unit for the same
+    family, regardless of recipe, which is why the purely client-side
+    aggregation by "name+unit" in rebuildShoppingList() still correctly
+    combines identically named ingredients across multiple recipes
+    without its own conversion.
 
-    plan_id bestimmt, wessen Zutaten-Gleichsetzung/Anzeige-Einheiten gelten
+    plan_id determines whose ingredient aliasing/display units apply
     (services/ingredient_aliases.py: normalize_ingredient_name(),
-    services/settings.py: get_display_units()) - bei einem per
-    RecipePlanLink eingebundenen Rezept IMMER die des GERADE AKTIVEN
-    Plans, nicht die seines Eigentümer-Plans, damit ein Nutzer auf seiner
-    eigenen Einkaufsliste konsistent seine eigenen Einstellungen sieht.
+    services/settings.py: get_display_units()) - for a recipe linked in
+    via RecipePlanLink, ALWAYS those of the CURRENTLY ACTIVE plan, not its
+    owner plan, so a user consistently sees their own settings on their
+    own shopping list.
     """
     display_units = get_display_units(plan_id)
     return {
@@ -468,18 +453,17 @@ def jsonify_recipe(recipe, plan_id):
 
 
 def jsonify_side(plan_day_side, plan_id):
-    """Wie jsonify_recipe(), aber für eine PlanDaySide-Zeile: hängt an das
-    serialisierte Rezept-Dict zusätzlich side_id an - die ID der
-    PlanDaySide-Zeile selbst, NICHT des Rezepts. static/plan-sides.js
-    braucht diese ID, um genau DIESEN Beilagen-Slot gezielt neu zu
-    würfeln, manuell zu ersetzen, zu entfernen oder auf einen anderen Tag
-    zu verschieben, unabhängig davon, ob dasselbe Rezept vielleicht noch
-    als Beilage an einem anderen Tag steht. Außerdem cooked - der
-    tatsächliche AKTUELLE Wert der PlanDaySide-Zeile (siehe models.py:
-    PlanDaySide.cooked), nicht pauschal False: reroll_one_side()/
-    set_one_side() setzen ihn vor dem Aufruf hier bewusst zurück (neues
-    Gericht = noch nicht gekocht), move_one_side() lässt ihn dagegen
-    unangetastet (dieselbe Beilage wandert nur auf einen anderen Tag)."""
+    """Like jsonify_recipe(), but for a PlanDaySide row: additionally
+    attaches side_id to the serialized recipe dict - the ID of the
+    PlanDaySide row itself, NOT of the recipe. static/plan-sides.js needs
+    this ID to specifically re-roll, manually replace, remove, or move
+    this exact side-dish slot to another day, regardless of whether the
+    same recipe might still be a side dish on another day. Also cooked -
+    the ACTUAL CURRENT value of the PlanDaySide row (see models.py:
+    PlanDaySide.cooked), not unconditionally False: reroll_one_side()/
+    set_one_side() deliberately reset it before calling this (new dish =
+    not yet cooked), while move_one_side() leaves it untouched (the same
+    side dish just moves to another day)."""
     data = jsonify_recipe(plan_day_side.recipe, plan_id)
     data['side_id'] = plan_day_side.id
     data['cooked'] = plan_day_side.cooked

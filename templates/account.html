@@ -1,86 +1,84 @@
-{# Profil-Verwaltung des eingeloggten Nutzers (/manage/account,
-   routes/account.py) - eigenen Namen/E-Mail ändern, Passwort ändern,
-   Konto löschen. Drei unabhängige Formulare/POST-Ziele, jedes rendert
-   bei Erfolg/Fehler dieselbe Seite erneut (kein Flash-Messaging-System
-   in dieser App, siehe routes/account.py-Modul-Docstring). #}
+{# Profile management for the logged-in user (/manage/account,
+   routes/account.py) - change own name/email, change password,
+   delete account. Three independent forms/POST targets, each re-renders
+   the same page on success/error (no flash messaging system
+   in this app, see routes/account.py module docstring). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-md-7">
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">👤 Mein Konto</h4>
-                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
+                <h4 class="card-title mb-0 fw-bold">👤 {{ _('My Account') }}</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
-                <h6 class="fw-bold text-muted mb-2">Profil</h6>
+                <h6 class="fw-bold text-muted mb-2">{{ _('Profile') }}</h6>
                 {% if profile_error %}
                 <div class="alert alert-danger py-2 small" role="alert">{{ profile_error }}</div>
                 {% elif profile_success %}
-                <div class="alert alert-success py-2 small" role="alert">Profil aktualisiert.</div>
+                <div class="alert alert-success py-2 small" role="alert">{{ _('Profile updated.') }}</div>
                 {% endif %}
                 <form method="POST" action="{{ url_for('account.update_profile_route') }}" class="mb-2">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label class="form-label fw-bold small" for="accountName">Name</label>
+                        <label class="form-label fw-bold small" for="accountName">{{ _('Name') }}</label>
                         <input type="text" name="name" id="accountName" class="form-control" value="{{ user.name }}" required autocomplete="name">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold small" for="accountEmail">E-Mail</label>
+                        <label class="form-label fw-bold small" for="accountEmail">{{ _('Email') }}</label>
                         <input type="email" name="email" id="accountEmail" class="form-control" value="{{ user.email }}" required autocomplete="email">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold small" for="accountLanguage">Sprache</label>
-                        {# Optionsnamen bewusst in der jeweils eigenen Sprache (nicht übersetzt) -
-                           übliche Konvention für Sprachauswahlfelder, siehe app.py: get_locale(). #}
+                        <label class="form-label fw-bold small" for="accountLanguage">{{ _('Language') }}</label>
+                        {# Option labels are deliberately left in their own language (not translated) -
+                           the usual convention for language-selection fields, see app.py: get_locale(). #}
                         <select name="language" id="accountLanguage" class="form-select">
                             <option value="en" {% if user.language == 'en' %}selected{% endif %}>English</option>
                             <option value="de" {% if user.language == 'de' %}selected{% endif %}>Deutsch</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-dark fw-bold">Speichern</button>
+                    <button type="submit" class="btn btn-dark fw-bold">{{ _('Save') }}</button>
                 </form>
             </div>
         </div>
 
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-body p-4">
-                <h6 class="fw-bold text-muted mb-2">Passwort ändern</h6>
+                <h6 class="fw-bold text-muted mb-2">{{ _('Change Password') }}</h6>
                 {% if password_error %}
                 <div class="alert alert-danger py-2 small" role="alert">{{ password_error }}</div>
                 {% elif password_success %}
-                <div class="alert alert-success py-2 small" role="alert">Passwort geändert.</div>
+                <div class="alert alert-success py-2 small" role="alert">{{ _('Password changed.') }}</div>
                 {% endif %}
                 <form method="POST" action="{{ url_for('account.update_password_route') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label class="form-label fw-bold small" for="currentPassword">Aktuelles Passwort</label>
+                        <label class="form-label fw-bold small" for="currentPassword">{{ _('Current Password') }}</label>
                         <input type="password" name="current_password" id="currentPassword" class="form-control" required autocomplete="current-password">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-bold small" for="newPassword">Neues Passwort</label>
+                        <label class="form-label fw-bold small" for="newPassword">{{ _('New Password') }}</label>
                         <input type="password" name="new_password" id="newPassword" class="form-control" required autocomplete="new-password">
                     </div>
-                    <button type="submit" class="btn btn-dark fw-bold">Passwort ändern</button>
+                    <button type="submit" class="btn btn-dark fw-bold">{{ _('Change Password') }}</button>
                 </form>
             </div>
         </div>
 
         <div class="card shadow-sm border-0">
             <div class="card-header bg-danger text-white py-3">
-                <h4 class="card-title mb-0 fw-bold">⚠️ Gefahrenzone</h4>
+                <h4 class="card-title mb-0 fw-bold">⚠️ {{ _('Danger Zone') }}</h4>
             </div>
             <div class="card-body p-4">
                 {% if delete_error %}
                 <div class="alert alert-danger py-2 small" role="alert">{{ delete_error }}</div>
                 {% endif %}
                 <p class="text-muted small mb-3">
-                    Löscht dein Konto unwiderruflich. Pläne, in denen du das einzige Mitglied bist, werden dabei
-                    komplett mitgelöscht (samt allen nur ihnen gehörenden Rezepten/Kategorien/Einstellungen). Bei
-                    geteilten Plänen bleibst nur du entfernt - der Plan bleibt für die übrigen Mitglieder bestehen.
+                    {{ _('Deletes your account irrevocably. Plans in which you are the only member will be deleted entirely (including all recipes/categories/settings that belong only to them). For shared plans, only you are removed - the plan remains for the other members.') }}
                 </p>
                 <button type="button" class="btn btn-outline-danger fw-bold" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
-                    Konto löschen
+                    {{ _('Delete Account') }}
                 </button>
             </div>
         </div>
@@ -93,16 +91,16 @@
             <form method="POST" action="{{ url_for('account.delete_account_route') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title fw-bold">⚠️ Konto endgültig löschen</h5>
+                    <h5 class="modal-title fw-bold">⚠️ {{ _('Delete Account Permanently') }}</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Diese Aktion kann nicht rückgängig gemacht werden. Zur Bestätigung bitte dein Passwort eingeben:</p>
-                    <input type="password" name="password" class="form-control" placeholder="Passwort" required autocomplete="current-password">
+                    <p>{{ _('This action cannot be undone. To confirm, please enter your password:') }}</p>
+                    <input type="password" name="password" class="form-control" placeholder="{{ _('Password') }}" required autocomplete="current-password">
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                    <button type="submit" class="btn btn-danger fw-bold">Konto endgültig löschen</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+                    <button type="submit" class="btn btn-danger fw-bold">{{ _('Delete Account Permanently') }}</button>
                 </div>
             </form>
         </div>

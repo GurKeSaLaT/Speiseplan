@@ -1,4 +1,4 @@
-"""Tests für services/seasons.py: Verfügbarkeitszeiträume von Rezepten."""
+"""Tests for services/seasons.py: recipe availability date ranges."""
 from datetime import date
 from unittest.mock import patch
 
@@ -14,8 +14,8 @@ from services.seasons import (
 
 
 class FakeForm:
-    """Minimales Stand-in für ein Werkzeug ImmutableMultiDict-Formular,
-    genug für parse_recipe_seasons() (nutzt nur .getlist() und .get())."""
+    """Minimal stand-in for a Werkzeug ImmutableMultiDict form, enough
+    for parse_recipe_seasons() (only uses .getlist() and .get())."""
 
     def __init__(self, data):
         self._data = data
@@ -42,7 +42,7 @@ def test_date_in_range_boundaries_inclusive():
 
 
 def test_date_in_range_year_wraparound_winter():
-    # Winter: 1.12. - 28.2.
+    # Winter: Dec 1 - Feb 28
     assert date_in_range(1, 15, 12, 1, 2, 28) is True
     assert date_in_range(12, 15, 12, 1, 2, 28) is True
     assert date_in_range(6, 1, 12, 1, 2, 28) is False
@@ -70,7 +70,7 @@ def test_recipe_available_now_no_seasons_means_always():
 
 @patch("services.seasons.date")
 def test_recipe_available_now_matches_one_of_several_seasons(mock_date):
-    mock_date.today.return_value = date(2026, 7, 1)  # Sommer
+    mock_date.today.return_value = date(2026, 7, 1)  # summer
     recipe = FakeRecipe(seasons=[
         FakeSeason(*SEASON_PRESETS["Winter"]),
         FakeSeason(*SEASON_PRESETS["Sommer"]),
@@ -80,7 +80,7 @@ def test_recipe_available_now_matches_one_of_several_seasons(mock_date):
 
 @patch("services.seasons.date")
 def test_recipe_available_now_false_when_outside_all_seasons(mock_date):
-    mock_date.today.return_value = date(2026, 7, 1)  # Sommer
+    mock_date.today.return_value = date(2026, 7, 1)  # summer
     recipe = FakeRecipe(seasons=[FakeSeason(*SEASON_PRESETS["Winter"])])
     assert recipe_available_now(recipe) is False
 

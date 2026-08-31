@@ -1,8 +1,8 @@
-"""Tests für app.py: die beim Pentest vom 2026-08-28 nachgerüsteten
-Security-Header (after_request) und die CSRF-Absicherung aller
-schreibenden Endpunkte. Die übrigen Route-Tests laufen bewusst mit
-WTF_CSRF_ENABLED=False (siehe conftest.py) - hier wird es für die Dauer
-je eines Tests gezielt wieder aktiviert, um das Verhalten selbst zu prüfen."""
+"""Tests for app.py: the security headers (after_request) added after
+the 2026-08-28 pentest, and the CSRF protection of all writing
+endpoints. The other route tests deliberately run with
+WTF_CSRF_ENABLED=False (see conftest.py) - here it is specifically
+re-enabled for the duration of each test to check that behavior itself."""
 import re
 
 

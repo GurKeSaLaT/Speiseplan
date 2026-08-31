@@ -1,5 +1,5 @@
-"""Tests für routes/account.py: /manage/account (Profil/Passwort ändern,
-Konto löschen)."""
+"""Tests for routes/account.py: /manage/account (change profile/password,
+delete account)."""
 
 
 def test_account_view_reachable(client):
@@ -13,7 +13,7 @@ def test_update_profile_shows_success(app, client):
         "/manage/account/profile", data={"name": "Neuer Name", "email": "neu@test.local", "language": "en"}
     )
     assert resp.status_code == 200
-    assert "Profil aktualisiert".encode("utf-8") in resp.data
+    assert "Profile updated.".encode("utf-8") in resp.data
 
     from models import User
     with app.app_context():
@@ -31,7 +31,7 @@ def test_update_profile_shows_error_on_duplicate_email(app, client, make_user):
         "/manage/account/profile", data={"name": "X", "email": other_email, "language": "en"}
     )
     assert resp.status_code == 200
-    assert "existiert bereits".encode("utf-8") in resp.data
+    assert "already exists".encode("utf-8") in resp.data
 
 
 def test_update_profile_route_changes_language(app, client):
@@ -47,19 +47,19 @@ def test_update_profile_route_changes_language(app, client):
 def test_update_password_shows_success(client):
     resp = client.post("/manage/account/password", data={"current_password": "test", "new_password": "neuespw123"})
     assert resp.status_code == 200
-    assert "Passwort geändert".encode("utf-8") in resp.data
+    assert "Password changed.".encode("utf-8") in resp.data
 
 
 def test_update_password_shows_error_on_wrong_current(client):
     resp = client.post("/manage/account/password", data={"current_password": "falsch", "new_password": "neuespw123"})
     assert resp.status_code == 200
-    assert "falsch".encode("utf-8") in resp.data
+    assert "Current password is incorrect.".encode("utf-8") in resp.data
 
 
 def test_delete_account_requires_correct_password(app, client):
     resp = client.post("/manage/account/delete", data={"password": "falsch"})
     assert resp.status_code == 200
-    assert "falsch".encode("utf-8") in resp.data
+    assert "Password is incorrect.".encode("utf-8") in resp.data
 
     from models import User
     with app.app_context():
@@ -75,16 +75,16 @@ def test_delete_account_with_correct_password_logs_out(app, client):
     with app.app_context():
         assert User.query.get(client.user_id) is None
 
-    # Session ist geleert - eine geschützte Route leitet wieder auf /login um.
+    # Session is cleared - a protected route redirects to /login again.
     resp = client.get("/manage")
     assert resp.status_code == 302
     assert "/login" in resp.headers["Location"]
 
 
 def test_account_reachable_without_any_plan(app, make_user):
-    """Das Zero-Plan-Gate (app.py: require_login) darf die Profilseite
-    nicht blockieren - ein Nutzer ohne jede Plan-Mitgliedschaft muss sein
-    Konto trotzdem verwalten/löschen können."""
+    """The zero-plan gate (app.py: require_login) must not block the
+    profile page - a user without any plan membership still has to be
+    able to manage/delete their account."""
     from models import PlanMembership, db
 
     user_id, _ = make_user("Planlos")

@@ -1,6 +1,6 @@
-"""Tests für routes/plans.py (/plan/create, /plan/<id>/delete) sowie das
-Zero-Plan-Gate in app.py: require_login() - seit Pläne von Accounts
-entkoppelt sind, ist "gar kein Plan" ein normaler, erreichbarer Zustand."""
+"""Tests for routes/plans.py (/plan/create, /plan/<id>/delete) as well as
+the zero-plan gate in app.py: require_login() - since plans are decoupled
+from accounts, "no plan at all" is a normal, reachable state."""
 
 
 def _login_as(app, user_id):
@@ -59,9 +59,9 @@ def test_delete_plan_requires_membership(app, client, make_user):
 
 
 def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
-    """Jedes Mitglied darf löschen, nicht nur der Eigentümer (siehe
-    models.py: Plan-Docstring - owner_user_id verleiht keine besonderen
-    Rechte)."""
+    """Any member may delete, not just the owner (see
+    models.py: Plan docstring - owner_user_id doesn't grant any special
+    rights)."""
     from models import Plan, PlanMembership, db
 
     other_user_id, _ = make_user("Mitbewohner")
@@ -80,13 +80,13 @@ def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_use
 def test_delete_last_plan_resolves_to_zero_plan_landing_page(client):
     resp = client.post(f"/plan/{client.plan_id}/delete", follow_redirects=True)
     assert resp.status_code == 200
-    assert "noch in keinem Plan Mitglied".encode("utf-8") in resp.data
+    assert "not a member of any plan".encode("utf-8") in resp.data
 
 
 def test_delete_active_plan_switches_to_remaining_membership(app, client):
-    """Wird der GERADE AKTIVE Plan gelöscht, während der Nutzer noch
-    mindestens einen weiteren Plan hat, löst current_plan() nach dem
-    Löschen automatisch auf diesen anderen Plan um."""
+    """If the CURRENTLY ACTIVE plan is deleted while the user still has
+    at least one other plan, current_plan() automatically switches to
+    that other plan after the deletion."""
     from models import PlanMembership, db
 
     other_plan_id = None
@@ -94,11 +94,11 @@ def test_delete_active_plan_switches_to_remaining_membership(app, client):
     with client.session_transaction() as sess:
         other_plan_id = sess["active_plan_id"]
 
-    # Zurück zum ursprünglichen Plan wechseln, DANN diesen löschen.
+    # Switch back to the original plan, THEN delete it.
     client.post(f"/plan/switch/{client.plan_id}")
     resp = client.post(f"/plan/{client.plan_id}/delete", follow_redirects=True)
     assert resp.status_code == 200
-    assert "noch in keinem Plan Mitglied".encode("utf-8") not in resp.data
+    assert "not a member of any plan".encode("utf-8") not in resp.data
 
     with client.session_transaction() as sess:
         assert sess["active_plan_id"] == other_plan_id

@@ -1,17 +1,17 @@
-{# Eigenständige Login-Seite (/login, routes/auth.py: login()) - erweitert
-   BEWUSST NICHT base.html: dessen Seitenleiste zeigt Nutzername/Pläne
-   eines bereits eingeloggten Nutzers, den es hier per Definition noch
-   nicht gibt. Bindet Bootstrap/style.css trotzdem direkt ein (wie
-   base.html) und übernimmt dasselbe früh laufende Theme-Skript, damit
-   Hell-/Dunkelmodus schon auf dieser allerersten Seite korrekt greifen -
-   sonst würde ein Nutzer mit Dunkelmodus-Präferenz erst nach dem Login
-   einen Bruch im Erscheinungsbild sehen. #}
+{# Standalone login page (/login, routes/auth.py: login()) - DELIBERATELY
+   does NOT extend base.html: its sidebar shows the username/plans of an
+   already logged-in user, which by definition doesn't exist here yet.
+   Still includes Bootstrap/style.css directly (like base.html) and reuses
+   the same early-running theme script, so light/dark mode already
+   applies correctly on this very first page - otherwise a user with a
+   dark-mode preference would see a jarring appearance change right after
+   login. #}
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🍽️ Speiseplanhelfer - Anmelden</title>
+    <title>🍽️ Speiseplanhelfer - {{ _('Sign In') }}</title>
 
     <script>
     (function() {
@@ -63,16 +63,16 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="next" value="{{ next }}">
                 <div class="mb-3">
-                    <label class="form-label fw-bold small" for="email">E-Mail</label>
+                    <label class="form-label fw-bold small" for="email">{{ _('Email') }}</label>
                     <input type="email" name="email" id="email" class="form-control" required autofocus autocomplete="email">
                 </div>
                 <div class="mb-4">
-                    <label class="form-label fw-bold small" for="password">Passwort</label>
+                    <label class="form-label fw-bold small" for="password">{{ _('Password') }}</label>
                     <input type="password" name="password" id="password" class="form-control" required autocomplete="current-password">
                 </div>
-                <button type="submit" class="btn btn-success w-100 fw-bold">Anmelden</button>
+                <button type="submit" class="btn btn-success w-100 fw-bold">{{ _('Sign In') }}</button>
             </form>
-            <a href="{{ url_for('auth.register') }}" class="btn btn-outline-secondary w-100 fw-bold mt-2">Konto erstellen</a>
+            <a href="{{ url_for('auth.register') }}" class="btn btn-outline-secondary w-100 fw-bold mt-2">{{ _('Create Account') }}</a>
         </div>
     </div>
 </body>

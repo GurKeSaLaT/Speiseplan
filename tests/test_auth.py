@@ -1,15 +1,15 @@
-"""Tests für Login/Registrierung/Logout und den globalen Login-Zwang
-(routes/auth.py, app.py: require_login()). Nutzt bewusst NICHT die
-client-Fixture aus conftest.py (die ist bereits eingeloggt, siehe
-dortiger Kommentar) - diese Tests prüfen ja gerade den nicht/nicht-mehr
-eingeloggten Zustand."""
+"""Tests for login/registration/logout and the global login requirement
+(routes/auth.py, app.py: require_login()). Deliberately does NOT use
+the client fixture from conftest.py (which is already logged in, see
+the comment there) - these tests are specifically checking the
+not/no-longer-logged-in state."""
 
 
 def test_login_page_reachable_without_login(app):
     resp = app.test_client().get("/login")
     assert resp.status_code == 200
     assert b'name="email"' in resp.data
-    # Registrieren-Button (siehe templates/login.html).
+    # Register button (see templates/login.html).
     assert b'href="/register"' in resp.data
 
 
@@ -30,8 +30,8 @@ def test_login_success_redirects_to_plan(app, make_user):
     assert resp.status_code == 302
     assert "/login" not in resp.headers["Location"]
 
-    # Session trägt jetzt eine gültige user_id - eine geschützte Route ist
-    # ohne weiteren Login erreichbar.
+    # Session now carries a valid user_id - a protected route is
+    # reachable without any further login.
     resp = test_client.get("/manage")
     assert resp.status_code == 200
 
@@ -45,14 +45,14 @@ def test_login_wrong_password_shows_error(app):
         db.session.commit()
 
     resp = app.test_client().post("/login", data={"email": "bob@test.local", "password": "falsch"})
-    assert resp.status_code == 200  # kein Redirect, Formular wird mit Fehler erneut gezeigt
-    assert "E-Mail-Adresse oder Passwort falsch".encode() in resp.data
+    assert resp.status_code == 200  # no redirect, form is shown again with an error
+    assert "Email address or password is incorrect.".encode() in resp.data
 
 
 def test_login_unknown_email_shows_error(app):
     resp = app.test_client().post("/login", data={"email": "niemand@test.local", "password": "x"})
     assert resp.status_code == 200
-    assert "E-Mail-Adresse oder Passwort falsch".encode() in resp.data
+    assert "Email address or password is incorrect.".encode() in resp.data
 
 
 def test_login_is_case_insensitive_on_email(app):
@@ -69,14 +69,15 @@ def test_login_is_case_insensitive_on_email(app):
 
 
 def test_seeded_users_can_log_in_with_placeholder_email(app):
-    """app.py: init_db() legt beim allerersten Start Nutzer1/Nutzer1 und
-    Nutzer2/Nutzer2 mit Platzhalter-E-Mails (<name>@example.com) an - hier
-    wird nur die Login-FUNKTION geprüft (eigener, frisch angelegter Nutzer
-    mit denselben Anmeldedaten), nicht die Migration selbst (die läuft nur
-    einmalig gegen eine echte, dauerhafte Datenbank, nicht gegen die pro
-    Testlauf frische SQLite-Datei - siehe tests/conftest.py: app_module).
-    Login mit der example.com-Platzhalteradresse ist im Testbetrieb
-    ausdrücklich erlaubt (siehe models.py: User-Docstring)."""
+    """app.py: init_db() creates Nutzer1/Nutzer1 and Nutzer2/Nutzer2 with
+    placeholder emails (<name>@example.com) on the very first start -
+    here only the login FUNCTION itself is checked (a separate,
+    freshly-created user with the same credentials), not the migration
+    itself (which only runs once against a real, persistent database,
+    not against the fresh-per-test-run SQLite file - see
+    tests/conftest.py: app_module). Logging in with the example.com
+    placeholder address is explicitly allowed in test operation (see
+    models.py: User docstring)."""
     from services.auth import hash_password
     from models import User, db
 
@@ -116,10 +117,10 @@ def test_next_param_redirects_back_after_login(app):
 
 
 def test_next_param_ignores_external_url(app):
-    """Ein next-Wert, der nicht mit genau einem "/" beginnt (offenes
-    Redirect-Ziel wie "https://böse-seite.example" oder "//böse-seite"),
-    wird ignoriert - sonst könnte ein präparierter Login-Link Nutzer nach
-    dem echten Login unbemerkt auf eine fremde Seite weiterleiten."""
+    """A next value that does not start with exactly one "/" (an open
+    redirect target like "https://evil-site.example" or "//evil-site")
+    is ignored - otherwise a crafted login link could redirect users
+    unnoticed to a foreign site after the real login."""
     from services.auth import hash_password
     from models import User, db
 
@@ -165,12 +166,13 @@ def test_register_creates_account_and_logs_in(app):
         assert user is not None
         assert user.name == "Neu"
 
-    # Sofort eingeloggt - ohne Plan-Mitgliedschaft (keine Einladung) landet
-    # eine geschützte Route wie /manage über das Zero-Plan-Gate (app.py:
-    # require_login()) auf der Wochenplan-Startseite statt direkt dort.
+    # Immediately logged in - without plan membership (no invitation), a
+    # protected route like /manage lands on the weekly-plan landing page
+    # via the zero-plan gate (app.py: require_login()) instead of going
+    # there directly.
     resp = test_client.get("/manage", follow_redirects=True)
     assert resp.status_code == 200
-    assert "noch in keinem Plan Mitglied".encode("utf-8") in resp.data
+    assert "not a member of any plan".encode("utf-8") in resp.data
 
 
 def test_register_normalizes_email_to_lowercase(app):
@@ -193,13 +195,13 @@ def test_register_rejects_duplicate_email(app, make_user):
         "name": "Zweiter", "email": email, "password": "geheim123",
     })
     assert resp.status_code == 200
-    assert "existiert bereits ein Konto".encode("utf-8") in resp.data
+    assert "An account already exists".encode("utf-8") in resp.data
 
 
 def test_register_rejects_missing_fields(app):
     resp = app.test_client().post("/register", data={"name": "", "email": "", "password": ""})
     assert resp.status_code == 200
-    assert "Bitte Name, E-Mail-Adresse und Passwort angeben".encode("utf-8") in resp.data
+    assert "Please provide name, email address, and password.".encode("utf-8") in resp.data
 
 
 def test_register_rejects_malformed_email(app):
@@ -207,7 +209,7 @@ def test_register_rejects_malformed_email(app):
         "name": "Fehler", "email": "keine-email", "password": "geheim123",
     })
     assert resp.status_code == 200
-    assert "gültige E-Mail-Adresse".encode("utf-8") in resp.data
+    assert "valid email address".encode("utf-8") in resp.data
 
     from models import User
     with app.app_context():

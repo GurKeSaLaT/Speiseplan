@@ -1,14 +1,15 @@
-"""Verwaltungs-Startseite: eine Dashboard-Übersicht mit Kennzahlen und
-einer Seitenleisten-Navigation zu den Rezept-/Kategorie-/Einheiten-/
-Zutaten-/Nährwert-Verwaltungsseiten (die jeweils in eigenen Blueprints
-liegen - routes/recipes.py, routes/categories.py, routes/settings.py).
-Bewusst als eigenes, minimales Blueprint gehalten statt in eine der
-anderen Dateien gepackt zu werden, da sie zu keiner der Zuständigkeiten
-eindeutig gehört."""
+"""Management home page: a dashboard overview with key figures and a
+sidebar navigation to the recipe/category/unit/ingredient/nutrition
+management pages (which each live in their own blueprints -
+routes/recipes.py, routes/categories.py, routes/settings.py).
+Deliberately kept as its own, minimal blueprint instead of being packed
+into one of the other files, since it doesn't clearly belong to any one
+of the responsibilities."""
 
 from datetime import datetime, timezone
 
 from flask import Blueprint, render_template
+from flask_babel import gettext as _
 
 from models import Category, IngredientNutrition, Recipe
 from services.auth import current_plan
@@ -17,42 +18,41 @@ from services.recipe_visibility import visible_recipes_query
 
 manage_bp = Blueprint('manage', __name__)
 
-# Wie viele kürzlich bearbeitete Rezepte die "Zuletzt bearbeitet"-Liste
-# zeigt (siehe manage() unten) - kein Konfigurationswert, da es nur diese
-# eine Stelle betrifft.
+# How many recently edited recipes the "recently edited" list shows
+# (see manage() below) - not a configuration value, since it only
+# affects this one spot.
 RECENT_RECIPES_LIMIT = 6
 
 
 def _format_relative_day(dt):
-    """Formatiert einen Zeitpunkt als groben, deutschen Tagesabstand zu
-    HEUTE ("Heute"/"Gestern"/"vor N Tagen") für die "Zuletzt bearbeitet"-
-    Liste - bewusst grob (kein Uhrzeit-/Stunden-Feingranulat), da diese
-    Liste nur einen schnellen Überblick geben soll, keine exakte Historie."""
+    """Formats a point in time as a rough day distance from TODAY
+    ("Today"/"Yesterday"/"N days ago") for the "recently edited" list -
+    deliberately coarse (no time-of-day/hour granularity), since this
+    list is only meant to give a quick overview, not an exact history."""
     days = (datetime.now(timezone.utc).replace(tzinfo=None).date() - dt.date()).days
     if days <= 0:
-        return "Heute"
+        return _("Today")
     if days == 1:
-        return "Gestern"
-    return f"vor {days} Tagen"
+        return _("Yesterday")
+    return _("%(days)s days ago", days=days)
 
 
 @manage_bp.route('/manage')
 def manage():
-    """Zeigt die Verwaltungs-Übersichtsseite (siehe templates/manage.html):
-    eine feste Seitenleiste mit gruppierter Navigation (Rezepte/Daten) plus
-    Darstellung-Umschalter, und im Hauptbereich eine kleine Kennzahlen-Zeile
-    sowie die zuletzt bearbeiteten Rezepte (Recipe.updated_at, siehe
-    models.py - wird bei jedem Speichern in routes/recipes.py: edit_recipe()
-    aktualisiert).
+    """Shows the management overview page (see templates/manage.html): a
+    fixed sidebar with grouped navigation (recipes/data) plus a display
+    toggle, and in the main area a small row of key figures as well as the
+    recently edited recipes (Recipe.updated_at, see models.py - updated on
+    every save in routes/recipes.py: edit_recipe()).
 
-    "Zutaten gleichgesetzt" zählt die tatsächlichen Alias-ZIELnamen
-    (list_alias_canonical_names(), z.B. "Nudeln") - nicht die Anzahl der
-    einzelnen zusammengefassten Schreibweisen. "Nährwerte gepflegt" zählt
-    die Anzahl vorhandener IngredientNutrition-Referenzeinträge. Alles hier
-    bezieht sich auf den aktuell AKTIVEN Plan (current_plan()) - Rezepte
-    auf die für ihn sichtbaren (Eigentümer + eingebunden, siehe
-    services/recipe_visibility.py), Kategorien/Aliase/Nährwerte auf die,
-    die dieser Plan selbst pflegt.
+    "Ingredients merged" counts the actual alias TARGET names
+    (list_alias_canonical_names(), e.g. "pasta") - not the number of
+    individual spellings combined into them. "Nutrition entries maintained"
+    counts the number of existing IngredientNutrition reference entries.
+    Everything here refers to the currently ACTIVE plan (current_plan()) -
+    recipes to the ones visible to it (owner + linked, see
+    services/recipe_visibility.py), categories/aliases/nutrition to the
+    ones this plan itself maintains.
     """
     plan = current_plan()
     recent_recipes = (

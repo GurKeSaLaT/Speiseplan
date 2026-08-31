@@ -1,5 +1,5 @@
-"""Tests für routes/plan/shopping.py: manuell zur Einkaufsliste einer
-Woche hinzugefügte Posten (ExtraShoppingItem), unabhängig von Rezepten."""
+"""Tests for routes/plan/shopping.py: items manually added to a week's
+shopping list (ExtraShoppingItem), independent of recipes."""
 from datetime import date
 
 
@@ -17,8 +17,8 @@ def test_add_shopping_item_requires_name(client):
 def test_add_shopping_item_success_normalizes_week_start(client, app):
     from models import ExtraShoppingItem
 
-    # 2026-06-17 ist ein Mittwoch - der Posten muss trotzdem dem Montag
-    # derselben Woche zugeordnet werden.
+    # 2026-06-17 is a Wednesday - the item must still be assigned to the
+    # Monday of the same week.
     resp = client.post("/plan/2026-06-17/shopping-item/add", json={
         "name": "Klopapier", "amount": 2, "unit": "Pack", "category": "Hygieneartikel",
     })
@@ -98,9 +98,9 @@ def test_delete_shopping_item_unknown_id_returns_404(client):
 
 
 def test_delete_shopping_item_from_other_plan_returns_404(client, app, make_user):
-    """Ein Posten eines FREMDEN Plans darf sich nicht über seine bloße
-    item_id löschen lassen, selbst wenn man die ID errät/kennt (siehe
-    routes/plan/shopping.py: delete_shopping_item() - Besitz-Check)."""
+    """An item belonging to a FOREIGN plan must not be deletable via its
+    mere item_id, even if the ID is guessed/known (see
+    routes/plan/shopping.py: delete_shopping_item() - ownership check)."""
     from models import ExtraShoppingItem, db
 
     _, other_plan_id = make_user("Andere")

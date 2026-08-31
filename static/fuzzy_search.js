@@ -1,15 +1,15 @@
 /**
- * fuzzy_search.js - kleine, abhängigkeitsfreie Fuzzy-Suche für die
- * clientseitigen Listen-Filter (Rezepte bearbeiten, Kategorien verwalten,
- * Zutaten gleichsetzen): prüft, ob alle Zeichen der Sucheingabe in
- * DERSELBEN REIHENFOLGE, aber nicht zwingend zusammenhängend, im Zieltext
- * vorkommen - "ktfl" matcht z.B. "Kartoffeln", "rzsp" matcht "Rezeptsuppe".
- * Eine leere Sucheingabe matcht immer alles (kein Filter aktiv).
+ * fuzzy_search.js - small, dependency-free fuzzy search for the
+ * client-side list filters (edit recipes, manage categories, equate
+ * ingredients): checks whether all characters of the search input occur
+ * in the target text in THE SAME ORDER, but not necessarily contiguous -
+ * e.g. "ptt" matches "Potatoes", "rcpsp" matches "Recipe Soup".
+ * An empty search input always matches everything (no filter active).
  *
- * Bewusst kein Scoring/Ranking (die Reihenfolge der Liste bleibt
- * unverändert, nur nicht passende Zeilen werden ausgeblendet) - für ein
- * einfaches "tippe irgendwas Ähnliches und die Liste schrumpft" reicht
- * das, ein echtes Ranking wäre für diese Listengrößen unnötiger Aufwand.
+ * Deliberately no scoring/ranking (the order of the list stays
+ * unchanged, only non-matching rows are hidden) - for a simple "type
+ * something similar and the list shrinks" this is enough; real ranking
+ * would be unnecessary effort for these list sizes.
  */
 function fuzzyMatch(text, query) {
     if (!query) return true;
@@ -26,12 +26,12 @@ function fuzzyMatch(text, query) {
 }
 
 /**
- * Verdrahtet ein Sucheingabefeld mit einer Menge von Zeilen: blendet bei
- * jeder Eingabe alle Zeilen aus, deren getText(row)-Ergebnis nicht (fuzzy)
- * auf die Eingabe passt. Nutzt die .search-hidden-Klasse statt
- * element.style.display direkt zu setzen (siehe style.css-Kommentar dort
- * für den Grund - Bootstraps .d-flex ist !important und würde einen
- * einfachen Inline-Style sonst überstimmen).
+ * Wires up a search input field with a set of rows: on every input,
+ * hides all rows whose getText(row) result does not (fuzzy) match the
+ * input. Uses the .search-hidden class instead of setting
+ * element.style.display directly (see the style.css comment there for
+ * the reason - Bootstrap's .d-flex is !important and would otherwise
+ * override a simple inline style).
  */
 function wireFuzzyFilter(inputEl, rowSelector, getText) {
     if (!inputEl) return;

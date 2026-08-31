@@ -1,48 +1,47 @@
 /**
- * plan-manual-select.js - Wiederverwendbare "manuell auswählen"-Suchbox für
- * die Plan-Seite (templates/plan.html): eine kleine Live-Suche über alle
- * Rezepte, die eine Aufrufer-Stelle im DOM ersetzt (statt eines separaten
- * Modals/Dialogs) und bei Auswahl/Abbrechen einen übergebenen Callback
- * aufruft.
+ * plan-manual-select.js - reusable "select manually" search box for the
+ * plan page (templates/plan.html): a small live search across all
+ * recipes that replaces a caller's location in the DOM (instead of a
+ * separate modal/dialog) and calls a passed-in callback on
+ * selection/cancel.
  *
- * Bewusst als generische, von "Hauptgericht" oder "Beilage" unabhängige
- * Komponente geschrieben: sowohl die Hauptgericht-Auswahl (openMainManualSelect
- * in static/plan.js) als auch die Beilagen-Auswahl (openSideManualSelect in
- * static/plan-sides.js) rufen dieselben zwei Funktionen hier auf, statt
- * eigene, fast identische Suchboxen zu pflegen.
+ * Deliberately written as a generic component, independent of "main
+ * dish" or "side dish": both the main dish selection (openMainManualSelect
+ * in static/plan.js) and the side dish selection (openSideManualSelect in
+ * static/plan-sides.js) call the same two functions here, instead of
+ * each maintaining their own, nearly identical search boxes.
  *
- * Erwartet, dass die globale Konstante `allRecipes` (siehe static/plan.js)
- * bereits gesetzt ist, wenn eine der beiden Funktionen aufgerufen wird -
- * bei normaler Seitenladereihenfolge (dieses Skript nach plan.js eingebunden)
- * ist das immer der Fall, da beide Funktionen erst durch einen Klick
- * ausgelöst werden, also lange nach dem initialen Laden.
+ * Expects the global constant `allRecipes` (see static/plan.js) to
+ * already be set by the time either function is called - under normal
+ * page load order (this script included after plan.js) this is always
+ * the case, since both functions are only triggered by a click, i.e.
+ * long after the initial load.
  */
 
 /**
- * Baut die HTML-Struktur der Suchbox: ein Textfeld, eine (zunächst leere,
- * versteckte) Ergebnisliste und ein "Abbrechen"-Link. isSide bestimmt nur
- * den Platzhaltertext ("Beilage suchen..." vs. "Rezept suchen...") - die
- * eigentliche Filterung nach Hauptgericht/Beilage passiert in
- * wireManualSelectBox().
+ * Builds the HTML structure of the search box: a text field, a
+ * (initially empty, hidden) results list, and a "Cancel" link. isSide
+ * only determines the placeholder text ("Search side dish..." vs.
+ * "Search recipe...") - the actual filtering by main dish/side dish
+ * happens in wireManualSelectBox().
  */
 function buildManualSelectHtml(isSide) {
     return `
         <div class="manual-select-box">
-            <input type="text" class="form-control form-control-sm manual-select-input mb-1" placeholder="${isSide ? 'Beilage' : 'Rezept'} suchen..." autocomplete="off">
+            <input type="text" class="form-control form-control-sm manual-select-input mb-1" placeholder="Search ${isSide ? 'side dish' : 'recipe'}..." autocomplete="off">
             <div class="list-group manual-select-results shadow-sm" style="max-height: 180px; overflow-y: auto; display: none;"></div>
-            <button type="button" class="btn btn-sm btn-link p-0 mt-1 manual-select-cancel">Abbrechen</button>
+            <button type="button" class="btn btn-sm btn-link p-0 mt-1 manual-select-cancel">Cancel</button>
         </div>
     `;
 }
 
 /**
- * Verdrahtet eine per buildManualSelectHtml() erzeugte Box: filtert
- * allRecipes bei jedem Tastendruck nach Name/Kategorie (übereinstimmend
- * mit is_side_dish === isSide), rendert Treffer als klickbare Zeilen und
- * ruft bei einem Klick onSelect(recipeId) auf. Der "Abbrechen"-Button ruft
- * stattdessen onCancel() auf (typischerweise: die Box wieder gegen die
- * vorherige Anzeige tauschen). container muss bereits das Markup aus
- * buildManualSelectHtml() enthalten.
+ * Wires up a box created via buildManualSelectHtml(): filters allRecipes
+ * on every keystroke by name/category (matching is_side_dish === isSide),
+ * renders hits as clickable rows and calls onSelect(recipeId) on click.
+ * The "Cancel" button calls onCancel() instead (typically: swapping the
+ * box back for the previous display). container must already contain the
+ * markup from buildManualSelectHtml().
  */
 function wireManualSelectBox(container, isSide, onSelect, onCancel) {
     const input = container.querySelector('.manual-select-input');

@@ -1,24 +1,24 @@
-"""Rezept-Import von externen Kochseiten - unterstützt eine feste Liste
-deutschsprachiger Kochseiten (siehe ALLOWED_HOSTS unten).
+"""Recipe import from external cooking sites - supports a fixed list of
+German-language cooking sites (see ALLOWED_HOSTS below).
 
-Funktionsweise: fetch_recipe_from_url() lädt die Seite server-seitig
-(requests) und liest daraus NICHT das sichtbare HTML aus, sondern die
-eingebetteten strukturierten Daten im schema.org/Recipe-Format
-(https://schema.org/Recipe), die chefkoch.de wie die meisten Rezeptseiten
-als <script type="application/ld+json">-Block einbettet - dafür crawlen
-Suchmaschinen sie u.a. mit "Portionsrechner"-Vorschau in den Suchergebnissen.
-Das macht den Import robust gegenüber Layout-/Design-Änderungen der Seite,
-die ein Parsen des sichtbaren HTML (CSS-Selektoren etc.) sofort brechen
-würden - das JSON-LD-Format ändert sich praktisch nie, weil es fester
-Google-/Suchmaschinen-Standard ist.
+How it works: fetch_recipe_from_url() loads the page server-side
+(requests) and does NOT read the visible HTML, but the embedded
+structured data in schema.org/Recipe format (https://schema.org/Recipe),
+which chefkoch.de - like most recipe sites - embeds as a
+<script type="application/ld+json"> block, which is also why search
+engines crawl them with a "serving-size calculator" preview in the
+search results. This makes the import robust against layout/design
+changes to the site, which would immediately break parsing of the
+visible HTML (CSS selectors etc.) - the JSON-LD format practically never
+changes, since it is a fixed Google/search-engine standard.
 
-Das Ergebnis ist bewusst nur eine VORSCHAU, kein direkt gespeichertes
-Rezept: routes/recipes.py: import_recipe_preview() liefert das geparste
-Dict als JSON an die Erstellen-Seite, die damit das normale Formular
-vorbefüllt (siehe recipe_form.html) - der Nutzer sieht und bearbeitet
-alles (insbesondere die Kategorie, die sich nicht zuverlässig auf unsere
-eigenen Kategorien abbilden lässt) BEVOR irgendetwas gespeichert wird.
-Kein Automatismus dieser Datei schreibt selbst in die Datenbank.
+The result is deliberately only a PREVIEW, not a directly saved recipe:
+routes/recipes.py: import_recipe_preview() delivers the parsed dict as
+JSON to the create page, which uses it to pre-fill the normal form (see
+recipe_form.html) - the user sees and edits everything (in particular
+the category, which cannot be reliably mapped onto our own categories)
+BEFORE anything is saved. No automation in this file writes to the
+database itself.
 """
 
 import json
@@ -26,22 +26,23 @@ import re
 from urllib.parse import urlparse
 
 import requests
+from flask_babel import lazy_gettext as _l
 
 from services.units import known_unit_keys, normalize_amount_unit
 
-# Feste Allowlist statt beliebiger URLs - auch aus Sicherheitsgründen:
-# fetch_recipe_from_url() lässt die App server-seitig eine vom Nutzer
-# eingegebene URL abrufen (ein Server-Side-Request-Forgery-Risiko, wenn
-# beliebige URLs erlaubt wären, z.B. Adressen im eigenen Heimnetz). Die
-# Domain-Prüfung unten VOR jedem Request schließt das zuverlässig - jede
-# hier gelistete Seite wurde manuell geprüft: sie bettet ein
-# schema.org/Recipe-JSON-LD-Objekt ein (siehe Moduldocstring), das der
-# generische, nicht seitenspezifische Parser unten auslesen kann.
-# Bewusst NICHT aufgenommen, weil beim Prüfen keine kompatiblen Daten
-# gefunden wurden: kochbar.de (lädt Inhalte rein clientseitig per
-# JavaScript nach, ohne Server-Side-Rendering im HTML), ichkoche.at (keine
-# eingebetteten JSON-LD-Daten überhaupt), springlane.de (markiert seine
-# Rezeptseiten als "Article", nicht als "Recipe").
+# Fixed allowlist instead of arbitrary URLs - also for security reasons:
+# fetch_recipe_from_url() has the app fetch a user-supplied URL
+# server-side (a Server-Side Request Forgery risk if arbitrary URLs were
+# allowed, e.g. addresses on the local home network). The domain check
+# below, performed BEFORE every request, reliably closes this off - every
+# site listed here was manually checked: it embeds a schema.org/Recipe
+# JSON-LD object (see module docstring) that the generic, non-site-specific
+# parser below can read.
+# Deliberately NOT included because no compatible data was found when
+# checking: kochbar.de (loads content purely client-side via JavaScript,
+# without server-side rendering in the HTML), ichkoche.at (no embedded
+# JSON-LD data at all), springlane.de (marks its recipe pages as
+# "Article", not "Recipe").
 ALLOWED_HOSTS = {
     'chefkoch.de', 'www.chefkoch.de',
     'lecker.de', 'www.lecker.de',
@@ -55,80 +56,78 @@ ALLOWED_HOSTS = {
     'emmikochteinfach.de', 'www.emmikochteinfach.de',
 }
 
-# Eigener User-Agent statt des python-requests-Standards, den manche Seiten
-# blockieren - ein plausibler Browser-artiger String reicht dafür.
+# Custom User-Agent instead of the python-requests default, which some
+# sites block - a plausible browser-like string is enough for that.
 REQUEST_HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; SpeiseplanImport/1.0)'}
 REQUEST_TIMEOUT_SECONDS = 10
 
-# Erkannte Mengeneinheiten (klein, ohne abschließenden Punkt, mit denen der
-# jeweils erste Wortteil nach der erkannten Menge verglichen wird - siehe
-# _parse_ingredient_line). Kommt aus services/units.py, damit hier
-# dieselbe Liste gilt wie bei der eigentlichen Umrechnung
-# (normalize_amount_unit(), unten in _parse_ingredient_line angewendet) -
-# ein unbekanntes Wort landet einfach als Teil des Zutatennamens statt als
-# eigene Einheit, der Import bleibt dadurch immer noch benutzbar, nur die
-# Spalten-Aufteilung ungenauer.
+# Recognized units of measurement (lowercase, without trailing period,
+# against which the first word fragment after the recognized amount is
+# compared - see _parse_ingredient_line). Comes from services/units.py so
+# that the same list applies here as for the actual conversion
+# (normalize_amount_unit(), applied below in _parse_ingredient_line) - an
+# unknown word simply ends up as part of the ingredient name instead of
+# its own unit, so the import remains usable even then, just with a less
+# precise column split.
 KNOWN_UNITS = known_unit_keys()
 
 
 class RecipeImportError(Exception):
-    """Wird mit einer bereits deutschen, direkt an den Nutzer anzeigbaren
-    Fehlermeldung ausgelöst (siehe routes/recipes.py:
-    import_recipe_preview, die genau diese Message 1:1 als JSON-Fehler
-    zurückgibt) - kein technischer Exception-Text, der übersetzt werden
-    müsste."""
+    """Raised with an already-translatable, user-facing error message
+    (see routes/recipes.py: import_recipe_preview, which returns exactly
+    this message 1:1 as a JSON error) - not a technical exception text
+    that would need translating."""
     pass
 
 
 def fetch_recipe_from_url(url):
-    """Lädt url, sucht darin ein schema.org/Recipe-JSON-LD-Objekt und gibt
-    ein normalisiertes Dict zurück:
+    """Loads url, looks for a schema.org/Recipe JSON-LD object in it and
+    returns a normalized dict:
     {name, servings, calories, protein, carbs, fat, instructions,
      source_url, ingredients: [{name, amount, unit}, ...]}
 
-    Wirft RecipeImportError bei jedem erwarteten Fehlschlag (nicht
-    unterstützte Domain, Netzwerkfehler, kein Rezept auf der Seite
-    gefunden) - der Aufrufer muss dafür keine verschiedenen
-    Exception-Typen unterscheiden.
+    Raises RecipeImportError on every expected failure (unsupported
+    domain, network error, no recipe found on the page) - the caller
+    doesn't need to distinguish between different exception types for
+    that.
     """
     parsed_url = urlparse(url)
     if parsed_url.scheme not in ('http', 'https') or parsed_url.hostname not in ALLOWED_HOSTS:
         raise RecipeImportError(
-            'Diese Seite wird vom Import nicht unterstützt (siehe ALLOWED_HOSTS in services/recipe_import.py).'
+            _l('This site is not supported by the import (see ALLOWED_HOSTS in services/recipe_import.py).')
         )
 
     try:
         response = requests.get(url, headers=REQUEST_HEADERS, timeout=REQUEST_TIMEOUT_SECONDS)
     except requests.RequestException:
-        raise RecipeImportError('Die Seite konnte nicht geladen werden.')
+        raise RecipeImportError(_l('The page could not be loaded.'))
 
-    # response.url ist die Adresse NACH etwaigen Redirects - wird hier
-    # erneut geprüft, damit ein Link auf eine erlaubte Domain, der (aus
-    # welchem Grund auch immer) auf eine fremde Domain umleitet, nicht
-    # stillschweigend dort landet (dieselbe SSRF-Überlegung wie beim
-    # Eingabe-Check oben).
+    # response.url is the address AFTER any redirects - checked again
+    # here so that a link to an allowed domain that (for whatever reason)
+    # redirects to a foreign domain doesn't silently end up there (the
+    # same SSRF consideration as in the input check above).
     if urlparse(response.url).hostname not in ALLOWED_HOSTS:
-        raise RecipeImportError('Der Link führt nicht zu einer unterstützten Seite.')
+        raise RecipeImportError(_l('The link does not lead to a supported site.'))
     if not response.ok:
-        raise RecipeImportError(f'Die Seite konnte nicht geladen werden (Status {response.status_code}).')
+        raise RecipeImportError(_l('The page could not be loaded (status %(status)d).', status=response.status_code))
 
-    # requests bestimmt response.encoding aus dem Content-Type-Header;
-    # fehlt dort ein charset-Parameter (z.B. nur "text/html" ohne
-    # ";charset=..."), fällt requests laut HTTP-Spec auf ISO-8859-1
-    # zurück - das ist bei den meisten heutigen (UTF-8-)Seiten falsch und
-    # führt zu falsch dekodierten Umlauten ("Ã¶" statt "ö"). Nur in diesem
-    # Fall auf die aus den Bytes geratene Kodierung (apparent_encoding)
-    # ausweichen: steht im Header dagegen explizit ein charset, wird ihm
-    # vertraut, auch wenn apparent_encoding etwas anderes rät (das kann
-    # bei kurzen/mehrdeutigen Seiten selbst danebenliegen, siehe
-    # chefkoch.de, das korrekt "utf-8" deklariert, aber von
-    # apparent_encoding fälschlich als "windows-1250" geraten wird).
+    # requests determines response.encoding from the Content-Type header;
+    # if that header lacks a charset parameter (e.g. just "text/html"
+    # without ";charset=..."), requests falls back to ISO-8859-1 per the
+    # HTTP spec - which is wrong for most of today's (UTF-8) sites and
+    # leads to incorrectly decoded umlauts ("Ã¶" instead of "ö"). Only in
+    # that case do we fall back to the encoding guessed from the raw
+    # bytes (apparent_encoding): if the header explicitly states a
+    # charset, it is trusted, even if apparent_encoding guesses something
+    # else (which can itself be wrong for short/ambiguous pages, see
+    # chefkoch.de, which correctly declares "utf-8" but is incorrectly
+    # guessed by apparent_encoding as "windows-1250").
     if 'charset=' not in response.headers.get('Content-Type', '').lower():
         response.encoding = response.apparent_encoding
 
     recipe_json = _find_recipe_json_ld(response.text)
     if recipe_json is None:
-        raise RecipeImportError('Auf dieser Seite wurde kein Rezept gefunden.')
+        raise RecipeImportError(_l('No recipe was found on this page.'))
 
     return {
         'name': _clean_name(recipe_json.get('name') or ''),
@@ -147,15 +146,14 @@ def fetch_recipe_from_url(url):
 
 
 def _find_recipe_json_ld(html):
-    """Durchsucht alle <script type="application/ld+json">-Blöcke der
-    Seite nach einem Objekt mit "@type": "Recipe" - sowohl direkt als
-    Top-Level-Objekt/-Liste als auch (der bei chefkoch.de übliche Fall)
-    verschachtelt unter einem "@graph"-Schlüssel, der mehrere zusammen-
-    gehörige Objekte (Recipe, WebPage, Organization, ...) einer Seite
-    bündelt. Gibt None zurück, wenn kein solches Objekt gefunden wird
-    (z.B. weil die URL gar keine Rezeptseite ist), statt eine Exception zu
-    werfen - der Aufrufer wandelt das in eine einheitliche
-    RecipeImportError um.
+    """Searches all <script type="application/ld+json"> blocks on the page
+    for an object with "@type": "Recipe" - either directly as a top-level
+    object/list, or (the usual case on chefkoch.de) nested under an
+    "@graph" key that bundles several related objects (Recipe, WebPage,
+    Organization, ...) belonging to one page. Returns None if no such
+    object is found (e.g. because the URL isn't a recipe page at all)
+    instead of raising an exception - the caller turns this into a
+    uniform RecipeImportError.
     """
     for block in re.findall(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.S):
         try:
@@ -163,12 +161,12 @@ def _find_recipe_json_ld(html):
         except (json.JSONDecodeError, ValueError):
             continue
 
-        # Ein Dict OHNE "@graph"-Schlüssel ist selbst der einzige Kandidat
-        # (z.B. eine Seite, die ihr Recipe-Objekt direkt als Top-Level-JSON-LD
-        # einbettet statt es in @graph zu bündeln) - data.get('@graph', [])
-        # würde diesen Fall fälschlich auf eine leere Kandidatenliste
-        # abbilden, da [] der Default nur für "@graph fehlt" ist, nicht "kein
-        # Kandidat vorhanden".
+        # A dict WITHOUT an "@graph" key is itself the only candidate
+        # (e.g. a page that embeds its Recipe object directly as
+        # top-level JSON-LD instead of bundling it in @graph) -
+        # data.get('@graph', []) would incorrectly map this case to an
+        # empty candidate list, since [] is the default only for
+        # "@graph is missing", not "no candidate present".
         if isinstance(data, dict):
             candidates = data['@graph'] if '@graph' in data else [data]
         elif isinstance(data, list):
@@ -182,21 +180,21 @@ def _find_recipe_json_ld(html):
 
 
 def _clean_name(raw_name):
-    """chefkoch.de hängt an den Rezeptnamen im JSON-LD durchgängig
-    " von <Nutzername>" an (z.B. "Ligurische Nudeln von laufmasche") - wird
-    hier abgeschnitten, da der Autorenname für unsere Rezeptdatenbank
-    irrelevant ist. Kommt der Name ausnahmsweise ohne diesen Zusatz (oder
-    mit einem anderen Format), bleibt er unverändert."""
+    """chefkoch.de consistently appends " von <username>" to the recipe
+    name in the JSON-LD (e.g. "Ligurische Nudeln von laufmasche") - this
+    is stripped off here, since the author's name is irrelevant for our
+    recipe database. If the name happens to come without this suffix (or
+    in a different format), it is left unchanged."""
     return re.sub(r'\s+von\s+\S+\s*$', '', raw_name.strip()).strip()
 
 
 def _parse_servings(recipe_yield):
-    """recipeYield ist im Recipe-Schema entweder ein einzelner String
-    ("4 Portionen"), eine Zahl, oder (bei chefkoch.de) eine Liste, deren
-    erster Eintrag die reine Zahl als String ist (z.B. ["4", "4 Portionen"]).
-    Extrahiert daraus die erste gefundene Ganzzahl; ohne einen einzigen
-    Treffer wird 2 als Standardwert verwendet (derselbe Default wie beim
-    manuellen Rezept-Anlegen, siehe recipe_form.html)."""
+    """In the Recipe schema, recipeYield is either a single string
+    ("4 Portionen"), a number, or (on chefkoch.de) a list whose first
+    entry is the plain number as a string (e.g. ["4", "4 Portionen"]).
+    Extracts the first integer found in it; if there is no match at all,
+    2 is used as the default value (the same default as when manually
+    creating a recipe, see recipe_form.html)."""
     if isinstance(recipe_yield, list):
         recipe_yield = recipe_yield[0] if recipe_yield else ''
     match = re.search(r'\d+', str(recipe_yield or ''))
@@ -204,13 +202,13 @@ def _parse_servings(recipe_yield):
 
 
 def _parse_nutrition_value(recipe_json, field_name):
-    """Liest ein einzelnes Nährwert-Feld aus dem verschachtelten
-    "nutrition"-Objekt (schema.org/NutritionInformation), falls vorhanden -
-    chefkoch.de liefert dieses Feld nur bei einem Teil der Rezepte mit.
-    Die Werte kommen als String samt Einheit ("350 kcal", "12 g") - nur die
-    erste Zahl darin wird ausgewertet. Fehlt das Feld komplett oder lässt
-    es sich nicht als Zahl lesen, wird 0 zurückgegeben (derselbe Default
-    wie beim manuellen Anlegen)."""
+    """Reads a single nutrition field from the nested "nutrition" object
+    (schema.org/NutritionInformation), if present - chefkoch.de only
+    supplies this field for some recipes. The values come as a string
+    including the unit ("350 kcal", "12 g") - only the first number in it
+    is evaluated. If the field is missing entirely or can't be read as a
+    number, 0 is returned (the same default as when manually creating a
+    recipe)."""
     nutrition = recipe_json.get('nutrition')
     if not isinstance(nutrition, dict):
         return 0
@@ -224,19 +222,19 @@ def _parse_nutrition_value(recipe_json, field_name):
 
 
 def _flatten_instructions(recipe_instructions):
-    """Normalisiert recipeInstructions zu einem einzigen, mit Leerzeilen
-    getrennten Text für das Anleitung-Textfeld. Das Feld kommt im
-    schema.org-Format in mehreren möglichen Formen vor, die hier alle
-    unterstützt werden:
-    - ein einzelner String (das ganze Rezept als Fließtext)
-    - eine Liste von Strings (ein Schritt pro Eintrag)
-    - eine Liste von HowToStep-Objekten ({"@type": "HowToStep", "text": ...})
-    - eine Liste von HowToSection-Objekten, die ihrerseits eine
-      itemListElement-Liste von HowToStep-Objekten enthalten (der bei
-      chefkoch.de übliche Fall, siehe Modul-Docstring)
-    Jeder gefundene Schritt-Text wird einzeln getrimmt und mit einer
-    Leerzeile zum nächsten getrennt, damit die Anleitung im Textfeld
-    lesbar in Absätzen erscheint statt als ein einziger langer Block.
+    """Normalizes recipeInstructions into a single text, separated by
+    blank lines, for the instructions text field. In the schema.org
+    format, the field comes in several possible shapes, all of which are
+    supported here:
+    - a single string (the whole recipe as continuous text)
+    - a list of strings (one step per entry)
+    - a list of HowToStep objects ({"@type": "HowToStep", "text": ...})
+    - a list of HowToSection objects, which in turn contain an
+      itemListElement list of HowToStep objects (the usual case on
+      chefkoch.de, see module docstring)
+    Each step text found is individually trimmed and separated from the
+    next by a blank line, so that the instructions appear readable in
+    paragraphs in the text field instead of as one long block.
     """
     steps = []
 
@@ -262,23 +260,22 @@ def _flatten_instructions(recipe_instructions):
 
 
 def _parse_ingredient_line(line):
-    """Zerlegt eine einzelne Zutatenzeile (chefkoch.de-typisch z.B.
-    "500 g Mehl", "1 Zwiebel(n)", "n. B. Salz und Pfeffer") in
-    {name, amount, unit} - dieselbe Form, die das Zutaten-Formular beim
-    manuellen Anlegen erwartet (siehe recipe_form.html: ing_name[]/
+    """Splits a single ingredient line (typically on chefkoch.de e.g.
+    "500 g Mehl", "1 Zwiebel(n)", "n. B. Salz und Pfeffer") into
+    {name, amount, unit} - the same shape the ingredient form expects
+    when manually creating a recipe (see recipe_form.html: ing_name[]/
     ing_amount[]/ing_unit[]).
 
-    Bewusst ein einfacher, nicht perfekter Best-Effort-Parser: findet die
-    Zeile keine führende Zahl (z.B. "Salz" oder "n. B. Pfeffer"), wird die
-    komplette Zeile unverändert als Name übernommen, amount bleibt 0. Wird
-    eine Zahl gefunden, aber das direkt folgende Wort ist keine bekannte
-    Einheit (KNOWN_UNITS), bleibt unit leer und das Wort landet als Teil
-    des Namens (z.B. "2 große Tortilla-Wraps" -> Name "große
-    Tortilla-Wraps") - lieber ein etwas unpräziser Name als eine falsch
-    erkannte Einheit. Da der Nutzer die importierten Zeilen vor dem
-    Speichern ohnehin im Formular sieht, sind gelegentliche Fehlzuordnungen
-    hier bewusst in Kauf genommen statt mit aufwendigerer Heuristik zu
-    versuchen, sie ganz zu vermeiden.
+    Deliberately a simple, imperfect best-effort parser: if the line has
+    no leading number (e.g. "Salz" or "n. B. Pfeffer"), the whole line is
+    taken unchanged as the name, amount stays 0. If a number is found but
+    the word directly following it is not a known unit (KNOWN_UNITS),
+    unit stays empty and the word ends up as part of the name (e.g.
+    "2 große Tortilla-Wraps" -> name "große Tortilla-Wraps") - a slightly
+    imprecise name is preferred over a wrongly recognized unit. Since the
+    user sees the imported lines in the form before saving anyway,
+    occasional misassignments here are deliberately accepted rather than
+    trying to avoid them entirely with a more elaborate heuristic.
     """
     line = line.strip()
     match = re.match(r'^([\d]+(?:[.,][\d]+)?(?:\s*[-–/]\s*[\d]+(?:[.,][\d]+)?)?)\s+(.*)$', line)
@@ -297,22 +294,22 @@ def _parse_ingredient_line(line):
         unit = ''
         name = rest
 
-    # Erkannte Einheit (Masse/Volumen) sofort auf ihre kanonische Form
-    # bringen ("1 kg" -> amount=1000, unit="g") - siehe services/units.py.
-    # Nicht umrechenbare/unbekannte Einheiten (Stk, Prise, "Zwiebel(n)"
-    # ohne jede Einheit, ...) kommen dabei unverändert zurück.
+    # Immediately bring a recognized unit (mass/volume) into its
+    # canonical form ("1 kg" -> amount=1000, unit="g") - see
+    # services/units.py. Non-convertible/unknown units (Stk, Prise,
+    # "Zwiebel(n)" without any unit, ...) come back unchanged.
     amount, unit = normalize_amount_unit(amount, unit)
 
     return {'name': name.strip(), 'amount': amount, 'unit': unit}
 
 
 def _parse_amount_value(raw):
-    """Wandelt eine erkannte Mengenangabe in eine Zahl um - unterstützt
-    Bruchschreibweise ("1/2" -> 0.5), Bereiche ("1-2" -> Mittelwert 1.5,
-    ein einzelner Zahlenwert ist für unser Formularfeld ohnehin nötig) und
-    das deutsche Komma als Dezimaltrennzeichen ("1,5" -> 1.5). Nicht
-    interpretierbare Eingaben ergeben 0 statt eines Fehlers - der Import
-    soll an einer einzelnen unklaren Mengenangabe nicht komplett scheitern."""
+    """Converts a recognized amount into a number - supports fraction
+    notation ("1/2" -> 0.5), ranges ("1-2" -> average 1.5, since a single
+    numeric value is needed for our form field anyway), and the German
+    comma as a decimal separator ("1,5" -> 1.5). Inputs that can't be
+    interpreted yield 0 instead of an error - the import shouldn't fail
+    completely over a single unclear amount."""
     raw = raw.replace(',', '.').strip()
     if '/' in raw:
         num, _, denom = raw.partition('/')

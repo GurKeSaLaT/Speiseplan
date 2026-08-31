@@ -1,60 +1,60 @@
-{# Verwaltungs-Übersichtsseite (/manage): Dashboard-Kopf mit Kennzahlen,
-   Kachel-Übersicht der Bereiche und zuletzt bearbeiteten Rezepten (siehe
-   routes/manage.py für stats/recent). Die Navigation selbst (Seitenleiste)
-   kommt jetzt global aus templates/base.html - diese Seite liefert nur
-   noch ihren Inhalt, keine eigene Shell mehr (siehe dortiger Kommentar für
-   die Historie: ursprünglich hatte /manage eine eigene, isolierte
-   Seitenleiste, die inzwischen site-weit ausgerollt wurde). #}
+{# Management overview page (/manage): dashboard header with metrics,
+   tile overview of the areas, and recently edited recipes (see
+   routes/manage.py for stats/recent). The navigation itself (sidebar)
+   now comes globally from templates/base.html - this page only
+   supplies its content, no longer its own shell (see the comment there for
+   the history: /manage originally had its own, isolated
+   sidebar, which has since been rolled out site-wide). #}
 {% extends 'base.html' %}
 {% block content %}
 <div style="max-width: 980px;">
     <div class="mb-4">
-        <p class="eyebrow">Übersicht</p>
-        <h1 class="fw-bold" style="font-size: 2rem; letter-spacing: -0.02em;">Guten Tag 👋</h1>
-        <p class="text-muted" style="max-width: 46ch;">Alles an einem Ort: Rezepte, Kategorien und wie deine Zutaten &amp; Nährwerte gepflegt werden.</p>
+        <p class="eyebrow">{{ _('Overview') }}</p>
+        <h1 class="fw-bold" style="font-size: 2rem; letter-spacing: -0.02em;">{{ _('Good Day') }} 👋</h1>
+        <p class="text-muted" style="max-width: 46ch;">{{ _('Everything in one place: recipes, categories, and how your ingredients & nutrition values are maintained.') }}</p>
     </div>
 
     <div class="stat-row mb-4">
-        <div class="stat"><div class="num">{{ stats.recipe_count }}</div><div class="cap">Rezepte</div></div>
-        <div class="stat"><div class="num">{{ stats.category_count }}</div><div class="cap">Kategorien</div></div>
-        <div class="stat"><div class="num">{{ stats.aliased_ingredient_count }}</div><div class="cap">Zutaten gleichgesetzt</div></div>
-        <div class="stat"><div class="num">{{ stats.nutrition_entry_count }}</div><div class="cap">Nährwerte gepflegt</div></div>
+        <div class="stat"><div class="num">{{ stats.recipe_count }}</div><div class="cap">{{ _('Recipes') }}</div></div>
+        <div class="stat"><div class="num">{{ stats.category_count }}</div><div class="cap">{{ _('Categories') }}</div></div>
+        <div class="stat"><div class="num">{{ stats.aliased_ingredient_count }}</div><div class="cap">{{ _('Ingredients Merged') }}</div></div>
+        <div class="stat"><div class="num">{{ stats.nutrition_entry_count }}</div><div class="cap">{{ _('Nutrition Values Maintained') }}</div></div>
     </div>
 
-    <p class="section-title">Bereiche</p>
+    <p class="section-title">{{ _('Areas') }}</p>
     <div class="tile-grid">
         <a class="tile" href="{{ url_for('recipes.recipe_create_view') }}">
             <span class="ic">✨</span>
-            <span class="txt"><span class="t">Rezepte erstellen</span><span class="d">Neue Gerichte mit Nährwerten &amp; Zutatenlisten anlegen.</span></span>
+            <span class="txt"><span class="t">{{ _('Create Recipes') }}</span><span class="d">{{ _('Add new dishes with nutrition values & ingredient lists.') }}</span></span>
         </a>
         <a class="tile" href="{{ url_for('recipes.recipe_edit_list_view') }}">
             <span class="ic">📝</span>
-            <span class="txt"><span class="t">Rezepte bearbeiten</span><span class="d">Bestehende Gerichte anpassen oder entfernen.</span></span>
+            <span class="txt"><span class="t">{{ _('Edit Recipes') }}</span><span class="d">{{ _('Adjust or remove existing dishes.') }}</span></span>
         </a>
         <a class="tile" href="{{ url_for('categories.category_manage_view') }}">
             <span class="ic">🏷️</span>
-            <span class="txt"><span class="t">Kategorien verwalten</span><span class="d">Rubriken anlegen oder aufräumen.</span></span>
+            <span class="txt"><span class="t">{{ _('Manage Categories') }}</span><span class="d">{{ _('Add or clean up categories.') }}</span></span>
         </a>
         <a class="tile" href="{{ url_for('settings.units_view') }}">
             <span class="ic">📏</span>
-            <span class="txt"><span class="t">Einheiten</span><span class="d">Gramm/Kilogramm, Milliliter/Liter für die Anzeige wählen.</span></span>
+            <span class="txt"><span class="t">{{ _('Units') }}</span><span class="d">{{ _('Choose grams/kilograms, milliliters/liters for display.') }}</span></span>
         </a>
         <a class="tile" href="{{ url_for('settings.ingredient_aliases_view') }}">
             <span class="ic">🔗</span>
-            <span class="txt"><span class="t">Zutaten gleichsetzen</span><span class="d">Schreibweisen für die Einkaufsliste zusammenfassen.</span></span>
+            <span class="txt"><span class="t">{{ _('Merge Ingredients') }}</span><span class="d">{{ _('Merge spellings for the shopping list.') }}</span></span>
         </a>
         <a class="tile" href="{{ url_for('settings.ingredient_nutrition_view') }}">
             <span class="ic">🍎</span>
-            <span class="txt"><span class="t">Nährwerte</span><span class="d">Referenzwerte je Grundzutat pflegen.</span></span>
+            <span class="txt"><span class="t">{{ _('Nutrition') }}</span><span class="d">{{ _('Maintain reference values per base ingredient.') }}</span></span>
         </a>
         <a class="tile" href="{{ url_for('sharing.sharing_view') }}">
             <span class="ic">🤝</span>
-            <span class="txt"><span class="t">Freigabe</span><span class="d">Andere Nutzer einladen, Standard-Plan wählen.</span></span>
+            <span class="txt"><span class="t">{{ _('Sharing') }}</span><span class="d">{{ _('Invite other users, choose default plan.') }}</span></span>
         </a>
     </div>
 
     {% if recent %}
-    <p class="section-title mt-4">Zuletzt bearbeitet</p>
+    <p class="section-title mt-4">{{ _('Recently Edited') }}</p>
     <div class="panel-list">
         {% for item in recent %}
         <div class="panel-row">

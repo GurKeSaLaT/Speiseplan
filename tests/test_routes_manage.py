@@ -1,16 +1,16 @@
-"""Tests für routes/manage.py: die Verwaltungs-Übersichtsseite mit
-Seitenleisten-Navigation und Dashboard-Kennzahlen."""
+"""Tests for routes/manage.py: the management overview page with
+sidebar navigation and dashboard metrics."""
 from datetime import datetime, timedelta, timezone
 
 
 def test_manage_page_renders(client):
     resp = client.get("/manage")
     assert resp.status_code == 200
-    assert "Übersicht".encode("utf-8") in resp.data
-    # Die Seitenleiste ist jetzt global (templates/base.html), diese Seite
-    # liefert nur noch den Dashboard-Inhalt.
+    assert "Overview".encode("utf-8") in resp.data
+    # The sidebar is now global (templates/base.html), this page
+    # only delivers the dashboard content.
     assert b'class="app-shell"' in resp.data
-    assert "Guten Tag".encode("utf-8") in resp.data
+    assert "Good Day".encode("utf-8") in resp.data
 
 
 def test_manage_page_sidebar_links_to_all_sections(client):
@@ -30,7 +30,7 @@ def test_manage_page_shows_stats(client, make_category, make_recipe):
     resp = client.get("/manage")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    # Genau 1 Rezept und 1 Kategorie in dieser isolierten Testdatenbank.
+    # Exactly 1 recipe and 1 category in this isolated test database.
     assert html.count('<div class="num">1</div>') >= 2
 
 
@@ -52,14 +52,14 @@ def test_manage_page_lists_recently_updated_recipes(client, app, make_recipe):
     resp = client.get("/manage")
     assert resp.status_code == 200
     assert b"Frisch bearbeitet" in resp.data
-    assert "Heute".encode("utf-8") in resp.data
+    assert "Today".encode("utf-8") in resp.data
 
 
 def test_manage_page_recipe_without_updated_at_is_excluded_from_recent(client, app, make_recipe):
-    """Rezepte ohne updated_at (sollte nach der Migration eigentlich nicht
-    mehr vorkommen, siehe app.py: init_db()) tauchen defensiv trotzdem
-    nicht in der "Zuletzt bearbeitet"-Liste auf, statt einen Fehler beim
-    Formatieren des Zeitpunkts auszulösen."""
+    """Recipes without updated_at (shouldn't actually occur after the
+    migration anymore, see app.py: init_db()) still defensively don't
+    show up in the "recently edited" list, instead of raising an error
+    when formatting the timestamp."""
     from models import Recipe, db
 
     recipe_id = make_recipe("Ohne Zeitstempel")
@@ -77,9 +77,9 @@ def test_format_relative_day():
     from routes.manage import _format_relative_day
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    assert _format_relative_day(now) == "Heute"
-    assert _format_relative_day(now - timedelta(days=1)) == "Gestern"
-    assert _format_relative_day(now - timedelta(days=5)) == "vor 5 Tagen"
+    assert _format_relative_day(now) == "Today"
+    assert _format_relative_day(now - timedelta(days=1)) == "Yesterday"
+    assert _format_relative_day(now - timedelta(days=5)) == "5 days ago"
 
 
 def test_manage_page_has_theme_switcher(client):

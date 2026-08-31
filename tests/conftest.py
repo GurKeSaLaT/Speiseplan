@@ -1,20 +1,20 @@
-"""Gemeinsame Pytest-Fixtures für die ganze Suite.
+"""Shared pytest fixtures for the whole suite.
 
-app.py verbindet sich beim reinen Modul-Import bereits mit der Datenbank
-(kein App-Factory-Pattern, siehe app.py: `with app.app_context(): init_db()`
-läuft auf Modulebene) - die Umgebungsvariable DATABASE_URL muss deshalb
-VOR dem allerersten `import app` gesetzt sein, sonst würde selbst ein
-einzelner Testlauf die echte instance/speiseplan.db anfassen. Die
-app_module-Fixture ist deshalb session-scoped: der erste Test, der sie
-(direkt oder über app/client) anfordert, löst genau einmal den Import
-gegen eine eigene, temporäre SQLite-Datei aus; alle weiteren Tests nutzen
-dieselbe bereits verbundene App weiter.
+app.py already connects to the database on plain module import
+(no app factory pattern, see app.py: `with app.app_context(): init_db()`
+runs at module level) - the DATABASE_URL environment variable therefore
+has to be set BEFORE the very first `import app`, otherwise even a
+single test run would touch the real instance/speiseplan.db. The
+app_module fixture is therefore session-scoped: the first test that
+requests it (directly or via app/client) triggers the import exactly
+once against its own temporary SQLite file; all further tests keep
+using that same already-connected app.
 
-Damit trotzdem jeder Test mit einer leeren Datenbank startet, unabhängig
-von der Ausführungsreihenfolge, leert die autouse-Fixture _clean_tables
-nach JEDEM Test alle Tabellen (nicht per Rollback, da die Routen selbst
-committen) - Tests, die bestimmte Ausgangsdaten brauchen, legen sie über
-die Factory-Fixtures make_category/make_recipe unten selbst an.
+So that every test still starts with an empty database regardless of
+execution order, the autouse fixture _clean_tables wipes all tables
+after EVERY test (not via rollback, since the routes themselves
+commit) - tests that need specific starting data create it themselves
+via the make_category/make_recipe factory fixtures below.
 """
 import os
 
@@ -27,7 +27,7 @@ def app_module(tmp_path_factory):
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     os.environ["SECRET_KEY"] = "test-secret-key"
 
-    import app as _app_module  # noqa: PLC0415 - beabsichtigt spät, siehe Docstring oben
+    import app as _app_module  # noqa: PLC0415 - intentionally late, see docstring above
 
     _app_module.app.config["TESTING"] = True
     _app_module.app.config["WTF_CSRF_ENABLED"] = False
@@ -41,17 +41,16 @@ def app(app_module):
 
 @pytest.fixture()
 def make_user(app):
-    """Legt einen User samt eigenem, gesternten Plan an (analog zu
-    make_category/make_recipe unten) und gibt (user_id, plan_id) zurück.
+    """Creates a user with its own starred plan (analogous to
+    make_category/make_recipe below) and returns (user_id, plan_id).
 
-    Ein OHNE explizites username aufgerufenes _make() bekommt einen
-    automatisch durchnummerierten Namen ("Testnutzer2", "Testnutzer3", ...)
-    statt immer denselben "Testnutzer" - sonst würde ein zweiter bare
-    make_user()-Aufruf im selben Test (oder einer, der zusätzlich die
-    client-Fixture nutzt, die bereits intern "Testnutzer" anlegt, siehe
-    default_plan) mit einer UNIQUE-Constraint-Verletzung auf User.username
-    kollidieren. Bei EXPLIZIT übergebenem Namen bleibt das Verhalten
-    unverändert."""
+    An _make() call WITHOUT an explicit username gets an automatically
+    numbered name ("Testnutzer2", "Testnutzer3", ...) instead of always
+    the same "Testnutzer" - otherwise a second bare make_user() call in
+    the same test (or one that also uses the client fixture, which
+    already creates "Testnutzer" internally, see default_plan) would
+    collide with a UNIQUE constraint violation on User.username. With
+    an EXPLICITLY passed name, the behavior stays unchanged."""
     from models import Plan, PlanMembership, User, db
     from services.auth import hash_password
 
@@ -77,40 +76,41 @@ def make_user(app):
 
 @pytest.fixture()
 def default_plan(make_user):
-    """EIN Nutzer+Plan-Paar, lazy/einmalig pro Test von pytest zwischen-
-    gespeichert (Standard-Fixture-Semantik: alle Fixtures, die
-    default_plan in DEMSELBEN Test anfordern, bekommen dasselbe Ergebnis) -
-    gemeinsame Grundlage für client/make_category/make_recipe unten, damit
-    ein ohne explizites plan_id angelegtes Rezept/eine Kategorie
-    automatisch im selben Plan landet, in den der Testclient eingeloggt
-    ist (genau das erwarten die allermeisten Tests, die client UND
-    make_recipe/make_category zusammen benutzen)."""
+    """ONE user+plan pair, cached by pytest lazily/once per test
+    (standard fixture semantics: all fixtures that request default_plan
+    in the SAME test get the same result) - shared basis for
+    client/make_category/make_recipe below, so that a recipe/category
+    created without an explicit plan_id automatically ends up in the
+    same plan the test client is logged into (which is exactly what
+    most tests that use client AND make_recipe/make_category together
+    expect)."""
     user_id, plan_id = make_user("Testnutzer")
     return {"user_id": user_id, "plan_id": plan_id}
 
 
 @pytest.fixture()
 def test_plan_id(default_plan):
-    """Kurzform für Tests, die nur die plan_id brauchen (z.B. direkte
-    Unit-Tests von services/*.py-Funktionen, die jetzt ein plan_id-
-    Argument verlangen) - dasselbe zwischengespeicherte Ergebnis wie
-    default_plan, nur ohne das Dict drumherum."""
+    """Shorthand for tests that only need the plan_id (e.g. direct unit
+    tests of services/*.py functions that now require a plan_id
+    argument) - the same cached result as default_plan, just without
+    the dict wrapped around it."""
     return default_plan['plan_id']
 
 
 @pytest.fixture()
 def client(app, default_plan):
-    """Ein bereits eingeloggter Testclient: seit der Nutzerverwaltung
-    verlangt app.py: require_login() für praktisch jede Route eine
-    aktive Session, ganz unabhängig davon, was der jeweilige Test
-    eigentlich prüfen will - Login ist damit einfach eine weitere
-    unsichtbare Vorbedingung, wie schon _clean_tables unten. client.user_id/
-    client.plan_id (siehe Attribute unten) machen den zugehörigen
-    Test-Nutzer/-Plan für Tests greifbar, die z.B. einen PlanDay direkt
-    per ORM anlegen müssen (PlanDay.plan_id ist NOT NULL). Tests, die
-    explizit das NICHT eingeloggte Verhalten prüfen wollen (Redirect auf
-    /login), bauen sich stattdessen direkt über app.test_client() einen
-    eigenen, bewusst anonymen Client (siehe tests/test_auth.py)."""
+    """An already logged-in test client: ever since user management was
+    added, app.py: require_login() requires an active session for
+    practically every route, completely independent of what the
+    respective test actually wants to check - login is thus simply
+    another invisible precondition, just like _clean_tables below.
+    client.user_id/client.plan_id (see attributes below) make the
+    associated test user/plan accessible for tests that e.g. need to
+    create a PlanDay directly via the ORM (PlanDay.plan_id is NOT
+    NULL). Tests that explicitly want to check the NOT-logged-in
+    behavior (redirect to /login) instead build their own, deliberately
+    anonymous client directly via app.test_client() (see
+    tests/test_auth.py)."""
     test_client = app.test_client()
     with test_client.session_transaction() as sess:
         sess['user_id'] = default_plan['user_id']
@@ -122,12 +122,12 @@ def client(app, default_plan):
 
 @pytest.fixture(autouse=True)
 def _clean_tables(app_module):
-    """Leert alle Tabellen VOR jedem Test (init_db() sät beim allerersten
-    App-Import über init_db() Standard-Kategorien in die sonst leere
-    Testdatenbank ein - ohne diesen Schritt würde ausgerechnet der erste
-    Test der Session mit "Fleisch"/"Fisch"/... als bereits vorhandenen
-    Kategorien kollidieren) UND danach (Sicherheitsnetz, falls ein Test
-    mitten in einer Assertion abbricht, bevor er selbst aufräumt)."""
+    """Wipes all tables BEFORE every test (on the very first app import,
+    init_db() seeds default categories into the otherwise empty test
+    database - without this step, of all tests it would be the first
+    one in the session that collides with "Fleisch"/"Fisch"/... as
+    already-existing categories) AND afterwards (safety net in case a
+    test aborts mid-assertion before it can clean up itself)."""
     from models import db
 
     def _wipe():
@@ -143,13 +143,13 @@ def _clean_tables(app_module):
 
 @pytest.fixture()
 def make_category(app, default_plan):
-    """Legt eine Category an und gibt ihre id zurück (kein ORM-Objekt -
-    das würde nach Ende des with-Blocks als "detached" gelten, sobald
-    Flask-SQLAlchemy die Session beim Schließen des App-Kontexts entfernt).
-    Landet ohne explizites plan_id im selben Plan wie die client-Fixture
-    (siehe default_plan) - ein Test, der eine Kategorie bewusst einem
-    ANDEREN Plan zuordnen will (z.B. für Isolations-Tests), übergibt
-    plan_id explizit."""
+    """Creates a Category and returns its id (not an ORM object - that
+    would count as "detached" after the end of the with block, as soon
+    as Flask-SQLAlchemy removes the session when the app context
+    closes). Ends up in the same plan as the client fixture without an
+    explicit plan_id (see default_plan) - a test that deliberately wants
+    to assign a category to a DIFFERENT plan (e.g. for isolation tests)
+    passes plan_id explicitly."""
     from models import Category, db
 
     def _make(name="Testkategorie", plan_id=None):
@@ -164,9 +164,9 @@ def make_category(app, default_plan):
 
 @pytest.fixture()
 def make_recipe(app, default_plan, make_category):
-    """Wie make_category oben: ohne explizites plan_id landet das Rezept
-    (als Eigentümer, Recipe.owner_plan_id) im selben Plan wie die
-    client-Fixture."""
+    """Like make_category above: without an explicit plan_id the recipe
+    ends up (as owner, Recipe.owner_plan_id) in the same plan as the
+    client fixture."""
     def _make(name="Testgericht", category_id=None, is_side_dish=False, ingredients=None, plan_id=None, **kwargs):
         from models import Ingredient, Recipe, db
 

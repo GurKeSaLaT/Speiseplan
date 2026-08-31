@@ -1,22 +1,22 @@
-"""Einstiegspunkt der Speiseplan-App: erzeugt die Flask-App, verbindet sie
-mit der Datenbank, registriert die vier Blueprints (die eigentlichen Routen
-liegen in routes/*.py bzw. im routes/plan/-Paket) und kümmert sich beim
-Start um Datenbank-Migrationen für Felder, die in früheren Versionen der
-App noch nicht existierten.
+"""Entry point of the Speiseplan app: creates the Flask app, connects it
+to the database, registers the four blueprints (the actual routes live in
+routes/*.py resp. the routes/plan/ package) and, on startup, takes care of
+database migrations for fields that didn't exist in earlier versions of
+the app.
 
-Diese Datei bewusst schlank gehalten: sie enthält selbst keine einzige
-Route mehr (die liegen alle in routes/plan/ (drei Dateien: pages.py,
-day_actions.py, shopping.py - alle drei teilen sich den EINEN plan_bp-
-Blueprint), routes/recipes.py, routes/categories.py, routes/manage.py) und
-keine Planungs-/Auswahllogik (die liegt in services/planning.py und
-services/seasons.py) - nur noch Anwendungs-Setup.
+This file is deliberately kept lean: it no longer contains a single route
+itself (those all live in routes/plan/ (three files: pages.py,
+day_actions.py, shopping.py - all three share the ONE plan_bp
+blueprint), routes/recipes.py, routes/categories.py, routes/manage.py) and
+no planning/selection logic (that lives in services/planning.py and
+services/seasons.py) - just application setup now.
 """
 
 import os
 import secrets
 
 from sqlalchemy import text
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, has_request_context, redirect, request, session, url_for
 from flask_babel import Babel
 from flask_wtf import CSRFProtect
 
@@ -39,19 +39,20 @@ from routes.plans import plans_bp
 from routes.account import account_bp
 
 app = Flask(__name__)
-# SQLite-Datei liegt in Flasks Standard-"instance"-Ordner (instance/speiseplan.db),
-# der beim Deployment/Docker-Betrieb als Volume gemountet wird, damit die
-# Datenbank Neustarts/Neubauten des Containers übersteht. Per DATABASE_URL
-# überschreibbar (analog zu SECRET_KEY unten) - einzig genutzt von
-# tests/conftest.py, damit Tests gegen eine eigene, temporäre SQLite-Datei
-# laufen statt gegen instance/speiseplan.db (kein App-Factory-Pattern
-# vorhanden, die Verbindung wird unten beim Modul-Import sofort aufgebaut).
+# The SQLite file lives in Flask's default "instance" folder
+# (instance/speiseplan.db), which is mounted as a volume during
+# deployment/Docker operation so the database survives container
+# restarts/rebuilds. Overridable via DATABASE_URL (analogous to SECRET_KEY
+# below) - used only by tests/conftest.py, so tests run against their own,
+# temporary SQLite file instead of instance/speiseplan.db (there's no app
+# factory pattern; the connection is set up immediately below at module
+# import time).
 app.config['SQLALCHEMY_DATABASE_URI'] = (
     os.environ.get('DATABASE_URL') or 'sqlite:///' + os.path.join(app.instance_path, 'speiseplan.db')
 )
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Wie lange eine Session ohne erneuten Login gültig bleibt (siehe
-# routes/auth.py: SESSION_LIFETIME-Kommentar).
+# How long a session stays valid without a fresh login (see
+# routes/auth.py: SESSION_LIFETIME comment).
 app.config['PERMANENT_SESSION_LIFETIME'] = SESSION_LIFETIME
 
 os.makedirs(app.instance_path, exist_ok=True)
@@ -59,20 +60,18 @@ db.init_app(app)
 
 
 def load_or_create_secret_key():
-    """Liefert den geheimen Schlüssel, mit dem Flask Sessions und
-    CSRF-Tokens signiert (siehe CSRFProtect unten - Flask-WTF speichert den
-    CSRF-Token serverseitig in der signierten Session-Cookie, OHNE dass die
-    App dafür ein eigenes Login/eine eigene Session-Verwaltung braucht).
+    """Returns the secret key Flask uses to sign sessions and CSRF tokens
+    (see CSRFProtect below - Flask-WTF stores the CSRF token server-side in
+    the signed session cookie, WITHOUT the app needing its own login/
+    session management for that).
 
-    Kann über die Umgebungsvariable SECRET_KEY fest vorgegeben werden
-    (sinnvoll, falls mehrere Container-Instanzen denselben Schlüssel
-    brauchen); ist sie nicht gesetzt, wird EINMALIG ein zufälliger
-    Schlüssel erzeugt und in instance/secret_key abgelegt - im selben,
-    dauerhaft gemounteten Ordner wie die Datenbank, damit der Schlüssel
-    (und damit die Gültigkeit ausgestellter CSRF-Tokens/Sessions) einen
-    Container-Neustart übersteht. Ein bei jedem Neustart neu gewürfelter
-    Schlüssel würde sonst alle gerade offenen Formulare im Browser
-    ungültig machen.
+    Can be fixed via the SECRET_KEY environment variable (useful if
+    several container instances need the same key); if it's not set, a
+    random key is generated ONCE and stored in instance/secret_key - in
+    the same, persistently mounted folder as the database, so the key
+    (and thus the validity of issued CSRF tokens/sessions) survives a
+    container restart. A key freshly rolled on every restart would
+    otherwise invalidate every form currently open in the browser.
     """
     env_key = os.environ.get('SECRET_KEY')
     if env_key:
@@ -90,13 +89,13 @@ def load_or_create_secret_key():
 
 
 app.config['SECRET_KEY'] = load_or_create_secret_key()
-# Schützt alle POST/PUT/PATCH/DELETE-Routen automatisch vor Cross-Site-
-# Request-Forgery: ein Formular-Feld bzw. ein X-CSRFToken-Header mit
-# gültigem, zur Session passendem Token wird ab jetzt bei jedem
-# schreibenden Request verlangt (siehe csrf_token() in den Templates und
-# window.CSRF_TOKEN in base.html für die fetch()-Aufrufe in plan.js) - ohne
-# das würde jede fremde Webseite, die im selben Browser geöffnet ist,
-# unbemerkt Schreibaktionen (Rezept löschen o.ä.) auslösen können.
+# Automatically protects all POST/PUT/PATCH/DELETE routes against
+# cross-site request forgery: from now on, every write request requires a
+# form field resp. an X-CSRFToken header carrying a valid token that
+# matches the session (see csrf_token() in the templates and
+# window.CSRF_TOKEN in base.html for the fetch() calls in plan.js) -
+# without this, any other website open in the same browser could trigger
+# write actions (deleting a recipe, etc.) unnoticed.
 CSRFProtect(app)
 
 
@@ -107,7 +106,18 @@ def get_locale():
     services/accounts.py: update_profile()); anonymous requests (login/
     register) fall back to the browser's Accept-Language header, defaulting
     to English whenever it's absent or doesn't match a supported language -
-    English is this app's default language."""
+    English is this app's default language.
+
+    has_request_context() guard: a lazy_gettext() string (used throughout
+    services/*.py, see e.g. services/accounts.py) can get resolved outside
+    any request - most notably in tests that call a service function
+    directly via app.app_context() without going through the Flask test
+    client (see tests/test_services_accounts.py). current_user()/
+    request.accept_languages both need an actual request (they read
+    session/headers), so outside one this falls straight back to English
+    instead of raising."""
+    if not has_request_context():
+        return 'en'
     user = current_user()
     if user is not None:
         return user.language
@@ -122,9 +132,9 @@ def get_locale():
 # locale, which for 'en' is exactly the desired behavior).
 Babel(app, default_locale='en', locale_selector=get_locale)
 
-# Jeder Blueprint bringt seinen eigenen URL-Namensraum mit (z.B. wird aus
-# der Funktion week_view in plan_bp der Endpunkt "plan.week_view", wie er
-# in url_for()-Aufrufen in den Templates/Redirects verwendet wird).
+# Each blueprint brings its own URL namespace (e.g. the function week_view
+# in plan_bp becomes the endpoint "plan.week_view", as used in url_for()
+# calls in the templates/redirects).
 app.register_blueprint(auth_bp)
 app.register_blueprint(plan_bp)
 app.register_blueprint(manage_bp)
@@ -137,40 +147,40 @@ app.register_blueprint(account_bp)
 
 
 def init_db():
-    """Legt beim App-Start fehlende Tabellen an (db.create_all() - betrifft
-    z.B. eine komplett neue, leere Datenbank oder eine neu hinzugekommene
-    Tabelle wie plan_day) und migriert bestehende Datenbanken älterer
-    App-Versionen auf das aktuelle Schema.
+    """Creates missing tables on app startup (db.create_all() - covers
+    e.g. a completely new, empty database or a newly added table like
+    plan_day) and migrates existing databases from older app versions to
+    the current schema.
 
-    Es gibt in diesem Projekt bewusst kein Migrations-Framework (wie
-    Alembic/Flask-Migrate) - dafür ist die App zu klein und die Änderungen
-    zu selten. Stattdessen prüft dieser Code bei JEDEM Start per
-    PRAGMA table_info, welche Spalten in der recipe-Tabelle bereits
-    existieren, und holt fehlende einmalig per ALTER TABLE nach. Jeder
-    Migrationsschritt ist dadurch idempotent: läuft die Funktion erneut auf
-    einer bereits aktuellen Datenbank, tut sie nichts mehr.
+    This project deliberately has no migration framework (like
+    Alembic/Flask-Migrate) - the app is too small and changes too
+    infrequent for that. Instead, this code checks via PRAGMA table_info
+    on EVERY startup which columns already exist in the recipe table, and
+    adds any missing ones once via ALTER TABLE. Every migration step is
+    thereby idempotent: running the function again on an already up to
+    date database does nothing more.
 
-    Die season-Migration ist ein Sonderfall (Spalten-UMBAU statt nur
-    -Ergänzung): frühere Versionen hatten eine einzelne season-Textspalte
-    direkt auf Recipe; das wurde später durch die separate
-    recipe_season-Tabelle ersetzt, die MEHRERE Zeiträume pro Rezept
-    erlaubt. Vorhandene Werte werden dabei einmalig über SEASON_PRESETS
-    (Saison-Name -> Zeitraum-Tupel) in die neue Tabelle übertragen, dann
-    wird die alte Spalte entfernt.
+    The season migration is a special case (column RESTRUCTURING rather
+    than a mere addition): earlier versions had a single season text
+    column directly on Recipe; that was later replaced by the separate
+    recipe_season table, which allows MULTIPLE date ranges per recipe.
+    Existing values are transferred once into the new table via
+    SEASON_PRESETS (season name -> date-range tuple), then the old column
+    is dropped.
     """
     db.create_all()
 
-    # user.username -> user.name (kein Login-Feld mehr, reiner Anzeigename,
-    # ab jetzt NICHT mehr eindeutig) + neue, eindeutige user.email-Spalte
-    # (Login läuft jetzt über E-Mail, siehe routes/auth.py: login()). Das
-    # alte inline UNIQUE auf username (aus der ursprünglichen CREATE TABLE)
-    # lässt sich per ALTER TABLE nicht entfernen - wie bei den früheren
-    # category-/ingredient_alias-Migrationen daher ein einmaliger
-    # Tabellen-Neuaufbau. Platzhalter-E-Mail je Bestandskonto nach dem
-    # Schema <name-klein>@example.com (z.B. "Nutzer1" -> nutzer1@example.com) -
-    # ergibt sich automatisch aus dem bisherigen username, keine
-    # Sonderbehandlung einzelner Namen nötig; im Testbetrieb ist ein Login
-    # mit diesen Platzhaltern ausdrücklich erlaubt.
+    # user.username -> user.name (no longer a login field, purely a
+    # display name, from now on NOT unique) + new, unique user.email
+    # column (login now goes through email, see routes/auth.py: login()).
+    # The old inline UNIQUE on username (from the original CREATE TABLE)
+    # can't be removed via ALTER TABLE - as with the earlier category/
+    # ingredient_alias migrations, this requires a one-time table rebuild.
+    # Placeholder email for each existing account follows the pattern
+    # <lowercase-name>@example.com (e.g. "Nutzer1" -> nutzer1@example.com) -
+    # derived automatically from the previous username, no special
+    # handling of individual names needed; logging in with these
+    # placeholders is explicitly allowed in test operation.
     existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
     if 'email' not in existing_user_columns:
         db.session.execute(text("""
@@ -224,22 +234,22 @@ def init_db():
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN nutrition_override BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
     if 'updated_at' not in existing_columns:
-        # SQLite verweigert "DEFAULT CURRENT_TIMESTAMP" direkt im ALTER
-        # TABLE ("Cannot add a column with non-constant default") - Spalte
-        # daher ohne Default anlegen und bestehende Zeilen per separatem
-        # UPDATE auf den Migrationszeitpunkt setzen (ein sinnvoller
-        # Startwert für die "Zuletzt bearbeitet"-Liste in routes/manage.py,
-        # auch ohne echte Historie für ältere Rezepte).
+        # SQLite refuses "DEFAULT CURRENT_TIMESTAMP" directly in ALTER
+        # TABLE ("Cannot add a column with non-constant default") - so the
+        # column is created without a default and existing rows are set
+        # to the migration timestamp via a separate UPDATE (a sensible
+        # starting value for the "recently edited" list in
+        # routes/manage.py, even without real history for older recipes).
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN updated_at DATETIME"))
         db.session.execute(text("UPDATE recipe SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
         db.session.commit()
 
-    # Einkaufslisten-Kategorie einer Zutat (siehe services/shopping.py) - erst
-    # mit der gruppierten/sortierten Einkaufsliste hinzugekommen. Bestehende
-    # Zutaten bleiben dabei NULL (landen in der Einkaufsliste vorerst in der
-    # Sonstiges-Sammelgruppe, bis das jeweilige Rezept einmal neu gespeichert
-    # wird) - eine automatische Zuordnung ist ohne Nutzereingabe nicht
-    # zuverlässig möglich.
+    # Shopping-list category of an ingredient (see services/shopping.py) -
+    # only added with the grouped/sorted shopping list. Existing
+    # ingredients stay NULL (land in the shopping list's catch-all
+    # "miscellaneous" group for now, until the respective recipe is saved
+    # again) - an automatic assignment isn't reliably possible without
+    # user input.
     existing_ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
     if 'category' not in existing_ingredient_columns:
         db.session.execute(text("ALTER TABLE ingredient ADD COLUMN category VARCHAR(50)"))
@@ -259,12 +269,12 @@ def init_db():
         db.session.execute(text("ALTER TABLE recipe DROP COLUMN season"))
         db.session.commit()
 
-    # Beliebig viele Beilagen pro Tag statt genau einer: frühere Versionen
-    # hatten eine einzelne side_recipe_id-Spalte direkt auf PlanDay; das
-    # wurde durch die separate PlanDaySide-Tabelle ersetzt (siehe models.py).
-    # Die neue Tabelle existiert bereits durch db.create_all() oben - hier
-    # wird nur noch der vorhandene Einzelwert (falls gesetzt) einmalig in
-    # eine PlanDaySide-Zeile übertragen, dann die alte Spalte entfernt.
+    # Any number of side dishes per day instead of exactly one: earlier
+    # versions had a single side_recipe_id column directly on PlanDay;
+    # that was replaced by the separate PlanDaySide table (see models.py).
+    # The new table already exists thanks to db.create_all() above - here
+    # only the existing single value (if set) is transferred once into a
+    # PlanDaySide row, then the old column is dropped.
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'side_recipe_id' in existing_plan_day_columns:
         old_sides = db.session.execute(
@@ -274,16 +284,16 @@ def init_db():
             db.session.add(PlanDaySide(plan_day_id=plan_day_id, recipe_id=side_recipe_id))
         db.session.commit()
 
-        # SQLite verweigert ein direktes ALTER TABLE ... DROP COLUMN für
+        # SQLite refuses a direct ALTER TABLE ... DROP COLUMN for
         # side_recipe_id ("unknown column ... in foreign key definition"),
-        # weil die Spalte Teil einer FOREIGN-KEY-Definition der Tabelle
-        # selbst ist - eine bekannte SQLite-Einschränkung, anders als bei
-        # der season-Migration oben (dort war die Spalte kein Fremdschlüssel).
-        # Stattdessen wird die Tabelle nach dem von der SQLite-Doku
-        # empfohlenen Muster neu aufgebaut: Kopie ohne die Spalte anlegen,
-        # Daten (inkl. IDs, damit die soeben angelegten PlanDaySide-Zeilen
-        # weiter auf die richtigen Tage zeigen) umkopieren, alte Tabelle
-        # durch die neue ersetzen.
+        # because the column is part of a FOREIGN KEY definition of the
+        # table itself - a known SQLite limitation, unlike the season
+        # migration above (there the column wasn't a foreign key).
+        # Instead, the table is rebuilt following the pattern recommended
+        # by the SQLite docs: create a copy without the column, copy the
+        # data across (including IDs, so the PlanDaySide rows just created
+        # keep pointing to the right days), replace the old table with the
+        # new one.
         db.session.execute(text("""
             CREATE TABLE plan_day_new (
                 id INTEGER NOT NULL PRIMARY KEY,
@@ -302,9 +312,10 @@ def init_db():
         db.session.execute(text("ALTER TABLE plan_day_new RENAME TO plan_day"))
         db.session.commit()
 
-    # "Gekocht"-Häkchen im Rezept-Detail-Fenster (siehe models.py: PlanDay.cooked/
-    # PlanDaySide.cooked) - erst nachträglich hinzugekommen, existing_plan_day_columns
-    # wurde oben bereits für die side_recipe_id-Migration ermittelt.
+    # "Cooked" checkbox in the recipe detail window (see models.py:
+    # PlanDay.cooked/PlanDaySide.cooked) - added only later,
+    # existing_plan_day_columns was already determined above for the
+    # side_recipe_id migration.
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'cooked' not in existing_plan_day_columns:
         db.session.execute(text("ALTER TABLE plan_day ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
@@ -315,19 +326,18 @@ def init_db():
         db.session.execute(text("ALTER TABLE plan_day_side ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
 
-    # --- Nutzerverwaltung: Login + eigene/geteilte Wochenpläne ---
-    # Erststart (noch kein einziger Nutzer vorhanden): legt zwei generische
-    # Demo-Konten an (siehe models.py: User), damit die App nach einem
-    # frischen Klonen ohne die versionierte instance/speiseplan.db (siehe
-    # README.md: Setup) direkt nutzbar ist - reale Registrierung läuft
-    # normalerweise über routes/auth.py: register(). Jeder bekommt sofort
-    # einen eigenen Plan (siehe models.py: Plan/PlanMembership); NUR
-    # Nutzer1s eigener Plan wird dabei direkt gesternt - er wird gleich
-    # unten zum "legacy_plan", dem die komplette bisherige Planungs-
-    # Historie zugeordnet wird, und Nutzer2 bekommt SEINEN Stern dort
-    # (nicht auf seinem eigenen, leeren Plan) - so hat jeder Nutzer
-    # durchgehend genau einen gesternten Plan, und beide landen nach dem
-    # allerersten Login auf demselben, bereits vorhandenen Plan.
+    # --- User management: login + own/shared weekly plans ---
+    # First start (not a single user exists yet): creates two generic demo
+    # accounts (see models.py: User) so the app is directly usable after a
+    # fresh clone without the versioned instance/speiseplan.db (see
+    # README.md: Setup) - real registration normally goes through
+    # routes/auth.py: register(). Each one immediately gets their own plan
+    # (see models.py: Plan/PlanMembership); ONLY Nutzer1's own plan gets
+    # starred right away - it becomes the "legacy_plan" further below, to
+    # which the entire prior planning history is assigned, and Nutzer2
+    # gets THEIR star there too (not on their own, empty plan) - this way
+    # every user consistently has exactly one starred plan, and both end
+    # up on the same, already existing plan after their very first login.
     seeded_plans_by_username = {}
     if not User.query.first():
         for username in ("Nutzer1", "Nutzer2"):
@@ -341,10 +351,10 @@ def init_db():
             seeded_plans_by_username[username] = plan
         db.session.commit()
 
-    # show_in_week_overview auf PlanMembership: existierte in einer
-    # früheren Version noch nicht - fehlende Spalte ergänzen. Der SQLite-
-    # Default (1) gilt automatisch auch für alle bereits bestehenden
-    # Mitgliedschaften (siehe models.py: PlanMembership.show_in_week_overview).
+    # show_in_week_overview on PlanMembership: didn't exist in an earlier
+    # version - add the missing column. The SQLite default (1) applies
+    # automatically to all already-existing memberships too (see
+    # models.py: PlanMembership.show_in_week_overview).
     existing_plan_membership_columns = {
         row[1] for row in db.session.execute(text("PRAGMA table_info(plan_membership)"))
     }
@@ -352,15 +362,14 @@ def init_db():
         db.session.execute(text("ALTER TABLE plan_membership ADD COLUMN show_in_week_overview BOOLEAN NOT NULL DEFAULT 1"))
         db.session.commit()
 
-    # plan_id auf PlanDay/ExtraShoppingItem: existierte in früheren
-    # Versionen der App noch nicht (der Kalender war global, ein einziger
-    # von allen geteilter Plan) - fehlt die Spalte, wird sie ergänzt und
-    # ALLE bestehenden Zeilen (die komplette bisherige Planungs-Historie)
-    # werden Nutzer1s neu angelegtem Plan zugeordnet; Nutzer2 wird
-    # zusätzlich (gesternt) als Mitglied dieses Plans eingetragen - so
-    # sehen nach dieser einmaligen Migration BEIDE exakt denselben,
-    # bereits vorhandenen Plan, ganz ohne dass jemand manuell etwas
-    # einladen müsste.
+    # plan_id on PlanDay/ExtraShoppingItem: didn't exist in earlier
+    # versions of the app (the calendar was global, a single plan shared
+    # by everyone) - if the column is missing, it's added and ALL
+    # existing rows (the entire prior planning history) are assigned to
+    # Nutzer1's newly created plan; Nutzer2 is additionally entered
+    # (starred) as a member of this plan - this way, after this one-time
+    # migration, BOTH see exactly the same, already existing plan,
+    # without anyone having to manually invite the other.
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'plan_id' not in existing_plan_day_columns:
         legacy_plan = seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
@@ -376,12 +385,12 @@ def init_db():
             )
             db.session.commit()
 
-            # SQLite kann weder eine NOT-NULL-Bedingung noch einen
-            # zusammengesetzten UNIQUE-Constraint nachträglich per ALTER
-            # TABLE ergänzen - wie schon bei der früheren
-            # side_recipe_id-Migration oben wird die Tabelle daher einmalig
-            # mit dem kompletten Zielschema neu aufgebaut (Kopie inkl. IDs,
-            # damit PlanDaySide-Zeilen weiter auf die richtigen Tage zeigen).
+            # SQLite can neither add a NOT NULL constraint nor a composite
+            # UNIQUE constraint retroactively via ALTER TABLE - as with the
+            # earlier side_recipe_id migration above, the table is
+            # therefore rebuilt once with the complete target schema
+            # (copy including IDs, so PlanDaySide rows keep pointing to
+            # the right days).
             db.session.execute(text("""
                 CREATE TABLE plan_day_new (
                     id INTEGER NOT NULL PRIMARY KEY,
@@ -416,19 +425,19 @@ def init_db():
             )
             db.session.commit()
 
-    # --- Rezepte/Kategorien/Zutaten-Gleichsetzung/Nährwerte/Einheiten:
-    # ebenfalls an EINEN Plan gebunden statt (wie bisher) global geteilt -
-    # jeder Plan pflegt sein eigenes Kochbuch und seine eigenen
-    # Einstellungen (siehe models.py: Plan-Docstring).
+    # --- Recipes/categories/ingredient-alias mapping/nutrition/units:
+    # likewise bound to ONE plan instead of (as before) shared globally -
+    # each plan maintains its own cookbook and its own settings (see
+    # models.py: Plan docstring).
     #
-    # _add_plan_id_column() ist ein kleiner, nur hier gebrauchter Helfer für
-    # Tabellen OHNE mit plan_id kollidierenden Alt-Constraint (recipe/
-    # app_settings hatten vorher keine unique-Bedingung, die einen neuen
-    # zusammengesetzten Index behindern würde) - Spalte ergänzen,
-    # bestehende Zeilen dem Legacy-Plan zuordnen, optional ein eigenständiger
-    # "CREATE UNIQUE INDEX" (SQLite erlaubt zwar kein nachträgliches ALTER
-    # TABLE ... ADD CONSTRAINT, wohl aber einen unabhängig erzeugten
-    # Unique-Index mit derselben Wirkung, ganz ohne Tabellen-Kopie).
+    # _add_plan_id_column() is a small helper used only here for tables
+    # WITHOUT an old constraint that would collide with plan_id (recipe/
+    # app_settings previously had no unique condition that would get in
+    # the way of a new composite index) - add the column, assign existing
+    # rows to the legacy plan, optionally a standalone "CREATE UNIQUE
+    # INDEX" (SQLite doesn't allow a retroactive ALTER TABLE ... ADD
+    # CONSTRAINT, but does allow an independently created unique index
+    # with the same effect, without any table copy).
     def _add_plan_id_column(table, column, unique_index_sql=None):
         existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
         if column in existing_columns:
@@ -451,16 +460,15 @@ def init_db():
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_app_settings_plan_id ON app_settings (plan_id)"
     )
 
-    # category/ingredient_alias/ingredient_nutrition hatten VORHER je ein
-    # einzelnes globales UNIQUE auf genau die Spalte, die jetzt nur noch
-    # zusammen mit plan_id eindeutig sein soll (name/raw_name/
-    # canonical_name) - das alte, in der Tabelle selbst fest verdrahtete
-    # Constraint ließe sich mit dem einfachen ADD-COLUMN+INDEX-Trick oben
-    # NICHT los werden (ein zweiter, neuer Index ändert nichts am
-    # weiterhin bestehenden alten). Wie schon bei der früheren
-    # side_recipe_id-/plan_id-Migration für plan_day wird die Tabelle
-    # daher jeweils einmalig mit dem kompletten Zielschema (inkl. IDs, an
-    # denen z.B. recipe.category_id weiterhin hängt) neu aufgebaut.
+    # category/ingredient_alias/ingredient_nutrition PREVIOUSLY each had a
+    # single global UNIQUE on exactly the column that should now only be
+    # unique together with plan_id (name/raw_name/canonical_name) - the
+    # old constraint, hard-wired into the table itself, could NOT be gotten
+    # rid of with the simple ADD-COLUMN+INDEX trick above (a second, new
+    # index changes nothing about the old one, which would still remain).
+    # As with the earlier side_recipe_id/plan_id migration for plan_day,
+    # the table is therefore rebuilt once with the complete target schema
+    # (including IDs, which e.g. recipe.category_id still depends on).
     def _add_plan_id_with_rebuild(table, create_new_table_sql, copy_columns):
         existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
         if 'plan_id' in existing_columns:
@@ -524,12 +532,12 @@ def init_db():
         "id, plan_id, canonical_name, reference_amount, reference_unit, protein, carbs, fat",
     )
 
-    # IngredientNutrition.calories entfernt: Kalorien sind aus Eiweiß/
-    # Kohlenhydraten/Fett errechenbar (siehe services/nutrition.py:
-    # compute_calories()) und wären als eigens gepflegter Wert nur
-    # redundant. Anders als bei plan_day/side_recipe_id (siehe oben) ist
-    # calories hier KEIN Fremdschlüssel - ein direktes DROP COLUMN
-    # funktioniert deshalb ohne den dortigen Tabellen-Neuaufbau-Umweg.
+    # IngredientNutrition.calories removed: calories can be computed from
+    # protein/carbs/fat (see services/nutrition.py: compute_calories())
+    # and would only be redundant as a separately maintained value. Unlike
+    # plan_day/side_recipe_id (see above), calories is NOT a foreign key
+    # here - a direct DROP COLUMN therefore works without the table-rebuild
+    # detour used there.
     existing_ingredient_nutrition_columns = {
         row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient_nutrition)"))
     }
@@ -537,49 +545,49 @@ def init_db():
         db.session.execute(text("ALTER TABLE ingredient_nutrition DROP COLUMN calories"))
         db.session.commit()
 
-    # Ein sinnvoller Grundstock an Kategorien für JEDEN Plan, der noch
-    # keine einzige eigene hat, damit ein neuer Plan nicht mit einer
-    # leeren Kategorie-Liste (und damit unbenutzbarer automatischer
-    # Planung) startet - betrifft sowohl einen komplett frischen
-    # Erststart als auch, seit Kategorien plan-gebunden sind, jeden neu
-    # angelegten Plan ohne eigene Kategorien (siehe services/plans.py:
-    # seed_default_categories(), dieselbe Funktion nutzt auch
-    # routes/plans.py: create_plan() für künftig neu erstellte Pläne).
-    # Eigene, später hinzugefügte oder umbenannte Kategorien werden dadurch
-    # nie überschrieben oder erneut angelegt - der Check ist pro Plan.
+    # A sensible base set of categories for EVERY plan that doesn't yet
+    # have a single one of its own, so a new plan doesn't start with an
+    # empty category list (and thus unusable automatic planning) - this
+    # covers both a completely fresh first start and, since categories
+    # became plan-bound, every newly created plan without its own
+    # categories (see services/plans.py: seed_default_categories(), the
+    # same function is also used by routes/plans.py: create_plan() for
+    # plans created in the future). Custom categories added or renamed
+    # later are thereby never overwritten or recreated - the check is
+    # per plan.
     for plan in Plan.query.all():
         seed_default_categories(plan.id)
     db.session.commit()
 
-    # Bestehende Zutaten-Mengen/Einheiten (z.B. "Gramm", "kg", "gr" als
-    # reiner Text aus der Zeit vor der Einheiten-Vereinheitlichung) einmalig
-    # auf die kanonische Form bringen (siehe services/units.py). Wie die
-    # Migrationsschritte oben idempotent: auf einer bereits vollständig
-    # kanonischen Datenbank ändert ein erneuter Aufruf nichts mehr.
+    # Bring existing ingredient amounts/units (e.g. "Gramm", "kg", "gr" as
+    # plain text from before unit unification) once into their canonical
+    # form (see services/units.py). Idempotent like the migration steps
+    # above: on an already fully canonical database, calling this again
+    # changes nothing further.
     renormalize_existing_ingredients()
 
 
-# Migration läuft synchron beim Modul-Import, nicht erst beim ersten
-# Request - so ist die Datenbank garantiert aktuell, bevor überhaupt eine
-# Anfrage bearbeitet wird (wichtig z.B. für den Gunicorn-/Docker-Betrieb
-# mit mehreren Workern, die sonst gleichzeitig migrieren könnten).
+# Migration runs synchronously at module import time, not only on the
+# first request - this guarantees the database is up to date before any
+# request is handled at all (important e.g. for Gunicorn/Docker operation
+# with multiple workers, which could otherwise migrate concurrently).
 with app.app_context():
     init_db()
 
 
-# Endpunkte, die auch ganz OHNE Plan-Mitgliedschaft erreichbar bleiben
-# müssen (siehe require_login() unten, zweite Weiche) - plan.index/
-# plan.week_view zeigen in dem Fall die "Noch kein Plan"-Ansicht statt der
-# normalen Kalenderdaten (siehe routes/plan/pages.py: week_view()), BEIDE
-# müssen auf der Allowlist stehen (index() leitet auf week_view() weiter -
-# stünde nur index() hier, würde der zweite Redirect sofort wieder von
-# diesem Gate abgefangen, eine Endlosschleife). plans.create ist der
-# einzige Weg, aus dem Zero-Plan-Zustand wieder herauszukommen.
+# Endpoints that must stay reachable even entirely WITHOUT plan
+# membership (see require_login() below, second gate) - plan.index/
+# plan.week_view show the "no plan yet" view in that case instead of the
+# normal calendar data (see routes/plan/pages.py: week_view()), BOTH must
+# be on the allowlist (index() redirects to week_view() - if only index()
+# were listed here, the second redirect would immediately be caught by
+# this same gate again, an infinite loop). plans.create is the only way
+# to get out of the zero-plan state.
 ZERO_PLAN_ALLOWED_ENDPOINTS = {
     'plan.index', 'plan.week_view', 'plans.create', 'auth.logout',
-    # Profil-Verwaltung braucht keinen Plan - ein Nutzer ohne jede
-    # Mitgliedschaft muss trotzdem sein eigenes Konto verwalten/löschen
-    # können (routes/account.py).
+    # Profile management doesn't need a plan - a user without any
+    # membership must still be able to manage/delete their own account
+    # (routes/account.py).
     'account.account_view', 'account.update_profile_route',
     'account.update_password_route', 'account.delete_account_route',
 }
@@ -587,26 +595,26 @@ ZERO_PLAN_ALLOWED_ENDPOINTS = {
 
 @app.before_request
 def require_login():
-    """Schützt global JEDE Route außer der Login-/Registrierungsseite
-    selbst und statischen Dateien (CSS/JS/Bilder) - ein einzelner Gate-Punkt statt
-    eines @login_required-Decorators an jeder der bestehenden Routen
-    (siehe services/auth.py: login_required() für die Decorator-Variante,
-    die aktuell nirgends im Routing eingesetzt wird), damit keine Route
-    versehentlich ungeschützt bleibt.
+    """Globally protects EVERY route except the login/registration page
+    itself and static files (CSS/JS/images) - a single gate point instead
+    of a @login_required decorator on each of the existing routes (see
+    services/auth.py: login_required() for the decorator variant, which is
+    currently not used anywhere in the routing), so that no route stays
+    unprotected by accident.
 
-    request.endpoint ist None für nicht auflösbare Pfade (z.B. ein
-    Tippfehler in der URL) - die werden hier bewusst durchgelassen, damit
-    Flask seine normale 404-Antwort liefert, statt stattdessen fälschlich
-    auf /login umzuleiten.
+    request.endpoint is None for paths that can't be resolved (e.g. a
+    typo in the URL) - those are deliberately let through here, so Flask
+    delivers its normal 404 response instead of wrongly redirecting to
+    /login.
 
-    Zweite Weiche (seit Pläne von Accounts entkoppelt sind, siehe
-    services/plans.py): ein eingeloggter Nutzer OHNE jede Plan-
-    Mitgliedschaft (current_plan() ist dann None) wird auf die
-    Wochenplan-Startseite umgeleitet, AUSSER das Ziel steht bereits auf
-    ZERO_PLAN_ALLOWED_ENDPOINTS - dieselbe zentrale-Gate-Philosophie wie
-    oben, damit keine der zahlreichen plan-gebundenen Routen (Kategorien/
-    Einstellungen/Rezepte/Freigabe/Tages-Aktionen) einzeln selbst prüfen
-    muss, ob current_plan() überhaupt existiert."""
+    Second gate (since plans were decoupled from accounts, see
+    services/plans.py): a logged-in user WITHOUT any plan membership
+    (current_plan() is then None) is redirected to the weekly-plan landing
+    page, UNLESS the target is already on ZERO_PLAN_ALLOWED_ENDPOINTS -
+    the same central-gate philosophy as above, so that none of the
+    numerous plan-bound routes (categories/settings/recipes/sharing/
+    day actions) has to individually check whether current_plan() even
+    exists."""
     if request.endpoint is None or request.endpoint in ('auth.login', 'auth.register', 'static'):
         return None
     if current_user() is None:
@@ -618,19 +626,18 @@ def require_login():
 
 @app.after_request
 def set_security_headers(response):
-    """Setzt bei JEDER Antwort einen Satz grundlegender Security-Header, die
-    Flask standardmäßig nicht mitschickt (per Pentest am 2026-08-28
-    festgestellt). Kein HSTS, da die App bewusst nur über HTTP im Heimnetz
-    läuft (kein TLS-Zertifikat vorhanden) - ein HSTS-Header ohne HTTPS wäre
-    wirkungslos bzw. irreführend.
+    """Sets a set of basic security headers on EVERY response that Flask
+    doesn't send by default (identified via a pentest on 2026-08-28). No
+    HSTS, since the app deliberately runs only over HTTP on the home
+    network (no TLS certificate present) - an HSTS header without HTTPS
+    would be ineffective resp. misleading.
 
-    Die Content-Security-Policy erlaubt 'unsafe-inline' für Skripte/Styles,
-    weil die Templates durchgängig mit onclick-Attributen und eingebetteten
-    <style>/<script>-Blöcken arbeiten (kein Nonce-/Hash-basiertes Setup) -
-    verhindert aber weiterhin das Nachladen von Code/Bildern aus fremden
-    Quellen, das Einbetten der Seite in ein fremdes iframe
-    (frame-ancestors) und das Absenden von Formularen an fremde Ziele
-    (form-action).
+    The Content Security Policy allows 'unsafe-inline' for scripts/styles,
+    because the templates consistently use onclick attributes and inline
+    <style>/<script> blocks (no nonce/hash-based setup) - but still
+    prevents loading code/images from external sources, embedding the page
+    in a foreign iframe (frame-ancestors), and submitting forms to
+    external targets (form-action).
     """
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
@@ -650,16 +657,16 @@ def set_security_headers(response):
 
 @app.context_processor
 def inject_css_version():
-    """Stellt allen Templates die Variable css_version zur Verfügung (siehe
-    templates/base.html: style.css wird mit ?v={{ css_version }} eingebunden).
+    """Makes the css_version variable available to all templates (see
+    templates/base.html: style.css is included with ?v={{ css_version }}).
 
-    Nutzt die Änderungszeit der style.css-Datei selbst als Versionsnummer:
-    ändert sich die Datei, ändert sich automatisch auch dieser Query-
-    Parameter, wodurch Browser die neue Version laden statt eine
-    veraltete, gecachte Kopie weiterzuverwenden - ganz ohne manuelles
-    Hochzählen einer Versionsnummer bei jeder CSS-Änderung. Schlägt der
-    Dateizugriff fehl (z.B. weil style.css aus irgendeinem Grund fehlt),
-    wird 0 verwendet statt die Seite mit einem Fehler abzubrechen.
+    Uses the modification time of the style.css file itself as the version
+    number: whenever the file changes, this query parameter automatically
+    changes too, causing browsers to load the new version instead of
+    continuing to use a stale, cached copy - all without manually bumping
+    a version number on every CSS change. If the file access fails (e.g.
+    because style.css is missing for some reason), 0 is used instead of
+    aborting the page with an error.
     """
     css_path = os.path.join(app.static_folder, 'style.css')
     try:
@@ -671,16 +678,16 @@ def inject_css_version():
 
 @app.context_processor
 def inject_current_user_and_plans():
-    """Stellt allen Templates den eingeloggten Nutzer, seinen aktiven Plan
-    sowie die Liste ALLER Pläne zur Verfügung, auf die er Zugriff hat
-    (eigener + eingeladene, siehe models.py: PlanMembership) - genutzt von
-    templates/base.html für den Nutzer-/Plan-Abschnitt in der
-    Seitenleiste (Name, Abmelden, Plan-Wechsel/Stern). Gesternter Plan
-    zuerst, sonst alphabetisch.
+    """Makes the logged-in user, their active plan, and the list of ALL
+    plans they have access to (own + invited-to, see models.py:
+    PlanMembership) available to all templates - used by
+    templates/base.html for the user/plan section in the sidebar (name,
+    log out, plan switch/star). Starred plan first, otherwise
+    alphabetical.
 
-    Auf der Login-Seite selbst (kein eingeloggter Nutzer) bleiben alle drei
-    Werte leer/None - das Template dort erweitert base.html ohnehin nicht,
-    braucht sie also gar nicht."""
+    On the login page itself (no logged-in user), all three values stay
+    empty/None - the template there doesn't extend base.html anyway, so it
+    doesn't need them at all."""
     user = current_user()
     if user is None:
         return {'nav_current_user': None, 'nav_current_plan': None, 'nav_user_plans': []}
@@ -694,15 +701,15 @@ def inject_current_user_and_plans():
 
 @app.context_processor
 def inject_shopping_categories():
-    """Stellt allen Templates die feste Einkaufslisten-Kategorie-Reihenfolge
-    zur Verfügung (siehe services/shopping.py) - gebraucht sowohl von den
-    Kategorie-Dropdowns beim Zutaten-Eintragen (recipe_form.html,
-    recipe_edit_list.html) als auch, über window.SHOPPING_CATEGORIES in
-    base.html, von der clientseitigen Sortierung/Gruppierung der
-    Einkaufsliste (static/plan.js). pantry_categories (window.PANTRY_
-    CATEGORIES) markiert zusätzlich, welche dieser Kategorien NICHT
-    automatisch auf die Einkaufsliste sollen, sondern auf die separate
-    Vorrat-Liste (siehe static/plan-shopping.js: rebuildShoppingList)."""
+    """Makes the fixed shopping-list category order available to all
+    templates (see services/shopping.py) - needed both by the category
+    dropdowns when entering ingredients (recipe_form.html,
+    recipe_edit_list.html) and, via window.SHOPPING_CATEGORIES in
+    base.html, by the client-side sorting/grouping of the shopping list
+    (static/plan.js). pantry_categories (window.PANTRY_CATEGORIES)
+    additionally marks which of these categories should NOT automatically
+    go onto the shopping list, but onto the separate pantry list (see
+    static/plan-shopping.js: rebuildShoppingList)."""
     return {
         'shopping_categories': SHOPPING_CATEGORIES,
         'shopping_uncategorized': UNCATEGORIZED,
@@ -712,52 +719,52 @@ def inject_shopping_categories():
 
 @app.context_processor
 def inject_ingredient_aliases():
-    """Stellt allen Templates die für den AKTIVEN Plan gepflegten
-    Zutaten-Alias-Zuordnungen zur Verfügung (siehe
-    services/ingredient_aliases.py) - genutzt wird das aktuell nur von
-    recipe_form.html (window.INGREDIENT_ALIASES, siehe
-    static/ingredient_alias_hint.js), global als Context Processor aber
-    genauso einfach wie inject_shopping_categories() oben gehalten statt
-    die Abfrage in jeder einzelnen Route zu wiederholen.
+    """Makes the ingredient-alias mappings maintained for the ACTIVE plan
+    available to all templates (see services/ingredient_aliases.py) -
+    currently used only by recipe_form.html (window.INGREDIENT_ALIASES,
+    see static/ingredient_alias_hint.js), but kept as a global context
+    processor just as simply as inject_shopping_categories() above instead
+    of repeating the query in every single route.
 
-    Läuft für JEDEN Seitenaufruf, auch die Login-Seite (kein eingeloggter
-    Nutzer, current_plan() also None) - liefert dann einfach ein leeres
-    Dict, statt mit einem Fehler abzubrechen."""
+    Runs for EVERY page view, including the login page (no logged-in
+    user, so current_plan() is None) - simply returns an empty dict then,
+    instead of aborting with an error."""
     plan = current_plan()
     return {'ingredient_aliases': get_all_aliases(plan.id) if plan else {}}
 
 
 @app.context_processor
 def inject_ingredient_nutrition():
-    """Stellt allen Templates die für den AKTIVEN Plan gepflegten
-    Nährwert-Referenzen je Alias-Zielzutat zur Verfügung (siehe
-    services/nutrition.py) - genutzt von recipe_form.html
-    (window.INGREDIENT_NUTRITION, siehe static/ingredient_alias_hint.js),
-    analog zu inject_ingredient_aliases() oben (inkl. desselben
-    Login-Seiten-Sonderfalls)."""
+    """Makes the nutrition references maintained for the ACTIVE plan, per
+    alias target ingredient, available to all templates (see
+    services/nutrition.py) - used by recipe_form.html
+    (window.INGREDIENT_NUTRITION, see static/ingredient_alias_hint.js),
+    analogous to inject_ingredient_aliases() above (including the same
+    login-page special case)."""
     plan = current_plan()
     return {'ingredient_nutrition': get_all_nutrition_entries(plan.id) if plan else {}}
 
 
 if __name__ == '__main__':
-    # Nur relevant, wenn app.py direkt ausgeführt wird (lokale Entwicklung
-    # bzw. CMD im Dockerfile) - unter einem echten WSGI-Server (Gunicorn
-    # o.ä.) würde dieser Block gar nicht durchlaufen.
+    # Only relevant when app.py is run directly (local development resp.
+    # CMD in the Dockerfile) - under a real WSGI server (Gunicorn etc.)
+    # this block wouldn't run at all.
     #
-    # FLASK_DEBUG und PORT werden im Docker-Deployment über das Dockerfile
-    # gesetzt (FLASK_DEBUG=0, PORT=80): im Container läuft die App damit
-    # ohne Werkzeug-Debugger (der bei Netzwerk-Erreichbarkeit ein
-    # Remote-Code-Execution-Risiko wäre) und auf dem Standard-HTTP-Port.
-    # Lokal ohne gesetzte Variablen bleiben Debug-/Autoreload-Modus an und
-    # der Port bei 5000 (kein Root nötig, anders als bei Port 80).
+    # FLASK_DEBUG and PORT are set via the Dockerfile in the Docker
+    # deployment (FLASK_DEBUG=0, PORT=80): in the container, the app thus
+    # runs without the Werkzeug debugger (which would be a remote-code-
+    # execution risk if reachable over the network) and on the standard
+    # HTTP port. Locally, with no variables set, debug/autoreload mode
+    # stays on and the port stays at 5000 (no root needed, unlike with
+    # port 80).
     #
-    # host='0.0.0.0' ist im Docker-Deployment nötig: mit dem Flask-
-    # Standard ('127.0.0.1') wäre die App selbst innerhalb des Containers
-    # nur von localhost aus erreichbar, also von außen gar nicht. Für
-    # lokale Testläufe außerhalb von Docker per HOST-Umgebungsvariable
-    # überschreibbar, z.B. HOST=127.0.0.1, damit der lokale Testserver
-    # bewusst NICHT über die LAN-IP der Maschine erreichbar ist, sondern
-    # nur von diesem Rechner selbst.
+    # host='0.0.0.0' is necessary in the Docker deployment: with Flask's
+    # default ('127.0.0.1'), the app would be reachable only from
+    # localhost even within the container, i.e. not at all from outside.
+    # Overridable for local test runs outside of Docker via the HOST
+    # environment variable, e.g. HOST=127.0.0.1, so the local test server
+    # is deliberately NOT reachable via the machine's LAN IP, but only
+    # from this machine itself.
     debug_mode = os.environ.get('FLASK_DEBUG', '1') == '1'
     port = int(os.environ.get('PORT', 5000))
     host = os.environ.get('HOST', '0.0.0.0')

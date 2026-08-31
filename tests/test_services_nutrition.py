@@ -1,14 +1,14 @@
-"""Tests für services/nutrition.py: Nährwert-Nachschlage/-Speicher-Logik
-je kanonischer Zutat sowie die automatische Rezept-Nährwert-Berechnung
-aus den Zutaten (compute_recipe_nutrition). Kalorien werden nirgends
-gespeichert oder eingegeben, sondern immer aus Eiweiß/Kohlenhydraten/Fett
-errechnet (Atwater-Faustregel, siehe compute_calories())."""
+"""Tests for services/nutrition.py: nutrition lookup/storage logic per
+canonical ingredient, as well as the automatic recipe nutrition calculation
+from the ingredients (compute_recipe_nutrition). Calories are never stored
+or entered directly, but always computed from protein/carbs/fat (Atwater
+rule of thumb, see compute_calories())."""
 
 
 def test_compute_calories_applies_atwater_rule():
     from services.nutrition import compute_calories
 
-    # 4 kcal je g Eiweiß/Kohlenhydrate, 9 kcal je g Fett.
+    # 4 kcal per g protein/carbs, 9 kcal per g fat.
     assert compute_calories(10, 20, 5) == 10 * 4 + 20 * 4 + 5 * 9
 
 
@@ -31,9 +31,9 @@ def test_set_and_get_nutrition_entry(app, test_plan_id):
 
 
 def test_set_nutrition_forces_fixed_reference_basis(app, test_plan_id):
-    """reference_amount ist kein Parameter mehr (siehe services/nutrition.py:
-    REFERENCE_BASES) - g/ml -> immer 100, Stk -> immer 1, unabhängig davon,
-    was eine (manipulierte) Anfrage sonst vorgeben würde."""
+    """reference_amount is no longer a parameter (see services/nutrition.py:
+    REFERENCE_BASES) - g/ml -> always 100, Stk -> always 1, regardless of
+    what a (manipulated) request might otherwise specify."""
     from services.nutrition import set_nutrition
 
     with app.app_context():
@@ -48,8 +48,8 @@ def test_set_nutrition_forces_fixed_reference_basis(app, test_plan_id):
 
 
 def test_set_nutrition_rejects_unknown_reference_unit(app, test_plan_id):
-    """Ein Wert außerhalb von g/ml/Stk (z.B. "Becher", "Dose", ein leerer
-    String) fällt auf "g" zurück statt übernommen zu werden."""
+    """A value outside of g/ml/Stk (e.g. "Becher", "Dose", an empty
+    string) falls back to "g" instead of being accepted."""
     from services.nutrition import set_nutrition
 
     with app.app_context():
@@ -92,8 +92,8 @@ def test_get_nutrition_entry_missing_returns_none(app, test_plan_id):
 
 
 def test_get_all_nutrition_entries_shape(app, test_plan_id):
-    """calories ist hier kein gespeicherter Wert, sondern wird für die
-    Anzeige aus protein/carbs/fat errechnet (siehe compute_calories())."""
+    """calories is not a stored value here, but computed for display
+    from protein/carbs/fat (see compute_calories())."""
     from services.nutrition import get_all_nutrition_entries, set_nutrition
 
     with app.app_context():
@@ -101,7 +101,7 @@ def test_get_all_nutrition_entries_shape(app, test_plan_id):
         entries = get_all_nutrition_entries(test_plan_id, )
         assert entries["Öl"] == {
             "reference_amount": 100, "reference_unit": "ml",
-            "calories": 900,  # 100g Fett * 9 kcal/g
+            "calories": 900,  # 100g fat * 9 kcal/g
             "protein": 0.0, "carbs": 0.0, "fat": 100.0,
         }
 
@@ -129,9 +129,9 @@ def test_infer_reference_unit_uses_most_common_unit(app, test_plan_id, make_reci
 
 
 def test_infer_reference_unit_falls_back_to_stk_for_container_units(app, test_plan_id, make_recipe):
-    """Container-/Stückzahl-Einheiten wie "Bund"/"Dose"/eine leere Einheit
-    eignen sich nicht für eine 100g/100ml-Referenz - infer_reference_unit(test_plan_id, )
-    darf sie deshalb nie roh zurückgeben, sondern nur g/ml/Stk (siehe
+    """Container/count units like "Bund"/"Dose"/an empty unit are not
+    suitable for a 100g/100ml reference - infer_reference_unit(test_plan_id, )
+    must therefore never return them raw, only g/ml/Stk (see
     services/nutrition.py: REFERENCE_BASES)."""
     from services.nutrition import infer_reference_unit
 
@@ -146,7 +146,7 @@ def test_infer_reference_unit_recognizes_volume_family(app, test_plan_id, make_r
     from services.nutrition import infer_reference_unit
 
     make_recipe("A", ingredients=[{"name": "Sahne", "amount": 200, "unit": "ml"}])
-    make_recipe("B", ingredients=[{"name": "Sahne", "amount": 1, "unit": "EL"}])  # -> 15 ml kanonisch
+    make_recipe("B", ingredients=[{"name": "Sahne", "amount": 1, "unit": "EL"}])  # -> 15 ml canonical
 
     with app.app_context():
         assert infer_reference_unit(test_plan_id, "Sahne") == "ml"
@@ -167,8 +167,8 @@ def test_compute_recipe_nutrition_basic(app, test_plan_id):
         result = compute_recipe_nutrition(test_plan_id, 
             [{"name": "Mehl", "amount": 200, "unit": "g"}], servings=2
         )
-        # 200g @ (10/70/1 je 100g) / 2 Portionen = 10/70/1 pro Portion.
-        # calories daraus errechnet (Atwater): (10+70)*4 + 1*9 = 329.
+        # 200g @ (10/70/1 per 100g) / 2 servings = 10/70/1 per serving.
+        # calories computed from that (Atwater): (10+70)*4 + 1*9 = 329.
         assert result == {"calories": 329, "protein": 10.0, "carbs": 70.0, "fat": 1.0}
 
 
@@ -203,9 +203,10 @@ def test_compute_recipe_nutrition_skips_mismatched_unit_family(app, test_plan_id
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
-        # Referenz in ml (z.B. eine Flüssigkeit), Rezept nennt die Zutat
-        # aber in g - bewusst konservativ übersprungen statt geraten/
-        # falsch umgerechnet (siehe compute_recipe_nutrition-Docstring).
+        # Reference in ml (e.g. a liquid), but the recipe states the
+        # ingredient in g - deliberately skipped conservatively instead of
+        # guessed/wrongly converted (see the compute_recipe_nutrition
+        # docstring).
         set_nutrition(test_plan_id, "Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
         result = compute_recipe_nutrition(test_plan_id, 
             [{"name": "Öl", "amount": 100, "unit": "g"}], servings=1
@@ -214,10 +215,10 @@ def test_compute_recipe_nutrition_skips_mismatched_unit_family(app, test_plan_id
 
 
 def test_compute_recipe_nutrition_treats_piece_spellings_as_stk(app, test_plan_id):
-    """Verschiedene Schreibweisen für Stückzahlen (chefkoch-Import: "Stück",
-    "Zehe", "Scheibe", eine leere Einheit) sollen alle gegen eine
-    "Stk"-Referenz matchen (siehe services/nutrition.py: _PIECE_LIKE_UNITS) -
-    nur für den Nährwert-Abgleich, nicht für die Einkaufsliste."""
+    """Various spellings for piece counts (chefkoch import: "Stück",
+    "Zehe", "Scheibe", an empty unit) should all match against a
+    "Stk" reference (see services/nutrition.py: _PIECE_LIKE_UNITS) -
+    only for nutrition matching, not for the shopping list."""
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():
@@ -230,9 +231,9 @@ def test_compute_recipe_nutrition_treats_piece_spellings_as_stk(app, test_plan_i
 
 
 def test_compute_recipe_nutrition_treats_container_units_as_stk(app, test_plan_id):
-    """"Stk" ist bewusst breit gefasst (siehe services/nutrition.py:
-    Moduldocstring) - auch Dose/Becher/Bund/Prise/Päckchen zählen als 1 Stk,
-    kalibriert auf genau diese Zutat (z.B. "1 Stk Kidneybohnen" = 1 Dose)."""
+    """"Stk" is deliberately defined broadly (see services/nutrition.py:
+    module docstring) - Dose/Becher/Bund/Prise/Päckchen also count as 1 Stk,
+    calibrated to this specific ingredient (e.g. "1 Stk Kidneybohnen" = 1 can)."""
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 
     with app.app_context():

@@ -1,17 +1,17 @@
-{# Einheiten-Einstellungen (/manage/units): legt fest, in welcher Einheit
-   Zutatenmengen angezeigt werden (Masse: g/kg, Volumen: ml/l) - siehe
-   routes/settings.py und services/units.py. Intern bleibt jede Menge immer
-   kanonisch in Gramm/Milliliter gespeichert; diese Seite ändert nur die
-   Darstellung überall dort, wo Zutatenmengen gezeigt werden (Einkaufsliste,
-   Rezept-Bearbeiten-Formular, Import-Vorschau). #}
+{# Unit settings (/manage/units): determines which unit ingredient
+   amounts are displayed in (mass: g/kg, volume: ml/l) - see
+   routes/settings.py and services/units.py. Internally, every amount is
+   always stored canonically in grams/milliliters; this page only changes
+   the display everywhere ingredient amounts are shown (shopping list,
+   recipe edit form, import preview). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-md-6">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">📏 Einheiten</h4>
-                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
+                <h4 class="card-title mb-0 fw-bold">📏 {{ _('Units') }}</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
                 {% if user_plans|length > 1 %}
@@ -26,41 +26,38 @@
                 </ul>
                 {% endif %}
                 <p class="text-muted">
-                    Zutatenmengen werden beim Eintragen und Importieren automatisch vereinheitlicht
-                    (z.B. "1 kg", "1000 Gramm" und "2 EL" landen alle in derselben Familie) und hier
-                    in der gewählten Einheit angezeigt - unabhängig davon, wie sie ursprünglich
-                    eingegeben wurden.
+                    {{ _('Ingredient amounts are automatically normalized when entered and imported (e.g. "1 kg", "1000 grams" and "2 tbsp" all end up in the same family) and displayed here in the chosen unit - regardless of how they were originally entered.') }}
                 </p>
                 <form action="/update-units" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="plan_id" value="{{ plan_id }}">
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold">Masse (z.B. Mehl, Fleisch)</label>
+                        <label class="form-label fw-bold">{{ _('Mass (e.g. flour, meat)') }}</label>
                         <div class="d-flex gap-3">
                             {% for choice in mass_choices %}
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="mass_unit" id="mass_{{ choice }}" value="{{ choice }}" {% if settings.mass_unit == choice %}checked{% endif %}>
-                                <label class="form-check-label" for="mass_{{ choice }}">{{ 'Gramm (g)' if choice == 'g' else 'Kilogramm (kg)' }}</label>
+                                <label class="form-check-label" for="mass_{{ choice }}">{{ _('Grams (g)') if choice == 'g' else _('Kilograms (kg)') }}</label>
                             </div>
                             {% endfor %}
                         </div>
                     </div>
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold">Volumen (z.B. Milch, Öl)</label>
+                        <label class="form-label fw-bold">{{ _('Volume (e.g. milk, oil)') }}</label>
                         <div class="d-flex gap-3">
                             {% for choice in volume_choices %}
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="volume_unit" id="volume_{{ choice }}" value="{{ choice }}" {% if settings.volume_unit == choice %}checked{% endif %}>
-                                <label class="form-check-label" for="volume_{{ choice }}">{{ 'Milliliter (ml)' if choice == 'ml' else 'Liter (l)' }}</label>
+                                <label class="form-check-label" for="volume_{{ choice }}">{{ _('Milliliters (ml)') if choice == 'ml' else _('Liters (l)') }}</label>
                             </div>
                             {% endfor %}
                         </div>
-                        <div class="form-text">Gilt auch für Löffel-/Tassenmaße (TL/EL/Tasse) - die werden ebenfalls in dieser Einheit dargestellt.</div>
+                        <div class="form-text">{{ _('Also applies to spoon/cup measures (tsp/tbsp/cup) - these are displayed in this unit as well.') }}</div>
                     </div>
 
-                    <button type="submit" class="btn btn-dark fw-bold">Speichern</button>
+                    <button type="submit" class="btn btn-dark fw-bold">{{ _('Save') }}</button>
                 </form>
             </div>
         </div>

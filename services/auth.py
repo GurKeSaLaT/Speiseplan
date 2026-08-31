@@ -1,21 +1,19 @@
-"""Login/Session-Verwaltung und Zugriff auf den "aktiven Plan".
+"""Login/session management and access to the "active plan".
 
-Bewusst ohne ein zusätzliches Paket wie Flask-Login umgesetzt: die App
-kommt bislang mit vier Abhängigkeiten aus (siehe requirements.txt), und
-alles Nötige - eine signierte Session sowie Passwort-Hashing - bringt
-Flask/Werkzeug bereits mit (app.py: SECRET_KEY signiert dieselbe Session,
-die auch CSRFProtect nutzt).
+Deliberately implemented without an extra package such as Flask-Login: the
+app has so far gotten by with four dependencies (see requirements.txt), and
+everything needed - a signed session plus password hashing - is already
+provided by Flask/Werkzeug (app.py: SECRET_KEY signs the same session that
+CSRFProtect also uses).
 
-current_user()/current_plan() lesen NUR aus der bereits gesetzten Flask-
-Session (session['user_id']/session['active_plan_id']) - das eigentliche
-Setzen dieser Werte übernimmt ausschließlich routes/auth.py beim
-Login/Plan-Wechsel. login_required() ist als Decorator vorhanden, wird in
-dieser App aber nicht pro Route einzeln eingesetzt - app.py: require_login()
-schützt stattdessen global über einen einzigen @app.before_request-Hook
-alle Routen außer Login-Seite/statischen Dateien (deutlich weniger
-fehleranfällig als das Risiko, eine einzelne Route beim @login_required
-zu vergessen).
-"""
+current_user()/current_plan() ONLY read from the already-set Flask session
+(session['user_id']/session['active_plan_id']) - actually setting these
+values is handled exclusively by routes/auth.py on login/plan switch.
+login_required() exists as a decorator, but this app does not apply it
+per-route - app.py: require_login() instead protects all routes globally
+via a single @app.before_request hook, except the login page/static files
+(considerably less error-prone than risking forgetting a single route's
+@login_required)."""
 
 import re
 from functools import wraps
@@ -25,11 +23,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from models import PlanMembership, User
 
-# Grobe Formprüfung für E-Mail-Adressen (Registrierung, E-Mail-Einladung,
-# Profil-E-Mail-Änderung) - kein neues Package wie email-validator, passt
-# zum bestehenden schlanken Abhängigkeits-Stil (siehe Modul-Docstring
-# oben). Prüft nur die grobe Form ("etwas@etwas.etwas"), keine echte
-# Zustellbarkeit. EIN gemeinsamer Ort statt einer Kopie pro Route-Datei.
+# Rough format check for email addresses (registration, email invitation,
+# profile email change) - no new package like email-validator, in keeping
+# with the existing lean dependency style (see module docstring above).
+# Only checks the rough shape ("something@something.something"), not
+# actual deliverability. ONE shared place instead of a copy per route file.
 EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
@@ -42,34 +40,34 @@ def verify_password(user, raw_password):
 
 
 def current_user():
-    """Lädt den eingeloggten Nutzer (oder None, falls keine gültige Session
-    besteht) - pro Request nur einmal geladen, über flask.g zwischengespeichert
-    (g lebt nur für die Dauer EINES Requests, kein Caching über Requests
-    hinweg nötig/gewollt)."""
+    """Loads the logged-in user (or None, if there is no valid session) -
+    loaded only once per request, cached via flask.g (g only lives for the
+    duration of ONE request, no caching across requests needed/wanted)."""
     if 'user_id' not in session:
         return None
     if not hasattr(g, '_current_user'):
         g._current_user = User.query.get(session['user_id'])
-        # Die Nutzer-ID in der Session existiert nicht mehr (z.B. Session
-        # von einem inzwischen gelöschten Testkonto) - Session bereinigen,
-        # statt bei jedem weiteren Zugriff erneut ins Leere zu laufen.
+        # The user ID in the session no longer exists (e.g. a session from
+        # a test account that has since been deleted) - clean up the
+        # session instead of running into a dead end on every further
+        # access.
         if g._current_user is None:
             session.clear()
     return g._current_user
 
 
 def current_plan():
-    """Löst den gerade aktiven Plan des eingeloggten Nutzers auf (None, wenn
-    niemand eingeloggt ist oder der Nutzer - eigentlich nie der Fall,
-    siehe app.py: init_db() - noch in keinem einzigen Plan Mitglied ist).
+    """Resolves the logged-in user's currently active plan (None if no one
+    is logged in, or the user - practically never the case, see app.py:
+    init_db() - is not yet a member of any plan at all).
 
-    Reihenfolge: 1. der zuletzt per /plan/switch/<id> gewählte Plan
-    (session['active_plan_id']), sofern der Nutzer dort noch Mitglied ist
-    (könnte sich z.B. geändert haben, falls er zwischenzeitlich entfernt
-    wurde) - 2. sonst der gesternte Plan (siehe PlanMembership.is_starred) -
-    3. sonst irgendeine (die erste) bestehende Mitgliedschaft. Das Ergebnis
-    wird zurück in die Session geschrieben, damit nachfolgende Requests
-    direkt Fall 1 treffen, ohne erneut den Stern nachschlagen zu müssen."""
+    Order: 1. the plan last chosen via /plan/switch/<id>
+    (session['active_plan_id']), provided the user is still a member there
+    (could have changed, e.g. if they were removed in the meantime) -
+    2. otherwise the starred plan (see PlanMembership.is_starred) -
+    3. otherwise whichever (the first) existing membership. The result is
+    written back into the session so that subsequent requests hit case 1
+    directly, without having to look up the star again."""
     user = current_user()
     if user is None:
         return None
@@ -92,40 +90,38 @@ def current_plan():
 
 
 def user_plan_memberships(user):
-    """Alle Pläne, auf die user Zugriff hat (eigener + eingeladene, siehe
-    models.py: PlanMembership) - gesternter Plan zuerst, danach
-    alphabetisch nach Plan-Name. Gemeinsam genutzt von app.py:
-    inject_current_user_and_plans() (Seitenleisten-Navigation) und den
-    Tab-Umschaltern der "Einstellungen"-Seiten (routes/categories.py,
-    routes/settings.py) - beide sollen exakt dieselbe Reihenfolge zeigen."""
+    """All plans user has access to (own + invited, see models.py:
+    PlanMembership) - starred plan first, then alphabetically by plan name.
+    Shared by app.py: inject_current_user_and_plans() (sidebar navigation)
+    and the tab switchers of the "settings" pages (routes/categories.py,
+    routes/settings.py) - both should show exactly the same order."""
     memberships = PlanMembership.query.filter_by(user_id=user.id).all()
     memberships.sort(key=lambda m: (not m.is_starred, m.plan.name))
     return memberships
 
 
 def user_has_plan_access(user, plan_id):
-    """Ob user Mitglied von plan_id ist (siehe models.py: PlanMembership) -
-    der schlichte Besitz-Check für Routen, die ein Objekt anhand seiner
-    eigenen plan_id (statt eines Query-Parameters wie selected_plan_id()
-    unten) gegen den Zugriff des Nutzers prüfen müssen, z.B. bevor eine
-    Kategorie/ein Rezept anhand seiner ID gelöscht/verändert wird."""
+    """Whether user is a member of plan_id (see models.py: PlanMembership) -
+    the plain ownership check for routes that need to check a user's access
+    against an object based on its own plan_id (as opposed to a query
+    parameter like selected_plan_id() below), e.g. before a category/recipe
+    is deleted/modified by its ID."""
     return PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first() is not None
 
 
 def selected_plan_id(request_args, user):
-    """Löst auf, welcher Plan für eine EINZELNE Anfrage der "Einstellungen"-
-    Seiten (Kategorien/Einheiten/Zutaten gleichsetzen/Nährwerte) angezeigt/
-    bearbeitet werden soll - unabhängig vom sonst aktiven Plan
-    (current_plan()), da diese Seiten einen eigenen Tab-Umschalter haben
-    (siehe templates: der Tab-Streifen verlinkt mit ?plan_id=<id>).
+    """Resolves which plan should be shown/edited for A SINGLE request to
+    the "settings" pages (categories/units/equating ingredients/nutrition) -
+    independent of the otherwise active plan (current_plan()), since these
+    pages have their own tab switcher (see templates: the tab strip links
+    with ?plan_id=<id>).
 
-    Nimmt request_args (ein Mapping wie flask.request.args) entgegen statt
-    flask.request direkt zu importieren, damit diese Funktion unabhängig
-    vom Request-Kontext testbar bleibt. Ein fehlender/ungültiger/fremder
-    plan_id-Parameter fällt auf den aktiven Plan zurück (services/auth.py:
-    current_plan()) - ein manipulierter Query-Parameter kann so nie Zugriff
-    auf einen Plan verschaffen, in dem der Nutzer nicht ohnehin schon
-    Mitglied ist."""
+    Takes request_args (a mapping like flask.request.args) instead of
+    importing flask.request directly, so that this function remains
+    testable independent of the request context. A missing/invalid/foreign
+    plan_id parameter falls back to the active plan (services/auth.py:
+    current_plan()) - a manipulated query parameter can therefore never
+    grant access to a plan the user isn't already a member of anyway."""
     requested = request_args.get('plan_id', type=int)
     if requested is not None:
         membership = PlanMembership.query.filter_by(plan_id=requested, user_id=user.id).first()
@@ -136,17 +132,17 @@ def selected_plan_id(request_args, user):
 
 
 def default_plan_id(request_args, user):
-    """Wie selected_plan_id() oben (ein gültiger ?plan_id=-Parameter
-    gewinnt immer), FÄLLT aber auf den GESTERNTEN Plan zurück statt auf
-    current_plan() - für Formulare, die absichtlich UNABHÄNGIG vom sonst
-    aktiven Plan (der z.B. durch einen zuvor besuchten Tab auf einen
-    anderen, nicht gesternten Plan zeigen kann) immer denselben,
-    vorhersagbaren Standard vorschlagen sollen (z.B. "welchem Plan gehört
-    ein neu angelegtes Rezept" - routes/recipes.py: recipe_create_view()).
+    """Like selected_plan_id() above (a valid ?plan_id= parameter always
+    wins), but FALLS BACK to the STARRED plan instead of current_plan() -
+    for forms that should deliberately always suggest the same, predictable
+    default INDEPENDENT of the otherwise active plan (which, e.g. due to a
+    previously visited tab, may point at a different, non-starred plan)
+    (e.g. "which plan does a newly created recipe belong to" -
+    routes/recipes.py: recipe_create_view()).
 
-    Setzt voraus, dass user mindestens eine Mitgliedschaft hat - Routen,
-    die dies nutzen, sind für Nutzer ganz ohne Plan über das Zero-Plan-Gate
-    (app.py: ZERO_PLAN_ALLOWED_ENDPOINTS) ohnehin nicht erreichbar."""
+    Assumes user has at least one membership - routes that use this are
+    unreachable anyway for users without any plan at all, via the zero-plan
+    gate (app.py: ZERO_PLAN_ALLOWED_ENDPOINTS)."""
     requested = request_args.get('plan_id', type=int)
     if requested is not None:
         membership = PlanMembership.query.filter_by(plan_id=requested, user_id=user.id).first()
@@ -157,11 +153,10 @@ def default_plan_id(request_args, user):
 
 
 def login_required(view):
-    """Nicht aktiv im Routing eingesetzt (siehe Modul-Docstring - app.py:
-    require_login() übernimmt das global) - als eigenständiger Decorator
-    trotzdem vorhanden, falls eine einzelne Route abweichend vom globalen
-    Gate geschützt werden soll (z.B. innerhalb eines sonst offenen
-    Blueprints)."""
+    """Not actively used in routing (see module docstring - app.py:
+    require_login() handles this globally) - still present as a standalone
+    decorator in case a single route needs to be protected differently from
+    the global gate (e.g. within an otherwise open blueprint)."""
     @wraps(view)
     def wrapped(*args, **kwargs):
         if current_user() is None:

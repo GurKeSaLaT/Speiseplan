@@ -1,5 +1,5 @@
-"""Tests für routes/recipes.py: Rezept anlegen/bearbeiten/löschen samt
-Zutaten und Saison-Zuordnung, sowie der chefkoch.de-Import-Preview-Endpunkt."""
+"""Tests for routes/recipes.py: create/edit/delete recipe including
+ingredients and season assignment, plus the chefkoch.de import preview endpoint."""
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,14 +9,14 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def _base_recipe_form(category_id, **overrides):
-    # nutrition_override="1" hält bestehende Tests, die feste
-    # protein/carbs/fat-Werte erwarten, unabhängig von der automatischen
-    # Berechnung aus den Zutaten (siehe services/nutrition.py:
-    # compute_recipe_nutrition) - eigene Tests für die Berechnung selbst
-    # setzen das Häkchen bewusst NICHT. calories gibt es hier bewusst
-    # nicht als Formularfeld - es wird nie aus dem Formular übernommen,
-    # sondern immer aus protein/carbs/fat errechnet (services/nutrition.py:
-    # compute_calories(), hier also 290 = (20+30)*4 + 10*9).
+    # nutrition_override="1" keeps existing tests that expect fixed
+    # protein/carbs/fat values, independent of automatic
+    # computation from the ingredients (see services/nutrition.py:
+    # compute_recipe_nutrition) - tests for the computation itself
+    # deliberately do NOT set this checkbox. calories is deliberately
+    # not a form field here - it's never taken from the form,
+    # but always computed from protein/carbs/fat (services/nutrition.py:
+    # compute_calories(), so here 290 = (20+30)*4 + 10*9).
     form = {
         "name": "Neues Gericht",
         "category_id": str(category_id),
@@ -53,39 +53,39 @@ def test_recipe_create_view_embeds_ingredient_aliases_for_hint_js(client, app):
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
     assert b"window.INGREDIENT_ALIASES" in resp.data
-    # tojson escaped Umlaute als \uXXXX statt roher UTF-8-Bytes (gültiges,
-    # vom Browser korrekt interpretiertes JS) - hier also auf die
-    # escapte Form prüfen, nicht auf die rohen Zeichen.
+    # tojson escapes umlauts as \uXXXX instead of raw UTF-8 bytes (valid
+    # JS the browser interprets correctly) - so check for the
+    # escaped form here, not the raw characters.
     assert b"Oliven\\u00f6l" in resp.data
     assert b'id="canonical-names-datalist"' in resp.data
-    # Die Datalist rendert denselben Namen dagegen als normalen HTML-Text
-    # (kein JSON), dort also die unescapte Form erwarten.
+    # The datalist, by contrast, renders the same name as plain HTML text
+    # (no JSON), so expect the unescaped form there.
     assert "Öl".encode("utf-8") in resp.data
 
 
 def test_recipe_create_view_ingredient_row_has_delete_button(client):
-    """Jede Zutatenzeile (inkl. der leeren Ausgangszeile) braucht einen
-    kleinen Löschen-Button, der die ganze .ingredient-row entfernt - sowohl
-    server-seitig gerendert als auch im rformAddIngredientRow()-JS-Template
-    in static/recipe_form.js, das später hinzugefügte Zeilen baut."""
+    """Every ingredient row (including the empty starting row) needs a
+    small delete button that removes the whole .ingredient-row - both
+    server-rendered and in the rformAddIngredientRow() JS template
+    in static/recipe_form.js, which builds rows added later."""
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert 'class="ingredient-row' in html  # server-gerendert
+    assert 'class="ingredient-row' in html  # server-rendered
     assert "this.closest('.ingredient-row').remove()" in html
 
     js = (STATIC_DIR / "recipe_form.js").read_text(encoding="utf-8")
-    assert "div.className = 'ingredient-row'" in js  # rformAddIngredientRow()-JS-Template
+    assert "div.className = 'ingredient-row'" in js  # rformAddIngredientRow() JS template
     assert "this.closest('.ingredient-row').remove()" in js
 
 
 def test_recipe_create_view_alias_hint_spans_full_ingredient_row(client):
-    """Der Alias-/Nährwert-Hinweis darf nicht mehr in der schmalen
-    Namens-Spalte eingebettet sein (das machte die dortige Inline-
-    Nährwert-Eingabe unbrauchbar schmal), sondern muss NACH der kompletten
-    Feldzeile (inkl. Löschen-Button ganz rechts) als eigenes Element
-    stehen - also erst nach dem Marker für die letzte Spalte im
-    HTML-Quelltext auftauchen, nicht schon direkt hinter dem Namensfeld."""
+    """The alias/nutrition hint must no longer be embedded in the narrow
+    name column (that made the inline nutrition input there unusably
+    narrow), but must appear AFTER the complete field row (including the
+    delete button on the far right) as its own element - i.e. it must
+    appear after the marker for the last column in the HTML source, not
+    right behind the name field."""
     resp = client.get("/manage/recipe/create")
     html = resp.get_data(as_text=True)
     name_field_index = html.index('name="ing_name[]"')
@@ -100,10 +100,10 @@ def test_recipe_edit_list_view_has_search_filter(client, make_recipe):
     assert resp.status_code == 200
     assert b'id="recipeFilter"' in resp.data
     assert b"recipe-list-row" in resp.data
-    # Muss ueber fuzzy_search.js/wireFuzzyFilter laufen, NICHT ueber
-    # element.style.display direkt - siehe static/style.css: .search-hidden-
-    # Kommentar (die Zeilen tragen auch Bootstraps !important .d-flex, das
-    # einen einfachen Inline-Style sonst stillschweigend ueberstimmt).
+    # Must run via fuzzy_search.js/wireFuzzyFilter, NOT via
+    # element.style.display directly - see static/style.css: the
+    # .search-hidden comment (the rows also carry Bootstrap's !important
+    # .d-flex, which would otherwise silently override a simple inline style).
     assert b"fuzzy_search.js" in resp.data
     assert b"wireFuzzyFilter" in resp.data
     assert b"row.style.display" not in resp.data
@@ -115,16 +115,16 @@ def test_recipe_edit_list_view_no_search_filter_when_empty(client):
 
 
 def test_recipe_edit_view_ingredient_row_has_delete_button(client, make_recipe):
-    """Wie test_recipe_create_view_ingredient_row_has_delete_button, aber
-    für die Bearbeiten-Seite eines Rezepts: sowohl die bestehenden
-    Zutatenzeilen als auch die leere Ausgangszeile brauchen den
-    Löschen-Button. Nutzt dasselbe recipe_form.html/recipe_form.js wie die
-    Anlegen-Seite (siehe routes/recipes.py: recipe_edit_view)."""
+    """Like test_recipe_create_view_ingredient_row_has_delete_button, but
+    for a recipe's edit page: both the existing ingredient rows and the
+    empty starting row need the delete button. Uses the same
+    recipe_form.html/recipe_form.js as the create page (see
+    routes/recipes.py: recipe_edit_view)."""
     recipe_id = make_recipe("Gericht mit Zutat", ingredients=[{"name": "Mehl", "amount": 100, "unit": "g"}])
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert html.count('class="ingredient-row') >= 2  # bestehende Zutat + leere Zeile
+    assert html.count('class="ingredient-row') >= 2  # existing ingredient + empty row
     assert "this.closest('.ingredient-row').remove()" in html
 
 
@@ -134,26 +134,26 @@ def test_recipe_edit_view_unknown_id_returns_404(client):
 
 
 def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe):
-    """Der "Bearbeiten"-Button verlinkt seit der Formular-Überarbeitung auf
-    eine eigene Seite pro Rezept (routes/recipes.py: recipe_edit_view,
-    /manage/recipe/edit/<id>) statt ein Modal per JS zu öffnen - vorher gab
-    es dafür ein gemeinsames, per JS befülltes Modal (siehe ehemals
+    """Since the form rework, the "Edit" button links to a dedicated page
+    per recipe (routes/recipes.py: recipe_edit_view,
+    /manage/recipe/edit/<id>) instead of opening a modal via JS - previously
+    there was a shared, JS-populated modal for this (see the now-removed
     static/recipe_edit_modal.js)."""
     recipe_id = make_recipe("Irgendein Gericht")
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    # Trägt seit dem Tab-Umschalter (siehe routes/recipes.py:
-    # recipe_edit_list_view) zusätzlich ?plan_id=<id> - "in" statt "endet
-    # mit" prüft weiterhin dasselbe Ziel, ohne von der genauen
-    # Query-String-Form abzuhängen.
+    # Since the tab switcher (see routes/recipes.py:
+    # recipe_edit_list_view), also carries ?plan_id=<id> - "in" instead of
+    # "ends with" still checks the same target without depending on the
+    # exact query-string form.
     assert f'href="/manage/recipe/edit/{recipe_id}?plan_id='.encode() in resp.data
 
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
-    """Der Bearbeiten-Dialog ist ein normales <form> - ein Speichern lädt
-    die Seite über routes/recipes.py: edit_recipe()'s redirect() komplett
-    neu, ohne das würde ein eingetippter Suchbegriff dabei verloren gehen.
-    sessionStorage merkt ihn sich stattdessen über den Seitenaufruf hinweg."""
+    """The edit dialog is a normal <form> - saving fully reloads the page
+    via routes/recipes.py: edit_recipe()'s redirect(); without this, a
+    typed search term would get lost. sessionStorage remembers it across
+    the page load instead."""
     make_recipe("Suchbares Gericht")
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
@@ -162,13 +162,12 @@ def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_re
 
 
 def test_recipe_detail_edit_link_points_to_dedicated_edit_page():
-    """Der "✏️ Rezept bearbeiten"-Button im Detail-Fenster auf der
-    Plan-Seite (siehe templates/plan.html) verlinkt seit der
-    Formular-Überarbeitung direkt auf die eigene Bearbeiten-Seite eines
-    Rezepts (routes/recipes.py: recipe_edit_view) statt wie vorher auf
-    /manage/recipe/edit-list?edit=<id> (das dortige Modal-Autostart-
-    Verfahren gibt es seit static/recipe_edit_modal.js's Entfernung nicht
-    mehr)."""
+    """Since the form rework, the "✏️ Edit recipe" button in the detail
+    popup on the plan page (see templates/plan.html) links directly to a
+    recipe's own edit page (routes/recipes.py: recipe_edit_view) instead of,
+    as before, /manage/recipe/edit-list?edit=<id> (the modal auto-start
+    mechanism there no longer exists since static/recipe_edit_modal.js was
+    removed)."""
     content = (STATIC_DIR / "plan.js").read_text(encoding="utf-8")
     assert "`/manage/recipe/edit/${recipe.id}`" in content
     assert "edit-list?edit=" not in content
@@ -180,9 +179,9 @@ def test_recipe_edit_list_view_search_data_includes_category(client, make_catego
 
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    # data-search muss die Kategorie mit enthalten, damit eine Suche nach
-    # "Beilagen" auch Rezepte findet, deren NAME selbst nicht "Beilagen"
-    # enthält (siehe static/fuzzy_search.js: wireFuzzyFilter).
+    # data-search must include the category so that a search for
+    # "Beilagen" also finds recipes whose NAME itself doesn't contain
+    # "Beilagen" (see static/fuzzy_search.js: wireFuzzyFilter).
     assert b'data-search="kartoffelp\xc3\xbcree beilagen"' in resp.data
 
 
@@ -215,9 +214,9 @@ def test_add_recipe_creates_recipe_with_ingredients_and_seasons(client, app, mak
     with app.app_context():
         recipe = Recipe.query.filter_by(name="Neues Gericht").first()
         assert recipe is not None
-        assert recipe.calories == 290  # (20+30)*4 + 10*9, siehe _base_recipe_form()
+        assert recipe.calories == 290  # (20+30)*4 + 10*9, see _base_recipe_form()
         assert recipe.servings == 2
-        # Die leere zweite ing_name[]-Zeile wird übersprungen, nur eine Zutat bleibt.
+        # The empty second ing_name[] row is skipped, only one ingredient remains.
         assert len(recipe.ingredients) == 1
         assert recipe.ingredients[0].name == "Nudeln"
         assert len(recipe.seasons) == 1
@@ -226,7 +225,7 @@ def test_add_recipe_creates_recipe_with_ingredients_and_seasons(client, app, mak
 def test_recipe_create_view_hides_plan_selector_with_single_plan(client):
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
-    assert b'name="plan_id"' in resp.data  # als verstecktes Feld weiterhin vorhanden
+    assert b'name="plan_id"' in resp.data  # still present as a hidden field
     assert b'<select name="plan_id"' not in resp.data
 
 
@@ -241,16 +240,16 @@ def test_recipe_create_view_shows_plan_selector_with_starred_preselected(app, cl
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
     assert b'<select name="plan_id"' in resp.data
-    # Der gesternte (eigene) Plan ist vorausgewählt, der andere nicht.
+    # The starred (own) plan is preselected, the other one is not.
     assert f'value="{client.plan_id}" selected'.encode() in resp.data
     assert f'value="{other_plan_id}" selected'.encode() not in resp.data
 
 
 def test_add_recipe_without_explicit_plan_id_defaults_to_starred_plan(app, client, make_user, make_category):
-    """default_plan_id() (services/auth.py) fällt OHNE ?plan_id= auf den
-    gesternten Plan zurück, NICHT auf current_plan() - hier zusätzlich mit
-    einem zweiten, nicht gesternten eigenen Plan geprüft, dessen bloße
-    Existenz die Standardauswahl nicht verändern darf."""
+    """default_plan_id() (services/auth.py) falls back to the starred
+    plan WITHOUT ?plan_id=, NOT to current_plan() - additionally tested
+    here with a second, non-starred own plan whose mere existence must not
+    change the default selection."""
     from models import PlanMembership, Recipe, db
 
     other_plan_id = make_user("Zweitplan-Besitzer")[1]
@@ -285,9 +284,9 @@ def test_add_recipe_respects_explicit_plan_id_from_selector(app, client, make_us
 
 
 def test_add_recipe_sets_updated_at(client, app, make_category):
-    """Für die "Zuletzt bearbeitet"-Liste auf /manage (routes/manage.py) -
-    Recipe.updated_at wird beim Anlegen über den Spalten-Default gesetzt
-    (siehe models.py), ganz ohne dass add_recipe() es selbst pflegen muss."""
+    """For the "recently edited" list on /manage (routes/manage.py) -
+    Recipe.updated_at is set on creation via the column default (see
+    models.py), without add_recipe() having to maintain it itself."""
     from models import Recipe
 
     cat_id = make_category("Frisch")
@@ -327,7 +326,7 @@ def test_add_recipe_normalizes_ingredient_units(client, app, make_category):
     with app.app_context():
         recipe = Recipe.query.filter_by(name="Neues Gericht").first()
         by_name = {i.name: (i.amount, i.unit) for i in recipe.ingredients}
-        # "1 kg" -> kanonisch 1000 g, "2 EL" -> kanonisch 30 ml.
+        # "1 kg" -> canonical 1000 g, "2 EL" -> canonical 30 ml.
         assert by_name["Mehl"] == (1000, "g")
         assert by_name["Öl"] == (30, "ml")
 
@@ -353,9 +352,9 @@ def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
 
 
 def test_edit_recipe_bumps_updated_at(client, app, make_recipe):
-    """edit_recipe() setzt Recipe.updated_at explizit bei JEDEM Speichern
-    (siehe dortigen Kommentar - ein onupdate=... an der Spalte würde nur
-    greifen, wenn sich ein Wert tatsächlich ändert)."""
+    """edit_recipe() explicitly sets Recipe.updated_at on EVERY save
+    (see the comment there - an onupdate=... on the column would only
+    trigger if a value actually changes)."""
     from datetime import datetime, timedelta, timezone
     from models import Recipe, db
 
@@ -410,12 +409,11 @@ def test_recipe_edit_view_shows_ingredients_in_display_unit(client, app, make_re
 
 
 def test_recipe_edit_view_shows_alias_name_as_display_text(client, app, make_recipe):
-    """Eine Zutatenzeile mit gesetztem Alias zeigt standardmäßig den
-    aufgelösten kanonischen Namen (.ing-name-display), NICHT den
-    tatsächlich für dieses Rezept gespeicherten Namen - der bleibt
-    unangetastet im (versteckten) echten Formularfeld, damit ein
-    Speichern ohne bewusste Bearbeitung den ursprünglichen Namen nicht
-    stillschweigend durch den Alias ersetzt (siehe
+    """An ingredient row with an alias set shows the resolved canonical
+    name (.ing-name-display) by default, NOT the name actually stored
+    for this recipe - that stays untouched in the (hidden) real form
+    field, so that saving without deliberate editing doesn't silently
+    replace the original name with the alias (see
     static/ingredient_alias_hint.js: openIngredientNameField)."""
     from services.ingredient_aliases import set_alias
 
@@ -426,8 +424,8 @@ def test_recipe_edit_view_shows_alias_name_as_display_text(client, app, make_rec
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert 'class="ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Nudeln</span>' in html
-    # Das eigentliche, editierbare Feld behält den echten gespeicherten Namen.
+    assert 'class="ing-name-display" tabindex="0" role="button" title="Click to edit">Nudeln</span>' in html
+    # The actual, editable field keeps the real stored name.
     assert 'class="ing-name-input d-none" value="Fusilli"' in html
 
 
@@ -437,14 +435,14 @@ def test_recipe_edit_view_shows_own_name_when_no_alias(client, make_recipe):
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert 'ing-name-display" tabindex="0" role="button" title="Klicken zum Bearbeiten">Radicchio</span>' in html
+    assert 'ing-name-display" tabindex="0" role="button" title="Click to edit">Radicchio</span>' in html
 
 
 def test_recipe_edit_view_has_editable_name_wiring_script(client, make_recipe):
-    """static/ingredient_alias_hint.js muss eingebunden sein - es enthält
-    sowohl das Klick-zum-Bearbeiten-Verhalten als auch das initiale
-    Nachladen des Alias-/Nährwert-Hinweises für bereits ausgefüllte
-    Zutatenzeilen (siehe dortige Kommentare)."""
+    """static/ingredient_alias_hint.js must be included - it contains
+    both the click-to-edit behavior and the initial loading of the
+    alias/nutrition hint for already-filled-in ingredient rows (see the
+    comments there)."""
     recipe_id = make_recipe("Irgendein Gericht", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
@@ -515,7 +513,7 @@ def test_import_recipe_preview_converts_ingredients_to_display_unit(mock_fetch, 
     ]
 
 
-# --- Automatische Nährwert-Berechnung aus den Zutaten (services/nutrition.py) ---
+# --- Automatic nutrition computation from ingredients (services/nutrition.py) ---
 
 def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_category):
     from models import Recipe
@@ -523,7 +521,7 @@ def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_catego
 
     cat_id = make_category("Berechnet")
     with app.app_context():
-        # 10g Eiweiß/70g Kohlenhydrate/1g Fett je 100g Mehl.
+        # 10g protein/70g carbs/1g fat per 100g flour.
         set_nutrition(client.plan_id, "Mehl", reference_unit="g", protein=10, carbs=70, fat=1)
 
     form = _base_recipe_form(cat_id, servings="2", **{
@@ -538,10 +536,10 @@ def test_add_recipe_computes_nutrition_from_ingredients(client, app, make_catego
     with app.app_context():
         recipe = Recipe.query.filter_by(name="Neues Gericht").first()
         assert recipe.nutrition_override is False
-        # 200g Mehl @(10/70/1 je 100g) / 2 Portionen = 10/70/1 pro Portion
-        # (siehe Docstring von compute_recipe_nutrition: Ingredient.amount
-        # gilt für den ganzen Rezept-Batch, Recipe.calories je Portion).
-        # calories daraus errechnet (Atwater): (10+70)*4 + 1*9 = 329.
+        # 200g flour @(10/70/1 per 100g) / 2 servings = 10/70/1 per serving
+        # (see compute_recipe_nutrition's docstring: Ingredient.amount
+        # applies to the whole recipe batch, Recipe.calories per serving).
+        # calories computed from that (Atwater): (10+70)*4 + 1*9 = 329.
         assert recipe.calories == 329
         assert recipe.protein == 10.0
         assert recipe.carbs == 70.0
@@ -557,9 +555,9 @@ def test_add_recipe_without_nutrition_data_computes_zero(client, app, make_categ
 
     with app.app_context():
         recipe = Recipe.query.filter_by(name="Neues Gericht").first()
-        # "Nudeln" hat in dieser isolierten Testdatenbank keinen
-        # IngredientNutrition-Eintrag - compute_recipe_nutrition()
-        # überspringt die Zutat statt zu raten oder zu fehlern.
+        # "Nudeln" has no IngredientNutrition entry in this isolated test
+        # database - compute_recipe_nutrition() skips the ingredient
+        # instead of guessing or erroring.
         assert recipe.calories == 0
         assert recipe.protein == 0.0
 
@@ -572,11 +570,11 @@ def test_add_recipe_override_ignores_computed_nutrition(client, app, make_catego
     with app.app_context():
         set_nutrition(client.plan_id, "Nudeln", reference_unit="g", protein=1, carbs=1, fat=1)
 
-    # _base_recipe_form() setzt nutrition_override="1" und feste
-    # protein/carbs/fat-Werte per Default - diese müssen trotz vorhandener
-    # IngredientNutrition-Daten für "Nudeln" unverändert übernommen werden
-    # (und calories daraus errechnet, nicht aus den IngredientNutrition-
-    # Daten für "Nudeln" - 290 = (20+30)*4 + 10*9, siehe _base_recipe_form()).
+    # _base_recipe_form() sets nutrition_override="1" and fixed
+    # protein/carbs/fat values by default - these must be taken over
+    # unchanged despite existing IngredientNutrition data for "Nudeln"
+    # (and calories computed from those, not from the IngredientNutrition
+    # data for "Nudeln" - 290 = (20+30)*4 + 10*9, see _base_recipe_form()).
     form = _base_recipe_form(cat_id)
     client.post("/add-recipe", data=form, follow_redirects=True)
 
@@ -604,8 +602,8 @@ def test_edit_recipe_recomputes_nutrition_when_ingredients_change(client, app, m
     with app.app_context():
         recipe = db.session.get(Recipe, recipe_id)
         assert recipe.nutrition_override is False
-        # 200g Reis @(3/28/0.3 je 100g), 1 Portion -> 6/56/0.6.
-        # calories daraus errechnet: (6+56)*4 + 0.6*9 = 253.
+        # 200g rice @(3/28/0.3 per 100g), 1 serving -> 6/56/0.6.
+        # calories computed from that: (6+56)*4 + 0.6*9 = 253.
         assert recipe.calories == 253
         assert recipe.carbs == 56.0
 
@@ -626,8 +624,8 @@ def test_edit_recipe_keeps_manual_nutrition_when_override_set(client, app, make_
     with app.app_context():
         recipe = db.session.get(Recipe, recipe_id)
         assert recipe.nutrition_override is True
-        # calories NIE aus dem Formular übernommen, auch nicht im
-        # Override-Fall - errechnet aus protein/carbs/fat:
+        # calories is NEVER taken from the form, not even in the
+        # override case - computed from protein/carbs/fat:
         # (77+7)*4 + 7*9 = 399.
         assert recipe.calories == 399
 
@@ -641,18 +639,18 @@ def test_recipe_create_view_embeds_ingredient_nutrition_for_hint_js(client, app)
     resp = client.get("/manage/recipe/create")
     assert resp.status_code == 200
     assert b"window.INGREDIENT_NUTRITION" in resp.data
-    # calories ist hier kein gespeicherter Wert, sondern wird für die
-    # Einbettung aus protein/carbs/fat errechnet: 100g Fett * 9 kcal/g = 900.
+    # calories is not a stored value here, but is computed for embedding
+    # from protein/carbs/fat: 100g fat * 9 kcal/g = 900.
     assert b'"calories": 900' in resp.data or b'"calories":900' in resp.data
 
 
 def test_recipe_create_view_nutrition_inputs_disabled_by_default(client):
     resp = client.get("/manage/recipe/create")
-    assert b'name="nutritionOverride"' not in resp.data  # id, nicht name
+    assert b'name="nutritionOverride"' not in resp.data  # id, not name
     assert b'id="nutritionOverride"' in resp.data
-    # Kcal hat bewusst KEIN name-Attribut (wird nie mitgeschickt, siehe
-    # services/nutrition.py: compute_calories()) - nur die Anzeige ist
-    # immer deaktiviert.
+    # Kcal deliberately has NO name attribute (never submitted, see
+    # services/nutrition.py: compute_calories()) - only the display
+    # is always disabled.
     assert b'id="caloriesDisplay" class="rform-field" disabled' in resp.data
     assert b'name="protein" id="proteinInput" class="rform-field" disabled' in resp.data
 
@@ -663,9 +661,9 @@ def test_recipe_edit_view_prefills_override_checkbox(client, make_recipe):
     assert resp.status_code == 200
     assert b'id="nutritionOverride"' in resp.data
     assert b'value="555"' in resp.data
-    # Bei bereits gesetztem Override-Häkchen duerfen die Felder NICHT
-    # deaktiviert sein (der Nutzer soll seine manuellen Werte direkt
-    # weiter bearbeiten koennen) - das Checkbox-Input selbst muss "checked"
-    # tragen (Attribut-Reihenfolge im Template ist ein Detail, daher hier
-    # nur auf Vorhandensein prüfen statt exakter Attribut-Reihenfolge).
+    # When the override checkbox is already set, the fields must NOT
+    # be disabled (the user should be able to keep editing their manual
+    # values directly) - the checkbox input itself must carry "checked"
+    # (attribute order in the template is a detail, so just check
+    # presence here rather than exact attribute order).
     assert b"checked" in resp.data.split(b'id="nutritionOverride"')[1][:80]

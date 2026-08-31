@@ -1,6 +1,6 @@
-"""Tests für services/recipe_import.py: Rezept-Import von mehreren
-deutschsprachigen Kochseiten (schema.org/Recipe-JSON-LD auslesen und in
-Formular-taugliche Werte umwandeln)."""
+"""Tests for services/recipe_import.py: recipe import from several
+German-language cooking sites (reading schema.org/Recipe JSON-LD and
+converting it into form-usable values)."""
 import json
 from unittest.mock import Mock, patch
 
@@ -34,8 +34,8 @@ def test_allowed_hosts_covers_bare_and_www_variant(host):
 
 
 def test_allowed_hosts_excludes_sites_without_compatible_json_ld():
-    # Manuell geprüft und bewusst NICHT unterstützt (siehe ALLOWED_HOSTS-
-    # Kommentar in services/recipe_import.py für den Grund je Seite).
+    # Manually checked and deliberately NOT supported (see the
+    # ALLOWED_HOSTS comment in services/recipe_import.py for the reason per site).
     for host in ("kochbar.de", "ichkoche.at", "springlane.de"):
         assert host not in ALLOWED_HOSTS
 
@@ -155,9 +155,9 @@ def test_parse_ingredient_line_known_unit():
 
 
 def test_parse_ingredient_line_spelled_out_unit_gets_normalized():
-    # brigitte.de/gutekueche.de schreiben Einheiten aus statt sie
-    # abzukürzen (anders als chefkoch.de) - wird trotzdem auf die
-    # kanonische Form "g" gebracht (siehe services/units.py).
+    # brigitte.de/gutekueche.de spell out units instead of abbreviating
+    # them (unlike chefkoch.de) - still gets normalized to the
+    # canonical form "g" (see services/units.py).
     result = _parse_ingredient_line("250 Gramm Mehl")
     assert result == {"name": "Mehl", "amount": 250, "unit": "g"}
 
@@ -206,7 +206,7 @@ def test_find_recipe_json_ld_skips_invalid_json_blocks():
     assert result["name"] == "Gültig"
 
 
-# --- fetch_recipe_from_url: SSRF-Schutz + End-to-End mit gemocktem requests ---
+# --- fetch_recipe_from_url: SSRF protection + end-to-end with mocked requests ---
 
 def test_fetch_recipe_from_url_rejects_disallowed_host():
     with pytest.raises(RecipeImportError):
@@ -284,12 +284,12 @@ def test_fetch_recipe_from_url_full_success(mock_get):
 
 @patch("services.recipe_import.requests.get")
 def test_fetch_recipe_from_url_fixes_missing_charset_declaration(mock_get):
-    """Manche Seiten (z.B. emmikochteinfach.de) deklarieren im
-    Content-Type-Header kein charset, obwohl die Seite tatsächlich UTF-8
-    ist - requests würde sonst auf ISO-8859-1 zurückfallen und Umlaute
-    falsch dekodieren ("Ã¶" statt "ö", siehe Kommentar in
-    fetch_recipe_from_url). Simuliert das über echte UTF-8-Bytes, die
-    requests OHNE die Korrektur als ISO-8859-1 lesen würde."""
+    """Some sites (e.g. emmikochteinfach.de) declare no charset in the
+    Content-Type header even though the page is actually UTF-8 - requests
+    would otherwise fall back to ISO-8859-1 and decode umlauts
+    incorrectly ("Ã¶" instead of "ö", see the comment in
+    fetch_recipe_from_url). Simulates this via real UTF-8 bytes that
+    requests, WITHOUT the fix, would read as ISO-8859-1."""
     recipe_json = {
         "@type": "Recipe", "name": "Bolognese-Rezept – das Original",
         "recipeIngredient": ["500 g Hackfleisch"],
@@ -298,9 +298,9 @@ def test_fetch_recipe_from_url_fixes_missing_charset_declaration(mock_get):
 
     mock_response = Mock(ok=True, url="https://emmikochteinfach.de/recipe", headers={"Content-Type": "text/html"})
     mock_response.apparent_encoding = "utf-8"
-    # Wie beim echten requests.Response: .text dekodiert content anhand des
-    # aktuellen .encoding-Werts - encoding wird als normales Attribut
-    # gesetzt (kein PropertyMock nötig), .text als Property simuliert.
+    # As with a real requests.Response: .text decodes content based on
+    # the current .encoding value - encoding is set as a normal attribute
+    # (no PropertyMock needed), .text is simulated as a property.
     mock_response.encoding = "ISO-8859-1"
     type(mock_response).text = property(lambda self: html_bytes.decode(self.encoding))
     mock_get.return_value = mock_response
@@ -311,11 +311,11 @@ def test_fetch_recipe_from_url_fixes_missing_charset_declaration(mock_get):
 
 @patch("services.recipe_import.requests.get")
 def test_fetch_recipe_from_url_trusts_declared_charset_even_if_apparent_disagrees(mock_get):
-    """Umgekehrter Fall: steht im Header explizit ein charset, wird ihm
-    vertraut, selbst wenn apparent_encoding (die aus den Bytes geratene
-    Kodierung) etwas anderes vorschlägt - genau der bei chefkoch.de
-    beobachtete Fall (deklariert korrekt utf-8, apparent_encoding rät
-    fälschlich windows-1250, siehe Kommentar in fetch_recipe_from_url)."""
+    """Reverse case: if the header explicitly states a charset, it's
+    trusted even when apparent_encoding (the encoding guessed from the
+    bytes) suggests something different - exactly the case observed with
+    chefkoch.de (correctly declares utf-8, apparent_encoding incorrectly
+    guesses windows-1250, see the comment in fetch_recipe_from_url)."""
     recipe_json = {"@type": "Recipe", "name": "Käsekuchen", "recipeIngredient": []}
     html = f'<script type="application/ld+json">{json.dumps(recipe_json)}</script>'
 
@@ -323,7 +323,7 @@ def test_fetch_recipe_from_url_trusts_declared_charset_even_if_apparent_disagree
         ok=True, url="https://chefkoch.de/recipe", text=html,
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
-    mock_response.apparent_encoding = "windows-1250"  # absichtlich "falsch", darf nicht verwendet werden
+    mock_response.apparent_encoding = "windows-1250"  # deliberately "wrong", must not be used
     mock_get.return_value = mock_response
 
     result = fetch_recipe_from_url("https://chefkoch.de/recipe")
@@ -332,9 +332,10 @@ def test_fetch_recipe_from_url_trusts_declared_charset_even_if_apparent_disagree
 
 @patch("services.recipe_import.requests.get")
 def test_fetch_recipe_from_url_works_for_non_chefkoch_host(mock_get):
-    """Der Parser ist bewusst NICHT chefkoch-spezifisch (siehe Moduldocstring) -
-    dieser Test belegt das anhand einer zweiten, unabhängigen Domain aus
-    ALLOWED_HOSTS mit ausgeschriebener statt abgekürzter Mengeneinheit."""
+    """The parser is deliberately NOT chefkoch-specific (see the module
+    docstring) - this test demonstrates that with a second, independent
+    domain from ALLOWED_HOSTS using a spelled-out instead of abbreviated
+    unit."""
     recipe_json = {
         "@type": "Recipe",
         "name": "Käsekuchen",

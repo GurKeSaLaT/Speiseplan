@@ -1,13 +1,13 @@
-{# Eigenständige Registrierungsseite (/register, routes/auth.py: register())
-   - exakt dasselbe Muster wie templates/login.html (kein base.html-Extend,
-   gleiches Theme-Vorab-Skript, siehe dortiger Kommentar), nur mit den drei
-   Registrierungsfeldern Name/E-Mail/Passwort statt E-Mail/Passwort. #}
+{# Standalone registration page (/register, routes/auth.py: register())
+   - exactly the same pattern as templates/login.html (no base.html extend,
+   same theme pre-flight script, see the comment there), just with the three
+   registration fields name/email/password instead of email/password. #}
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🍽️ Speiseplanhelfer - Registrieren</title>
+    <title>🍽️ Speiseplanhelfer - {{ _('Register') }}</title>
 
     <script>
     (function() {
@@ -49,7 +49,7 @@
     <div class="login-shell">
         <div class="login-card">
             <div class="login-mark">🍽️</div>
-            <h1 class="login-title">Konto erstellen</h1>
+            <h1 class="login-title">{{ _('Create Account') }}</h1>
 
             {% if error %}
             <div class="alert alert-danger py-2 small" role="alert">{{ error }}</div>
@@ -58,20 +58,20 @@
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-3">
-                    <label class="form-label fw-bold small" for="name">Name</label>
+                    <label class="form-label fw-bold small" for="name">{{ _('Name') }}</label>
                     <input type="text" name="name" id="name" class="form-control" value="{{ name }}" required autofocus autocomplete="name">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label fw-bold small" for="email">E-Mail</label>
+                    <label class="form-label fw-bold small" for="email">{{ _('Email') }}</label>
                     <input type="email" name="email" id="email" class="form-control" value="{{ email }}" required autocomplete="email">
                 </div>
                 <div class="mb-4">
-                    <label class="form-label fw-bold small" for="password">Passwort</label>
+                    <label class="form-label fw-bold small" for="password">{{ _('Password') }}</label>
                     <input type="password" name="password" id="password" class="form-control" required autocomplete="new-password">
                 </div>
-                <button type="submit" class="btn btn-success w-100 fw-bold">Konto erstellen</button>
+                <button type="submit" class="btn btn-success w-100 fw-bold">{{ _('Create Account') }}</button>
             </form>
-            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary w-100 fw-bold mt-2">Bereits ein Konto? Anmelden</a>
+            <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary w-100 fw-bold mt-2">{{ _('Already have an account? Sign in') }}</a>
         </div>
     </div>
 </body>

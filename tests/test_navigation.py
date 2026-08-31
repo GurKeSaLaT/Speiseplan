@@ -1,8 +1,8 @@
-"""Tests für templates/base.html: die globale Seitenleiste (siehe
-static/style.css: .app-shell/.app-rail) - ersetzt seit dem Gesamt-Redesign
-die frühere grüne Top-Navbar mit Einstellungen-Dropdown. Die Leiste wird auf
-JEDER Seite identisch gerendert, mit serverseitig (Jinja/request.path)
-berechnetem Aktiv-Status - kein Klick-/Hover-JS mehr nötig."""
+"""Tests for templates/base.html: the global sidebar (see
+static/style.css: .app-shell/.app-rail) - has replaced the former green
+top navbar with settings dropdown since the overall redesign. The bar
+is rendered identically on EVERY page, with the active state computed
+server-side (Jinja/request.path) - no more click/hover JS needed."""
 
 
 def test_sidebar_present_on_every_page(client):
@@ -48,8 +48,8 @@ def test_sidebar_rail_link_active_on_manage_subpage(client):
     resp = client.get("/manage/categories")
     assert resp.status_code == 200
     assert b'class="rail-link active" href="/manage/categories"' in resp.data
-    # Die Hauptziele oben bleiben auf Unterseiten bewusst inaktiv - nur der
-    # jeweils passende Kurzlink in der Gruppe darunter wird markiert.
+    # The main targets above deliberately stay inactive on subpages -
+    # only the matching shortcut link in the group below gets marked.
     assert b'class="nav-link " href="/manage"' in resp.data
 
 

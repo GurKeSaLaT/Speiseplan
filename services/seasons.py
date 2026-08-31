@@ -1,38 +1,46 @@
-"""Saison-Zuordnung für Rezepte.
+"""Season assignment for recipes.
 
-Ein Rezept kann null, eine oder mehrere "Verfügbarkeitszeiträume"
-(RecipeSeason-Zeilen) haben: entweder vordefinierte Standard-Saisons
-(Frühling/Sommer/Herbst/Winter, siehe SEASON_PRESETS) oder einen frei
-gewählten eigenen Zeitraum, oder eine Mischung aus beidem. Alle Zeiträume
-sind jahresunabhängig (nur Monat+Tag, kein Jahr) und unterstützen den
-Jahreswechsel (z.B. Winter: 1.12. bis 28.2., läuft über Silvester).
+A recipe can have zero, one, or several "availability ranges"
+(RecipeSeason rows): either predefined standard seasons (Frühling/Sommer/
+Herbst/Winter - spring/summer/autumn/winter, see SEASON_PRESETS) or a
+freely chosen custom range, or a mix of both. All ranges are
+year-independent (only month+day, no year) and support wrapping around
+the turn of the year (e.g. winter: Dec 1 to Feb 28, running across New
+Year's Eve).
 
-Dieses Modul kapselt die komplette Logik rund um diese Zeiträume:
-- Verfügbarkeitsprüfung für "ist das Rezept gerade dran?" (recipe_available_now)
-- Formular-Parsing beim Anlegen/Bearbeiten eines Rezepts (parse_recipe_seasons,
+This module encapsulates all the logic around these ranges:
+- Availability check for "is this recipe in season right now?"
+  (recipe_available_now)
+- Form parsing when creating/editing a recipe (parse_recipe_seasons,
   save_recipe_seasons)
-- Aufbereitung für die Bearbeiten-Ansicht: welche Checkboxen vorbelegen,
-  welches Datum ins eigene-Zeitraum-Feld schreiben (describe_recipe_seasons),
-  und wie die Zeiträume als Badges angezeigt werden (format_recipe_seasons)
+- Preparation for the edit view: which checkboxes to pre-check, which
+  date to put in the custom-range field (describe_recipe_seasons), and
+  how the ranges are displayed as badges (format_recipe_seasons)
 
-Wichtig: die Saison-Zuordnung schränkt NUR die automatische Auswahl beim
-Würfeln/Auffüllen ein (siehe services/planning.py: choose_recipe). Die
-manuelle Auswahl eines Rezepts über die Suche auf der Erstellen-Seite ist
-davon nie betroffen - ein Rezept "aus der falschen Saison" lässt sich dort
-jederzeit trotzdem fest einplanen.
+Important: the season assignment ONLY restricts the automatic selection
+during random-pick/auto-fill (see services/planning.py: choose_recipe).
+Manually selecting a recipe via search on the create page is never
+affected by it - a recipe "from the wrong season" can still be scheduled
+there at any time.
 """
 
 from datetime import date
 
 from models import db, RecipeSeason
 
-# Die vier wählbaren Standard-Saisons, in dieser Reihenfolge auch als
-# Checkboxen in recipe_form.html angezeigt.
+# The four selectable standard seasons, also shown as checkboxes in
+# recipe_form.html in this order.
+# NOTE: kept in German (Frühling/Sommer/Herbst/Winter) rather than
+# translated - these values are matched 1:1 against the checkbox values
+# submitted from recipe_form.html (see parse_recipe_seasons) and are also
+# used directly as SEASON_PRESETS keys, so they function as data-matching
+# identifiers, not just display text. Left untranslated; flagged in the
+# report per the module's data-compatibility caution.
 SEASONS = ['Frühling', 'Sommer', 'Herbst', 'Winter']
 
-# Feste (Startmonat, Starttag, Endmonat, Endtag)-Zeiträume je Standard-Saison.
-# Wintern läuft über den Jahreswechsel (Start > Ende) - date_in_range()
-# weiter unten behandelt diesen Fall korrekt.
+# Fixed (start_month, start_day, end_month, end_day) ranges per standard
+# season. Winter wraps around the turn of the year (start > end) -
+# date_in_range() below handles this case correctly.
 SEASON_PRESETS = {
     'Frühling': (3, 1, 5, 31),
     'Sommer': (6, 1, 8, 31),
@@ -40,30 +48,30 @@ SEASON_PRESETS = {
     'Winter': (12, 1, 2, 28),
 }
 
-# Umgekehrtes Nachschlage-Dict (Zeitraum-Tupel -> Saison-Name), damit sich
-# aus einer gespeicherten RecipeSeason-Zeile erkennen lässt, ob sie exakt
-# einer Standard-Saison entspricht oder ein frei gewählter eigener Zeitraum
-# ist. Wird sowohl beim Vorbefüllen des Bearbeiten-Formulars als auch bei
-# der Badge-Beschriftung gebraucht.
+# Reverse lookup dict (range tuple -> season name), so that a stored
+# RecipeSeason row can be recognized as matching a standard season
+# exactly, or being a freely chosen custom range. Needed both to pre-fill
+# the edit form and for badge labeling.
 SEASON_PRESET_BY_RANGE = {v: k for k, v in SEASON_PRESETS.items()}
 
 
 def _season_range(rs):
-    """Extrahiert aus einer RecipeSeason-Zeile das reine (Startmonat,
-    Starttag, Endmonat, Endtag)-Tupel, im selben Format wie SEASON_PRESETS -
-    so lassen sich beide direkt per Dict-Lookup vergleichen."""
+    """Extracts the plain (start_month, start_day, end_month, end_day)
+    tuple from a RecipeSeason row, in the same format as SEASON_PRESETS -
+    this lets both be compared directly via dict lookup."""
     return (rs.start_month, rs.start_day, rs.end_month, rs.end_day)
 
 
 def date_in_range(month, day, start_month, start_day, end_month, end_day):
-    """Prüft, ob ein gegebenes (month, day) innerhalb eines jahresunabhängigen
-    Monat/Tag-Zeitraums liegt.
+    """Checks whether a given (month, day) falls within a year-independent
+    month/day range.
 
-    Normalfall (start <= end, z.B. Sommer 1.6.-31.8.): einfacher
-    Bereichsvergleich. Sonderfall (start > end, z.B. Winter 1.12.-28.2.):
-    der Zeitraum läuft über den Jahreswechsel, daher gilt (month, day) als
-    "im Zeitraum", wenn es entweder noch VOR Silvester nach dem Start liegt
-    ODER schon NACH Neujahr aber noch vor dem Ende liegt.
+    Normal case (start <= end, e.g. summer Jun 1-Aug 31): simple range
+    comparison. Special case (start > end, e.g. winter Dec 1-Feb 28): the
+    range wraps around the turn of the year, so (month, day) counts as
+    "within the range" if it is either still BEFORE New Year's Eve but
+    after the start, OR already AFTER New Year's Day but still before the
+    end.
     """
     current = (month, day)
     start = (start_month, start_day)
@@ -74,15 +82,15 @@ def date_in_range(month, day, start_month, start_day, end_month, end_day):
 
 
 def recipe_available_now(recipe):
-    """Ist dieses Rezept HEUTE (nach Kalendertag, nicht Uhrzeit) für die
-    automatische Auswahl verfügbar?
+    """Is this recipe available TODAY (by calendar day, not time of day)
+    for automatic selection?
 
-    Ein Rezept ohne jegliche RecipeSeason-Zeilen gilt als ganzjährig
-    verfügbar (das ist der Standardfall - die meisten Rezepte haben keine
-    Saison-Einschränkung). Sind Zeiträume hinterlegt, reicht es, wenn der
-    heutige Tag in MINDESTENS EINEN davon fällt (ODER-Verknüpfung, nicht
-    UND) - ein Rezept mit "Sommer" und "Herbst" ist z.B. von Juni bis
-    November durchgehend verfügbar.
+    A recipe with no RecipeSeason rows at all counts as available
+    year-round (this is the default case - most recipes have no season
+    restriction). If ranges are set, it's enough for today's date to fall
+    within AT LEAST ONE of them (OR logic, not AND) - a recipe with
+    "Sommer" and "Herbst" (summer and autumn) is, for example, available
+    continuously from June through November.
     """
     if not recipe.seasons:
         return True
@@ -91,24 +99,23 @@ def recipe_available_now(recipe):
 
 
 def parse_recipe_seasons(form):
-    """Liest die Saison-Auswahl aus dem Rezept-Formular (Erstellen oder
-    Bearbeiten) und übersetzt sie in eine Liste von
-    (start_month, start_day, end_month, end_day)-Tupeln, die anschließend
-    1:1 als RecipeSeason-Zeilen gespeichert werden können.
+    """Reads the season selection from the recipe form (create or edit)
+    and translates it into a list of (start_month, start_day, end_month,
+    end_day) tuples that can subsequently be saved 1:1 as RecipeSeason
+    rows.
 
-    Zwei Formularquellen werden kombiniert:
-    1. `seasons` (Mehrfachauswahl-Checkboxen, ein Wert pro angehakter
-       Standard-Saison) -> wird über SEASON_PRESETS in ein Zeitraum-Tupel
-       übersetzt.
-    2. `season_custom_start`/`season_custom_end` (zwei <input type="date">-
-       Felder) -> das Jahr aus dem Datumsstring (Format "YYYY-MM-DD") wird
-       verworfen, nur Monat und Tag zählen. Nur übernommen, wenn BEIDE
-       Felder ausgefüllt sind; ungültige/unvollständige Eingaben werden
-       stillschweigend ignoriert statt einen Fehler zu werfen, damit ein
-       Tippfehler im Datumsfeld nicht das gesamte Speichern blockiert.
+    Two form sources are combined:
+    1. `seasons` (multi-select checkboxes, one value per checked standard
+       season) -> translated into a range tuple via SEASON_PRESETS.
+    2. `season_custom_start`/`season_custom_end` (two <input type="date">
+       fields) -> the year is discarded from the date string (format
+       "YYYY-MM-DD"), only month and day count. Only used if BOTH fields
+       are filled in; invalid/incomplete input is silently ignored
+       instead of raising an error, so that a typo in the date field
+       doesn't block saving entirely.
 
-    Beide Quellen sind frei kombinierbar - ein Rezept kann z.B. "Sommer"
-    UND einen eigenen Zeitraum gleichzeitig haben.
+    Both sources can be freely combined - a recipe can, for example, have
+    "Sommer" (summer) AND a custom range at the same time.
     """
     ranges = []
     for season_name in form.getlist('seasons'):
@@ -120,8 +127,8 @@ def parse_recipe_seasons(form):
     custom_end = form.get('season_custom_end')
     if custom_start and custom_end:
         try:
-            # "YYYY-MM-DD".split('-')[1:] -> ["MM", "DD"], das Jahr wird
-            # bewusst nicht weiterverwendet.
+            # "YYYY-MM-DD".split('-')[1:] -> ["MM", "DD"], the year is
+            # deliberately not used further.
             start_month, start_day = (int(p) for p in custom_start.split('-')[1:])
             end_month, end_day = (int(p) for p in custom_end.split('-')[1:])
             ranges.append((start_month, start_day, end_month, end_day))
@@ -132,16 +139,15 @@ def parse_recipe_seasons(form):
 
 
 def save_recipe_seasons(recipe_id, form):
-    """Ersetzt sämtliche RecipeSeason-Zeilen eines Rezepts durch die aktuell
-    im Formular ausgewählten Zeiträume.
+    """Replaces all of a recipe's RecipeSeason rows with the ranges
+    currently selected in the form.
 
-    Löscht zunächst ALLE bestehenden Zeiträume dieses Rezepts (statt sie
-    einzeln abzugleichen) und legt sie aus dem Formularinhalt komplett neu
-    an - einfacher als ein Diff, und beim Erstellen eines neuen Rezepts
-    (noch keine bestehenden Zeilen) ist die DELETE-Anweisung ein
-    No-op. Committet hier bewusst NICHT selbst; das übernimmt der
-    aufrufende Route-Handler zusammen mit den übrigen Änderungen am Rezept
-    in derselben Transaktion.
+    First deletes ALL existing ranges for this recipe (instead of diffing
+    them individually) and recreates them entirely from the form
+    content - simpler than a diff, and when creating a new recipe (no
+    existing rows yet) the DELETE statement is a no-op. Deliberately does
+    NOT commit here itself; that's handled by the calling route handler
+    together with the recipe's other changes in the same transaction.
     """
     RecipeSeason.query.filter_by(recipe_id=recipe_id).delete()
     for start_month, start_day, end_month, end_day in parse_recipe_seasons(form):
@@ -153,20 +159,20 @@ def save_recipe_seasons(recipe_id, form):
 
 
 def describe_recipe_seasons(recipe):
-    """Bereitet die Saison-Daten eines Rezepts für die Bearbeiten-Ansicht auf.
+    """Prepares a recipe's season data for the edit view.
 
-    Geht alle RecipeSeason-Zeilen des Rezepts durch und sortiert sie in zwei
-    Kategorien: exakte Treffer auf eine Standard-Saison (deren Checkbox im
-    Formular vorbelegt/angehakt werden soll) und alles andere (ein frei
-    gewählter eigener Zeitraum). Da das Formular nur EIN Eingabefeld-Paar
-    für einen eigenen Zeitraum hat, wird nur der ERSTE nicht-standardmäßige
-    Zeitraum als custom_range zurückgegeben - sollte ein Rezept
-    theoretisch mehrere eigene Zeiträume haben (z.B. durch direkten
-    Datenbankzugriff), gehen die weiteren beim nächsten Speichern verloren.
+    Goes through all of the recipe's RecipeSeason rows and sorts them
+    into two categories: exact matches to a standard season (whose
+    checkbox should be pre-checked in the form) and everything else (a
+    freely chosen custom range). Since the form only has ONE input field
+    pair for a custom range, only the FIRST non-standard range is
+    returned as custom_range - should a recipe theoretically have several
+    custom ranges (e.g. via direct database access), the additional ones
+    are lost on the next save.
 
-    Rückgabe: (selected_presets, custom_range) - ein Set von Saison-Namen
-    (z.B. {"Sommer", "Herbst"}) und entweder eine einzelne RecipeSeason-Zeile
-    oder None.
+    Returns: (selected_presets, custom_range) - a set of season names
+    (e.g. {"Sommer", "Herbst"}) and either a single RecipeSeason row or
+    None.
     """
     selected_presets = set()
     custom_range = None
@@ -180,14 +186,14 @@ def describe_recipe_seasons(recipe):
 
 
 def format_recipe_seasons(recipe):
-    """Baut aus den Saison-Zeiträumen eines Rezepts kurze, menschenlesbare
-    Labels für die Badge-Anzeige in der Rezeptliste.
+    """Builds short, human-readable labels from a recipe's season ranges
+    for the badge display in the recipe list.
 
-    Ein Zeitraum, der exakt einer Standard-Saison entspricht, wird mit
-    ihrem Namen beschriftet ("Sommer"); alle anderen (eigene) Zeiträume
-    werden als "Tag.Monat.–Tag.Monat." formatiert (z.B. "15.5.–20.6.").
-    Gibt eine Liste zurück (ein Label pro Zeitraum), damit die Vorlage
-    für jedes Element ein eigenes Badge rendern kann.
+    A range that matches a standard season exactly is labeled with its
+    name ("Sommer"); all other (custom) ranges are formatted as
+    "day.month.-day.month." (e.g. "15.5.-20.6."). Returns a list (one
+    label per range) so the template can render a separate badge for each
+    item.
     """
     labels = []
     for rs in recipe.seasons:

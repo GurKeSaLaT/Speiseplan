@@ -1,14 +1,13 @@
-"""Feste Kategorie-Liste für die Einkaufsliste (Supermarkt-Bereiche).
+"""Fixed category list for the shopping list (supermarket sections).
 
-Anders als Category (Rezept-Kategorien wie "Fleisch"/"Vegetarisch", die der
-Nutzer frei über die Kategorie-Verwaltung anlegt/löscht) ist das hier eine
-kleine, bewusst FESTE Aufzählung mit einer festen Reihenfolge - deshalb eine
-einfache Python-Liste statt einer eigenen Datenbanktabelle. Wird über den
-Kontext-Prozessor inject_shopping_categories() (app.py) an ALLE Templates
-durchgereicht und zusätzlich per window.SHOPPING_CATEGORIES (base.html) für
-die clientseitige Sortierung/Gruppierung der Einkaufsliste (static/plan.js:
-rebuildShoppingList) verfügbar gemacht - beide Seiten verwenden also genau
-dieselbe Reihenfolge.
+Unlike Category (recipe categories such as "Fleisch"/"Vegetarisch", which
+the user freely creates/deletes via the category management page), this is
+a small, deliberately FIXED enumeration with a fixed order - hence a plain
+Python list instead of its own database table. Passed to ALL templates via
+the context processor inject_shopping_categories() (app.py) and also made
+available client-side via window.SHOPPING_CATEGORIES (base.html) for the
+client-side sorting/grouping of the shopping list (static/plan.js:
+rebuildShoppingList) - so both sides use exactly the same order.
 """
 
 SHOPPING_CATEGORIES = [
@@ -25,44 +24,42 @@ SHOPPING_CATEGORIES = [
     "Tiefkühlware",
 ]
 
-# Auffangkategorie für Zutaten/Artikel ohne (oder mit einer inzwischen
-# entfernten) Kategorie - sortiert in der Einkaufsliste immer ans Ende,
-# siehe categorySortIndex() in static/plan.js.
+# Catch-all category for ingredients/items without a category (or with one
+# that has since been removed) - always sorts to the end of the shopping
+# list, see categorySortIndex() in static/plan.js.
 UNCATEGORIZED = "Sonstiges"
 
-# Zutaten dieser Kategorien hat man in aller Regel schon zuhause vorrätig
-# (Gewürze, Vorratsschrank-Backzutaten/Nüsse/Saucen, Verbrauchsartikel wie
-# Frischhaltefolie/Müllbeutel) - sie landen deshalb NICHT automatisch auf
-# der wöchentlichen Einkaufsliste, sondern auf einer separaten "Vorrat
-# prüfen"-Liste (siehe static/plan-shopping.js: rebuildShoppingList/
-# rebuildPantryList), von der aus man einzelne Posten gezielt per Button
-# doch noch auf die Einkaufsliste holen kann, falls z.B. das Salz gerade
-# alle ist. Betrifft ausdrücklich nur aus Rezepten abgeleitete Posten - ein
-# manuell hinzugefügter Artikel (auch einer, der gerade erst über besagten
-# Button von der Vorratsliste geholt wurde) hat damit bereits seine "ich
-# muss das wirklich kaufen"-Absicht erklärt und landet immer direkt auf der
-# Einkaufsliste, unabhängig von seiner Kategorie (siehe isExtra-Prüfung in
-# rebuildShoppingList()). Backwaren ist bewusst NICHT hier: Brot/Brötchen
-# sind im Gegensatz dazu typischerweise ein frischer wöchentlicher Einkauf,
-# keine Vorratsware.
+# Ingredients in these categories are, as a rule, already stocked at home
+# (spices, pantry baking ingredients/nuts/sauces, consumables like plastic
+# wrap/trash bags) - they therefore do NOT automatically end up on the
+# weekly shopping list, but on a separate "check pantry" list (see
+# static/plan-shopping.js: rebuildShoppingList/rebuildPantryList), from
+# which individual items can still be pulled onto the shopping list via a
+# dedicated button, e.g. if the salt happens to have run out. This applies
+# explicitly only to items derived from recipes - a manually added item
+# (even one that was just pulled from the pantry list via said button) has
+# thereby already declared its "I really need to buy this" intent and
+# always ends up directly on the shopping list, regardless of its category
+# (see the isExtra check in rebuildShoppingList()). Backwaren (baked goods)
+# is deliberately NOT included here: bread/rolls, in contrast, are
+# typically a fresh weekly purchase, not a pantry staple.
 PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}
 
 
 def infer_category(plan_id, canonical_name):
-    """Rät die Einkaufslisten-Kategorie für eine kanonische Zutat anhand
-    bereits bestehender, für plan_id SICHTBARER Zutat-Zeilen (siehe
-    services/recipe_visibility.py): die unter diesem Namen (nach
-    Alias-Auflösung) am häufigsten vergebene, nicht-leere Kategorie - oder
-    None, falls noch keine einzige Zeile dieser kanonischen Zutat
-    kategorisiert ist.
+    """Guesses the shopping-list category for a canonical ingredient based
+    on already existing ingredient rows VISIBLE for plan_id (see
+    services/recipe_visibility.py): the non-empty category assigned most
+    often under this name (after alias resolution) - or None, if not a
+    single row of this canonical ingredient is categorized yet.
 
-    Genutzt beim Setzen eines Alias in static/ingredient_alias_hint.js
-    (siehe routes/settings.py: api_set_ingredient_alias): damit landen
-    alle auf denselben Namen gleichgesetzten Zutaten (z.B. "Spaghetti" und
-    "Fusilli" -> "Nudeln") automatisch in derselben Kategorie, statt dass
-    dieselbe kanonische Zutat je nach Rezept in unterschiedlichen Gruppen
-    auf der Einkaufsliste auftaucht - analog zu infer_reference_unit() in
-    services/nutrition.py für die Nährwert-Referenzeinheit."""
+    Used when setting an alias in static/ingredient_alias_hint.js (see
+    routes/settings.py: api_set_ingredient_alias): this way, all ingredients
+    equated to the same name (e.g. "Spaghetti" and "Fusilli" -> "Nudeln")
+    automatically end up in the same category, instead of the same
+    canonical ingredient appearing in different groups on the shopping list
+    depending on the recipe - analogous to infer_reference_unit() in
+    services/nutrition.py for the nutrition reference unit."""
     from collections import Counter
     from models import Ingredient
     from services.ingredient_aliases import normalize_ingredient_name

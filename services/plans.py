@@ -1,16 +1,14 @@
-"""Lebenszyklus eines Plans selbst (anlegen/löschen) - anders als
-services/auth.py (Login/aktiver Plan/Mitgliedschafts-Lookups) oder
-routes/sharing.py (Mitglieder/Stern EINES bereits bestehenden Plans) geht
-es hier um den Plan als Ganzes.
+"""The lifecycle of a plan itself (create/delete) - unlike services/auth.py
+(login/active plan/membership lookups) or routes/sharing.py (members/star
+of a plan that ALREADY exists), this module is about the plan as a whole.
 
-Ein Nutzer bekommt seit der Entkopplung von Accounts/Plänen NICHT mehr
-automatisch genau einen Plan - er legt sie sich selbst über /plan/create
-an (routes/plans.py), beliebig viele. create_plan()/delete_plan() sind
-hier gebündelt, weil beide dieselbe Kategorie-Logik anfassen (Seeden bzw.
-Übernehmen von Kategorien) und von mehreren Stellen wiederverwendet
-werden: create_plan() sowohl von der Route als auch (über
-seed_default_categories()) von app.py: init_db() für jeden Plan ohne
-eigene Kategorien.
+Since the decoupling of accounts from plans, a user no longer automatically
+gets exactly one plan - they create their own via /plan/create
+(routes/plans.py), as many as they like. create_plan()/delete_plan() are
+bundled here because both touch the same category logic (seeding or taking
+over categories) and are reused from several places: create_plan() both
+from the route and (via seed_default_categories()) from app.py: init_db()
+for every plan that doesn't have its own categories yet.
 """
 
 from models import (
@@ -19,19 +17,19 @@ from models import (
     Recipe, RecipePlanLink, db,
 )
 
-# Ein sinnvoller Grundstock an Kategorien, damit ein neuer Plan nicht mit
-# einer leeren Kategorie-Liste (und damit unbenutzbarer automatischer
-# Planung) startet - siehe seed_default_categories() unten.
+# A sensible base set of categories, so a new plan doesn't start with an
+# empty category list (and thus unusable automatic planning) - see
+# seed_default_categories() below.
 DEFAULT_CATEGORIES = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
 
 
 def seed_default_categories(plan_id):
-    """Legt DEFAULT_CATEGORIES für plan_id an, falls er noch KEINE einzige
-    eigene Kategorie hat - eigene, später hinzugefügte oder umbenannte
-    Kategorien werden dadurch nie überschrieben oder erneut angelegt (der
-    Check ist rein "hat dieser Plan schon irgendeine Kategorie?").
-    Committet nicht selbst - der Aufrufer (create_plan() oder app.py:
-    init_db()) entscheidet, wann committet wird."""
+    """Creates DEFAULT_CATEGORIES for plan_id, unless it already has ANY
+    category of its own - custom categories added or renamed later are
+    therefore never overwritten or recreated (the check is purely "does
+    this plan already have any category at all?"). Does not commit itself -
+    the caller (create_plan() or app.py: init_db()) decides when to
+    commit."""
     if Category.query.filter_by(plan_id=plan_id).first():
         return
     for name in DEFAULT_CATEGORIES:
@@ -39,13 +37,13 @@ def seed_default_categories(plan_id):
 
 
 def create_plan(user, name):
-    """Legt einen neuen, eigenständigen Plan für user an: die Plan-Zeile
-    selbst (user wird informativ als owner_user_id eingetragen, siehe
-    models.py: Plan-Docstring - keine besonderen Rechte dadurch), eine
-    PlanMembership für user (gesternt, falls dies seine ERSTE Mitgliedschaft
-    überhaupt ist - sonst bleibt der bisherige gesternte Plan gesternt,
-    ein neuer Plan drängt sich nicht automatisch nach vorne), und die
-    Standard-Kategorien (siehe seed_default_categories)."""
+    """Creates a new, standalone plan for user: the plan row itself (user
+    is recorded informationally as owner_user_id, see models.py: Plan
+    docstring - grants no special rights as a result), a PlanMembership for
+    user (starred, if this is their FIRST membership ever - otherwise the
+    previously starred plan stays starred, a new plan doesn't automatically
+    push itself to the front), and the default categories (see
+    seed_default_categories)."""
     is_first_membership = PlanMembership.query.filter_by(user_id=user.id).first() is None
 
     plan = Plan(name=name, owner_user_id=user.id)
@@ -59,20 +57,21 @@ def create_plan(user, name):
 
 
 def delete_plan(plan):
-    """Löscht einen Plan unwiderruflich, samt allem, was AUSSCHLIESSLICH er
-    besitzt - Rezepte, die noch per RecipePlanLink in einen anderen Plan
-    eingebunden sind, werden STATTDESSEN an diesen anderen Plan übergeben
-    (neuer owner_plan_id), nicht mitgelöscht (siehe Recipe-Docstring:
-    category_id zeigt immer auf eine Kategorie des Eigentümer-Plans - beim
-    Eigentümerwechsel muss also auch die Kategorie mitwandern, sonst bliebe
-    sie auf eine gleich mitgelöschte Kategorie zeigen).
+    """Deletes a plan irrevocably, along with everything it OWNS
+    EXCLUSIVELY - recipes still embedded in another plan via
+    RecipePlanLink are handed over to that other plan INSTEAD (new
+    owner_plan_id), not deleted along with it (see Recipe docstring:
+    category_id always points to a category of the owning plan - on a
+    change of owner, the category must therefore also move along, otherwise
+    it would be left pointing at a category that gets deleted right along
+    with the plan).
 
-    SQLite läuft in dieser App ohne PRAGMA foreign_keys=ON (siehe
-    routes/recipes.py: delete_recipe()-Docstring) - die Lösch-Reihenfolge
-    unten ist trotzdem bewusst so gewählt, dass zum Zeitpunkt jedes
-    einzelnen Schritts keine noch benötigte Referenz bereits verschwunden
-    ist (Rezepte/Kategorien VOR den übrigen, rein plan-gebundenen Daten,
-    Mitgliedschaften und der Plan selbst ganz zuletzt)."""
+    SQLite runs in this app without PRAGMA foreign_keys=ON (see
+    routes/recipes.py: delete_recipe() docstring) - the deletion order
+    below is nonetheless deliberately chosen so that at the time of each
+    individual step, no reference still needed has already vanished
+    (recipes/categories BEFORE the remaining, purely plan-bound data,
+    memberships, and the plan itself last of all)."""
     for recipe in Recipe.query.filter_by(owner_plan_id=plan.id).all():
         links = RecipePlanLink.query.filter_by(recipe_id=recipe.id).order_by(RecipePlanLink.plan_id).all()
         if links:
@@ -100,29 +99,28 @@ def delete_plan(plan):
     Category.query.filter_by(plan_id=plan.id).delete()
 
     PlanMembership.query.filter_by(plan_id=plan.id).delete()
-    # Noch offene Einladungen AUF diesen Plan (models.py: PendingPlanInvite)
-    # würden sonst auf eine nicht mehr existierende plan_id zeigen bleiben -
-    # registriert sich später jemand mit genau dieser E-Mail, würde
-    # accept_pending_invites() sonst eine PlanMembership auf einen bereits
-    # gelöschten Plan anlegen.
+    # Any still-open invitations TO this plan (models.py: PendingPlanInvite)
+    # would otherwise be left pointing at a plan_id that no longer exists -
+    # if someone later registers with exactly that email,
+    # accept_pending_invites() would otherwise create a PlanMembership for
+    # an already-deleted plan.
     PendingPlanInvite.query.filter_by(plan_id=plan.id).delete()
     db.session.delete(plan)
     db.session.commit()
 
 
 def accept_pending_invites(user):
-    """Wandelt jede noch offene PendingPlanInvite für user.email (siehe
-    models.py-Docstring dort) in eine echte PlanMembership um - aufgerufen
-    direkt nach dem Anlegen eines neuen Kontos (routes/auth.py: register()),
-    damit eine Registrierung über einen Einladungs-Link sofort zur
-    Plan-Mitgliedschaft führt, ohne dass der Einladende ein zweites Mal
-    tätig werden muss.
+    """Converts every still-open PendingPlanInvite for user.email (see the
+    models.py docstring there) into a real PlanMembership - called directly
+    after a new account is created (routes/auth.py: register()), so that
+    registering via an invite link leads immediately to plan membership,
+    without the inviter having to take a second action.
 
-    is_starred nach demselben Kriterium wie create_plan() oben: gesternt,
-    wenn es die ERSTE Mitgliedschaft des Nutzers überhaupt ist - bei
-    mehreren offenen Einladungen bekommt nur die zuerst verarbeitete den
-    Stern, der Rest bleibt unbesternt (analog zu einem manuell über
-    invite_member() eingeladenen Mitglied)."""
+    is_starred follows the same criterion as create_plan() above: starred
+    if it's the user's very FIRST membership ever - with several open
+    invitations, only the one processed first gets the star, the rest stay
+    unstarred (analogous to a member invited manually via
+    invite_member())."""
     for invite in PendingPlanInvite.query.filter_by(email=user.email).all():
         if not PlanMembership.query.filter_by(plan_id=invite.plan_id, user_id=user.id).first():
             is_first = PlanMembership.query.filter_by(user_id=user.id).first() is None

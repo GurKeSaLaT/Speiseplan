@@ -1,21 +1,20 @@
-"""Zutaten-Gleichsetzung für die Einkaufsliste: ordnet konkrete
-Zutatennamen (z.B. "Spaghetti", "Fusilli") einem gemeinsamen, übergeordneten
-Namen zu (z.B. "Nudeln"), damit die Einkaufsliste sie als EINEN Posten
-zusammenfasst statt als mehrere. Siehe models.py: IngredientAlias für die
-Speicherung und routes/settings.py für die Verwaltungs-Seite, auf der
-Nutzer diese Zuordnung selbst pflegen.
+"""Ingredient equating for the shopping list: maps concrete ingredient
+names (e.g. "Spaghetti", "Fusilli") to a shared, higher-level name (e.g.
+"Pasta"), so that the shopping list combines them into ONE line item
+instead of several. See models.py: IngredientAlias for the storage and
+routes/settings.py for the management page where users maintain this
+mapping themselves.
 
-Betrifft ausschließlich die Einkaufsliste (services/planning.py:
-jsonify_recipe) - die Zutatenliste eines einzelnen Rezepts (Anlegen/
-Bearbeiten-Formular) zeigt weiterhin den ursprünglich eingetragenen Namen,
-unverändert von jeder hier gepflegten Zuordnung.
+Applies exclusively to the shopping list (services/planning.py:
+jsonify_recipe) - the ingredient list of a single recipe (create/edit
+form) still shows the originally entered name, unaffected by any mapping
+maintained here.
 
-Jeder Plan pflegt seine EIGENE Gleichsetzung (siehe models.py:
-IngredientAlias.plan_id) - dieselbe Zutat kann in zwei Plänen
-unterschiedlich (oder gar nicht) gruppiert sein. Für ein Rezept, das per
-RecipePlanLink in mehreren Plänen sichtbar ist, gilt beim Betrachten
-IMMER die Gleichsetzung des GERADE AKTIVEN Plans, nicht die seines
-Eigentümer-Plans.
+Each plan maintains its OWN equating (see models.py:
+IngredientAlias.plan_id) - the same ingredient can be grouped differently
+(or not at all) in two plans. For a recipe that is visible in multiple
+plans via RecipePlanLink, viewing it ALWAYS applies the equating of the
+CURRENTLY ACTIVE plan, not that of its owning plan.
 """
 
 from models import Ingredient, IngredientAlias, db
@@ -23,32 +22,32 @@ from services.recipe_visibility import visible_recipe_ids_subquery
 
 
 def normalize_name(raw_name):
-    """Dieselbe Normalisierung wie jsonify_recipe() für Zutatennamen
-    (.strip().title()) - Groß-/Kleinschreibung und Leerraum sollen beim
-    Nachschlagen/Anlegen eines Alias keine Rolle spielen. Öffentlich (kein
-    führender Unterstrich mehr), da routes/settings.py sie auch für die
-    AJAX-Antwort von api_set_ingredient_alias() braucht."""
+    """Same normalization as jsonify_recipe() uses for ingredient names
+    (.strip().title()) - case and whitespace should not matter when
+    looking up/creating an alias. Public (no more leading underscore),
+    since routes/settings.py also needs it for the AJAX response of
+    api_set_ingredient_alias()."""
     return (raw_name or '').strip().title()
 
 
 def normalize_ingredient_name(plan_id, raw_name):
-    """Liefert den für die Einkaufsliste zu verwendenden Namen: den (im
-    Kontext von plan_id) gepflegten kanonischen Namen, falls raw_name
-    (nach Normalisierung) einen Alias-Eintrag hat, sonst raw_name selbst
-    (normalisiert) - ein unbekannter Zutatenname bleibt also einfach er
-    selbst, keine Gruppierung ist der Standardfall."""
+    """Returns the name to use for the shopping list: the canonical name
+    maintained (in the context of plan_id), if raw_name (after
+    normalization) has an alias entry, otherwise raw_name itself
+    (normalized) - an unknown ingredient name thus simply stays itself,
+    with no grouping being the default case."""
     key = normalize_name(raw_name)
     alias = IngredientAlias.query.filter_by(plan_id=plan_id, raw_name=key).first()
     return alias.canonical_name if alias else key
 
 
 def list_known_ingredient_names(plan_id):
-    """Alle aktuell in einem für plan_id SICHTBAREN Rezept verwendeten
-    Zutatennamen (normalisiert, dedupliziert, alphabetisch) - Grundlage
-    für die Verwaltungs-Seite, die JEDEN bekannten Namen als Zeile zeigt,
-    auch ohne bestehenden Alias (siehe routes/settings.py:
-    ingredient_aliases_view). "Sichtbar" schließt sowohl eigene als auch
-    per RecipePlanLink eingebundene Rezepte ein (siehe
+    """All ingredient names currently used in a recipe VISIBLE to plan_id
+    (normalized, deduplicated, alphabetical) - the basis for the
+    management page, which shows EVERY known name as a row, even without
+    an existing alias (see routes/settings.py:
+    ingredient_aliases_view). "Visible" includes both the plan's own
+    recipes and ones included via RecipePlanLink (see
     services/recipe_visibility.py)."""
     names = (
         db.session.query(Ingredient.name)
@@ -59,17 +58,16 @@ def list_known_ingredient_names(plan_id):
 
 
 def get_all_aliases(plan_id):
-    """Alle für plan_id gepflegten Alias-Zuordnungen als Dict {raw_name:
+    """All alias mappings maintained for plan_id as a dict {raw_name:
     canonical_name}."""
     return {a.raw_name: a.canonical_name for a in IngredientAlias.query.filter_by(plan_id=plan_id).all()}
 
 
 def set_alias(plan_id, raw_name, canonical_name):
-    """Legt eine Zuordnung für plan_id an oder aktualisiert sie. Ist
-    canonical_name (nach Normalisierung) identisch mit raw_name, wird ein
-    eventuell bestehender Alias stattdessen GELÖSCHT - "sich selbst
-    zugeordnet" ist gleichbedeutend mit "kein Alias", das spart unnötige
-    Zeilen."""
+    """Creates or updates a mapping for plan_id. If canonical_name (after
+    normalization) is identical to raw_name, any existing alias is
+    DELETED instead - "mapped to itself" is equivalent to "no alias",
+    which avoids unnecessary rows."""
     key = normalize_name(raw_name)
     canonical = normalize_name(canonical_name)
     if not key:
@@ -87,8 +85,8 @@ def set_alias(plan_id, raw_name, canonical_name):
 
 
 def delete_alias(plan_id, raw_name):
-    """Entfernt eine Zuordnung wieder (der Zutatenname gruppiert sich
-    danach nur noch mit sich selbst) - kein Fehler, falls keine existiert."""
+    """Removes a mapping again (the ingredient name then only groups with
+    itself afterward) - no error if none exists."""
     key = normalize_name(raw_name)
     IngredientAlias.query.filter_by(plan_id=plan_id, raw_name=key).delete()
     db.session.commit()

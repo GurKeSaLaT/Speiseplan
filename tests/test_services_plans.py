@@ -1,6 +1,6 @@
-"""Tests für services/plans.py: Plan-Lebenszyklus (anlegen/löschen) -
-seit Pläne von Accounts entkoppelt sind, der zentrale Ort, an dem ein
-Nutzer sich zusätzliche, eigene Pläne anlegt bzw. wieder loswird."""
+"""Tests for services/plans.py: plan lifecycle (create/delete) - since
+plans were decoupled from accounts, the central place where a user
+creates additional plans of their own, or gets rid of them again."""
 
 
 def test_create_plan_seeds_categories_and_stars_first_membership(app, make_user):
@@ -18,9 +18,9 @@ def test_create_plan_seeds_categories_and_stars_first_membership(app, make_user)
         assert plan.owner_user_id == user_id
         membership = PlanMembership.query.filter_by(plan_id=plan.id, user_id=user_id).first()
         assert membership is not None
-        # make_user() legt bereits eine erste, gesternte Mitgliedschaft an -
-        # dieser zweite, hier neu erstellte Plan ist also NICHT die erste
-        # Mitgliedschaft des Nutzers und bleibt entsprechend unbesternt.
+        # make_user() already creates a first, starred membership - this
+        # second plan, newly created here, is therefore NOT the user's
+        # first membership and accordingly stays unstarred.
         assert membership.is_starred is False
         assert Category.query.filter_by(plan_id=plan.id).count() == 7
 
@@ -55,11 +55,11 @@ def test_delete_plan_removes_exclusively_owned_recipe(app, make_recipe, test_pla
 
 
 def test_delete_plan_transfers_linked_recipe_to_remaining_plan(app, client, make_recipe, make_user):
-    """Ein Rezept, das der gelöschte Plan besitzt, aber zusätzlich in einen
-    anderen Plan eingebunden ist (RecipePlanLink), wird NICHT gelöscht,
-    sondern bekommt automatisch diesen anderen Plan als neuen Eigentümer -
-    inklusive einer zu seiner alten Kategorie passenden neuen Kategorie im
-    Zielplan (siehe services/plans.py: delete_plan())."""
+    """A recipe that the deleted plan owns, but that is also linked into
+    another plan (RecipePlanLink), is NOT deleted, but automatically gets
+    that other plan as its new owner - including a new category in the
+    target plan matching its old category (see services/plans.py:
+    delete_plan())."""
     from models import Category, Plan, PlanMembership, Recipe, RecipePlanLink, db
 
     recipe_id = make_recipe("Geteiltes Gericht", category_id=None)
@@ -81,7 +81,7 @@ def test_delete_plan_transfers_linked_recipe_to_remaining_plan(app, client, make
         assert recipe.owner_plan_id == other_plan_id
         assert recipe.category.name == old_category_name
         assert recipe.category.plan_id == other_plan_id
-        # Der jetzt überflüssige Link auf den neuen Eigentümer ist weg.
+        # The now-redundant link to the new owner is gone.
         assert RecipePlanLink.query.filter_by(recipe_id=recipe_id, plan_id=other_plan_id).first() is None
         assert Plan.query.get(client.plan_id) is None
 

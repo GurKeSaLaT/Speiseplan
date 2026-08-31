@@ -1,36 +1,35 @@
-"""Der Wochenplan-Kalender: Anzeige, Erstellen und alle Live-Interaktionen
-(würfeln, manuell auswählen, tauschen, Beilagen hinzufügen/entfernen/
-verschieben, Personenzahl ändern) mit dem dauerhaft in PlanDay/PlanDaySide
-gespeicherten Plan.
+"""The weekly plan calendar: display, creation, and all live interactions
+(roll dice, pick manually, swap, add/remove/move side dishes, change the
+number of servings) against the plan permanently stored in
+PlanDay/PlanDaySide.
 
-Dieses Paket ersetzt das frühere einzelne routes/plan.py, das mit der
-Zeit auf über 800 Zeilen angewachsen war (Seiten-Routen, Tages-Aktionen,
-Beilagen-Aktionen und Einkaufslisten-Aktionen alle in einer Datei) - jetzt
-auf drei thematisch getrennte Dateien verteilt, die sich alle DENSELBEN
-Blueprint plan_bp teilen (hier definiert, dort per @plan_bp.route(...)
-importiert und befüllt):
+This package replaces the former single routes/plan.py, which had grown
+to over 800 lines over time (page routes, day actions, side-dish actions,
+and shopping-list actions all in one file) - now split across three
+topically separated files, which all share the SAME plan_bp blueprint
+(defined here, imported and populated there via @plan_bp.route(...)):
 
-- pages.py: Seiten-Routen (/, /plan/<start_date>, /plan/<start_date>/create,
-  /plan/<start_date>/generate) - liefern ganze HTML-Seiten bzw. leiten weiter.
-- day_actions.py: AJAX-Endpunkte für einzelne Kalendertage (Hauptgericht
-  würfeln/auswählen, Beilagen hinzufügen/würfeln/auswählen/entfernen/
-  verschieben, Personenzahl, Tage tauschen).
-- shopping.py: AJAX-Endpunkte für manuell zur Einkaufsliste hinzugefügte
-  Posten (ExtraShoppingItem), die zu keinem Rezept gehören.
+- pages.py: page routes (/, /plan/<start_date>, /plan/<start_date>/create,
+  /plan/<start_date>/generate) - deliver whole HTML pages or redirect.
+- day_actions.py: AJAX endpoints for individual calendar days (roll/select
+  main dish, add/roll/select/remove/move side dishes, servings, swap
+  days).
+- shopping.py: AJAX endpoints for items manually added to the shopping
+  list (ExtraShoppingItem) that don't belong to any recipe.
 
-app.py importiert weiterhin unverändert `from routes.plan import plan_bp` -
-dass hier ein Paket statt eines einzelnen Moduls steht, ändert daran (und
-an allen `url_for('plan.xxx')`-Aufrufen in den Templates, die weiterhin den
-Blueprint-Namen "plan" verwenden) nichts.
+app.py still imports `from routes.plan import plan_bp` unchanged - the
+fact that this is now a package instead of a single module changes
+nothing about that (nor about any `url_for('plan.xxx')` calls in the
+templates, which continue to use the blueprint name "plan").
 """
 
 from flask import Blueprint
 
 plan_bp = Blueprint('plan', __name__)
 
-# Die Importe hier lösen erst das eigentliche Route-Registrieren aus: jede
-# der drei Dateien dekoriert ihre Funktionen mit @plan_bp.route(...), was
-# erst beim Ausführen des jeweiligen Moduls passiert. Ohne diese Importe
-# (auch wenn plan_bp scheinbar "ungenutzt" aussieht) wären die Routen
-# schlicht nicht registriert.
+# The imports here are what actually trigger route registration: each of
+# the three files decorates its functions with @plan_bp.route(...), which
+# only happens when the respective module is executed. Without these
+# imports (even though plan_bp appears "unused") the routes simply would
+# not be registered.
 from routes.plan import pages, day_actions, shopping  # noqa: E402,F401

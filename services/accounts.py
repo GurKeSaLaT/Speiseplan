@@ -1,9 +1,9 @@
-"""Selbstverwaltung des eigenen Kontos (Profil ändern, Passwort ändern,
-Konto löschen) - siehe routes/account.py für die zugehörigen Routen.
+"""Self-service management of the user's own account (change profile, change
+password, delete account) - see routes/account.py for the associated routes.
 
-Anders als services/auth.py (Login/Session/aktiver Plan) und
-services/plans.py (Lebenszyklus EINES Plans) geht es hier um den Nutzer
-selbst als Objekt, das sich ändern oder ganz auflösen lässt.
+Unlike services/auth.py (login/session/active plan) and services/plans.py
+(the lifecycle of A SINGLE plan), this module is about the user themselves
+as an object that can be changed or dissolved entirely.
 """
 
 # lazy_gettext (not gettext): this module's functions are also called
@@ -24,21 +24,20 @@ SUPPORTED_LANGUAGES = ('en', 'de')
 
 
 def update_profile(user, name, email, language):
-    """Ändert Name (freier Anzeigename, keine Eindeutigkeit nötig, siehe
-    models.py: User-Docstring), E-Mail (das LOGIN-Feld, muss daher
-    weiterhin eindeutig und grob gültig sein) und die UI-Sprache
-    (User.language, siehe app.py: get_locale()). Gibt (True, None) bei
-    Erfolg zurück, sonst (False, Fehlertext) - committet nur im
-    Erfolgsfall."""
+    """Changes name (a free-form display name, no uniqueness required, see
+    models.py: User docstring), email (the LOGIN field, so it must still be
+    unique and roughly valid) and the UI language (User.language, see
+    app.py: get_locale()). Returns (True, None) on success, otherwise
+    (False, error text) - only commits on success."""
     name = (name or '').strip()
     email = (email or '').strip().lower()
     if not name or not email:
-        return False, 'Bitte Name und E-Mail-Adresse angeben.'
+        return False, _l('Please provide a name and email address.')
     if not EMAIL_PATTERN.match(email):
-        return False, 'Bitte eine gültige E-Mail-Adresse angeben.'
+        return False, _l('Please provide a valid email address.')
     existing = User.query.filter(User.email == email, User.id != user.id).first()
     if existing is not None:
-        return False, 'Für diese E-Mail-Adresse existiert bereits ein anderes Konto.'
+        return False, _l('Another account already exists for this email address.')
     if language not in SUPPORTED_LANGUAGES:
         return False, _l('Please choose a valid language.')
 
@@ -50,14 +49,14 @@ def update_profile(user, name, email, language):
 
 
 def update_password(user, current_password, new_password):
-    """Erfordert (anders als update_profile() oben) das AKTUELLE Passwort -
-    eine schlichte Absicherung gegen eine übernommene, aber noch
-    eingeloggte Sitzung (z.B. an einem gemeinsam genutzten Gerät), die
-    sich sonst ohne jede weitere Hürde ins Konto einnisten könnte."""
+    """Requires (unlike update_profile() above) the CURRENT password - a
+    simple safeguard against a hijacked but still logged-in session (e.g.
+    on a shared device), which could otherwise take over the account
+    without any further hurdle."""
     if not verify_password(user, current_password or ''):
-        return False, 'Aktuelles Passwort ist falsch.'
+        return False, _l('Current password is incorrect.')
     if not new_password:
-        return False, 'Bitte ein neues Passwort angeben.'
+        return False, _l('Please provide a new password.')
 
     user.password_hash = hash_password(new_password)
     db.session.commit()
@@ -65,18 +64,20 @@ def update_password(user, current_password, new_password):
 
 
 def delete_account(user):
-    """Löscht das eigene Konto unwiderruflich, samt allem, was DADURCH
-    verwaist. Für jede Plan-Mitgliedschaft des Nutzers:
+    """Deletes the user's own account irrevocably, along with everything
+    that becomes orphaned AS A RESULT. For each of the user's plan
+    memberships:
 
-    - Ist er das EINZIGE verbliebene Mitglied, verschwindet der ganze Plan
-      mit ihm (services/plans.py: delete_plan() - übernimmt dabei bereits
-      alles Nötige, u.a. noch anderswo verknüpfte Rezepte, was hier aber
-      nicht greift, da ja niemand mehr übrig ist, der sie besitzen könnte).
-    - Gibt es noch ANDERE Mitglieder, bleibt der Plan für sie bestehen -
-      nur die eigene Mitgliedschaft wird entfernt. War der Nutzer dessen
-      (rein informativer, siehe models.py: Plan-Docstring) Eigentümer,
-      geht dieser Titel auf ein verbleibendes Mitglied über, damit der
-      Plan nicht ganz ohne dasteht."""
+    - If they are the ONLY remaining member, the whole plan disappears
+      with them (services/plans.py: delete_plan() - already takes care of
+      everything needed there, including recipes still linked elsewhere,
+      which doesn't apply here though since there's no one left who could
+      own them).
+    - If there are OTHER members, the plan remains for them - only the
+      user's own membership is removed. If the user was its (purely
+      informational, see models.py: Plan docstring) owner, that title
+      passes to a remaining member, so the plan isn't left without one at
+      all."""
     for membership in list(PlanMembership.query.filter_by(user_id=user.id).all()):
         plan = membership.plan
         other_member = PlanMembership.query.filter(

@@ -1,5 +1,5 @@
-"""Tests für models.py: Beziehungen, Cascade-Deletes und Constraints, die
-sich nicht schon indirekt über die Service-/Routen-Tests abdecken lassen."""
+"""Tests for models.py: relationships, cascade deletes, and constraints
+that aren't already indirectly covered by the service/route tests."""
 from datetime import date
 
 import pytest
@@ -73,11 +73,11 @@ def test_plan_day_can_have_multiple_sides(app, make_recipe, make_user):
 
 
 def test_plan_day_date_is_unique_per_plan(app, make_user):
-    """(plan_id, date) ist zusammengesetzt eindeutig (siehe models.py:
-    PlanDay.__table_args__) - zwei Zeilen für DENSELBEN Plan+Tag sind nicht
-    erlaubt, zwei verschiedene Pläne dürfen aber unabhängig voneinander
-    jeweils eine eigene Zeile für denselben Kalendertag haben (siehe
-    test_plan_day_date_can_repeat_across_different_plans unten)."""
+    """(plan_id, date) is a composite unique constraint (see models.py:
+    PlanDay.__table_args__) - two rows for the SAME plan+day are not
+    allowed, but two different plans may each independently have their
+    own row for the same calendar day (see
+    test_plan_day_date_can_repeat_across_different_plans below)."""
     from models import PlanDay, db
 
     _, plan_id = make_user("PlanOwner")
@@ -99,7 +99,7 @@ def test_plan_day_date_can_repeat_across_different_plans(app, make_user):
     with app.app_context():
         db.session.add(PlanDay(plan_id=plan_a, date=date(2026, 6, 15), servings=2))
         db.session.add(PlanDay(plan_id=plan_b, date=date(2026, 6, 15), servings=2))
-        db.session.commit()  # darf NICHT scheitern
+        db.session.commit()  # must NOT fail
 
         assert PlanDay.query.filter_by(date=date(2026, 6, 15)).count() == 2
 
@@ -124,7 +124,7 @@ def test_category_name_can_repeat_across_different_plans(app, test_plan_id, make
     with app.app_context():
         db.session.add(Category(plan_id=test_plan_id, name="Doppelt"))
         db.session.add(Category(plan_id=other_plan_id, name="Doppelt"))
-        db.session.commit()  # darf NICHT scheitern
+        db.session.commit()  # must NOT fail
         assert Category.query.filter_by(name="Doppelt").count() == 2
 
 

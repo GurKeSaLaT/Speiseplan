@@ -1,49 +1,48 @@
-"""Automatische Nährwert-Berechnung aus den Zutaten eines Rezepts.
+"""Automatic nutrition calculation from a recipe's ingredients.
 
-Recipe.calories/.protein/.carbs/.fat (siehe models.py) werden standardmäßig
-NICHT mehr von Hand gepflegt, sondern beim Speichern eines Rezepts aus den
-hinterlegten Nährwert-Referenzen seiner Zutaten berechnet (siehe
-compute_recipe_nutrition(), aufgerufen aus routes/recipes.py: add_recipe()/
-edit_recipe()) - Recipe.nutrition_override=True schaltet das für ein
-einzelnes Rezept ab und lässt die von Hand eingetragenen Werte stehen (z.B.
-für ein Fertigprodukt, bei dem nur der Nährwert auf der Packung bekannt ist).
+Recipe.calories/.protein/.carbs/.fat (see models.py) are, by default, NO
+LONGER maintained by hand, but are calculated when a recipe is saved from
+the stored nutrition references of its ingredients (see
+compute_recipe_nutrition(), called from routes/recipes.py: add_recipe()/
+edit_recipe()) - Recipe.nutrition_override=True switches this off for a
+single recipe and leaves the manually entered values in place (e.g. for a
+ready-made product where only the nutrition value on the package is known).
 
-Die Nährwert-Referenzen selbst (IngredientNutrition, siehe models.py) sind
-je KANONISCHER Zutat hinterlegt (services/ingredient_aliases.py:
-normalize_ingredient_name()) - für eine alias-gruppierte Zutat wie "Nudeln"
-also EIN gemeinsamer Eintrag statt einem pro Schreibweise wie "Spaghetti"/
-"Fusilli". Die Verwaltungsseite (/manage/ingredient-nutrition, siehe
-routes/settings.py) zeigt dabei bewusst NUR die tatsächlichen Alias-
-Zielnamen (list_alias_canonical_names()) - unaliasierte Einzelzutaten
-bekommen ihren Nährwert stattdessen direkt beim Zutat-Eintragen über den
-Inline-Hinweis nachgetragen (siehe static/ingredient_alias_hint.js).
+The nutrition references themselves (IngredientNutrition, see models.py)
+are stored per CANONICAL ingredient (services/ingredient_aliases.py:
+normalize_ingredient_name()) - for an alias-grouped ingredient like
+"Pasta", that means ONE shared entry instead of one per spelling such as
+"Spaghetti"/"Fusilli". The management page (/manage/ingredient-nutrition,
+see routes/settings.py) deliberately shows ONLY the actual alias target
+names (list_alias_canonical_names()) - unaliased individual ingredients
+instead get their nutrition value added later directly while entering the
+ingredient, via the inline hint (see static/ingredient_alias_hint.js).
 
-Referenzbasis IMMER 100 g / 100 ml / 1 Stk (REFERENCE_BASES unten) - frei
-wählbare Referenzmengen (z.B. "1 Becher", "1 Dose", "1 Prise") wurden
-bewusst verworfen: sie sind weder untereinander vergleichbar noch lässt
-sich ihre Größe auf der Verwaltungsseite kompakt genug darstellen (siehe
-set_nutrition()). "Stk" ist dabei bewusst breiter gefasst als nur "ein
-Ei" oder "eine Scheibe": auch ein Becher, eine Dose, ein Bund oder eine
-Prise sind für sich genommen ein zählbares, natürliches Maß für GENAU
-DIESE Zutat - der Kalorienwert wird ja ohnehin je Zutat kalibriert (z.B.
-"1 Stk Ei" = 1 Ei, "1 Stk Kidneybohnen" = 1 Dose Kidneybohnen), nicht
-literal auf ein Stück im Sinne von Ei/Scheibe beschränkt. Für die
-eigentliche Berechnung (compute_recipe_nutrition) zählen deshalb ALLE
-stückbasierten Einheiten-Schreibweisen aus services/units.py:
-NON_CONVERTIBLE_UNITS (Stk, Stück, Stange, Zehe, Scheibe, Bund, Dose,
-Päckchen, Becher, Prise, Msp., Glas, Würfel, Kugel, Blatt, Packung, ...)
-sowie eine leere Einheit als gleichwertig zu "Stk" (siehe
-_normalize_unit) - das ist bewusst NUR eine Lockerung für den Nährwert-
-ABGLEICH, NICHT für services/units.py: normalize_amount_unit() selbst, da
-unterschiedliche Schreibweisen auf der Einkaufsliste weiterhin als eigene
-Posten geführt werden sollen.
+Reference basis is ALWAYS 100 g / 100 ml / 1 pc (REFERENCE_BASES below) -
+freely chosen reference amounts (e.g. "1 cup", "1 can", "1 pinch") were
+deliberately rejected: they are neither comparable to one another nor can
+their size be displayed compactly enough on the management page (see
+set_nutrition()). "pc" (piece) is deliberately construed more broadly than
+just "one egg" or "one slice": a cup, a can, a bunch, or a pinch are each,
+in their own right, a countable, natural measure for THIS SPECIFIC
+ingredient - the calorie value is calibrated per ingredient anyway (e.g.
+"1 pc egg" = 1 egg, "1 pc kidney beans" = 1 can of kidney beans), not
+literally limited to a piece in the sense of egg/slice. For the actual
+calculation (compute_recipe_nutrition), ALL piece-based unit spellings
+from services/units.py: NON_CONVERTIBLE_UNITS therefore count (pc, piece,
+stick, clove, slice, bunch, can, packet, cup, pinch, dash, jar, cube,
+scoop, leaf, pack, ...) as well as an empty unit as equivalent to "pc"
+(see _normalize_unit) - this is deliberately ONLY a relaxation for the
+nutrition MATCHING, NOT for services/units.py: normalize_amount_unit()
+itself, since different spellings should continue to be listed as
+separate line items on the shopping list.
 
-Kalorien werden NIRGENDS als eigener Wert gepflegt oder aufsummiert -
-weder bei IngredientNutrition noch bei Recipe.calories - sondern immer
-aus Eiweiß/Kohlenhydraten/Fett errechnet (compute_calories() unten, die
-Atwater-Faustregel: 4 kcal je g Eiweiß/Kohlenhydrate, 9 kcal je g Fett).
-Ein zusätzlich gepflegter Kalorienwert wäre nur redundant und könnte den
-drei anderen Werten widersprechen.
+Calories are NOWHERE maintained or summed as their own value - neither on
+IngredientNutrition nor on Recipe.calories - but are always calculated
+from protein/carbohydrates/fat (compute_calories() below, the Atwater
+rule of thumb: 4 kcal per g protein/carbohydrates, 9 kcal per g fat). An
+additionally maintained calorie value would only be redundant and could
+contradict the other three values.
 """
 
 from collections import Counter
@@ -53,55 +52,54 @@ from services.ingredient_aliases import normalize_ingredient_name
 from services.recipe_visibility import visible_recipe_ids_subquery
 from services.units import NON_CONVERTIBLE_UNITS, normalize_amount_unit
 
-# Referenzbasis je Einheit - siehe Moduldocstring. set_nutrition() erzwingt
-# reference_unit aus diesen drei Schlüsseln und leitet reference_amount
-# IMMER daraus ab (nie frei eingebbar).
+# Reference basis per unit - see module docstring. set_nutrition() enforces
+# reference_unit from these three keys and ALWAYS derives reference_amount
+# from it (never freely enterable).
 REFERENCE_BASES = {"g": 100, "ml": 100, "Stk": 1}
 
-# Einheiten-Schreibweisen, die beim Nährwert-ABGLEICH (nicht beim Speichern
-# der Zutatenzeile selbst!) als "1 Stk" zählen - siehe Moduldocstring.
-# NON_CONVERTIBLE_UNITS ist bereits ohne abschließenden Punkt/Plural-s
-# normalisiert (siehe services/units.py: _normalize_key), "msp"/"prise"
-# decken damit auch "Msp."/"Prisen" ab.
+# Unit spellings that count as "1 Stk" during nutrition MATCHING (not when
+# saving the ingredient line itself!) - see module docstring.
+# NON_CONVERTIBLE_UNITS is already normalized without a trailing period/
+# plural s (see services/units.py: _normalize_key), so "msp"/"prise" also
+# cover "Msp."/"Prisen".
 _PIECE_LIKE_UNITS = NON_CONVERTIBLE_UNITS | {''}
 
 
 def _normalize_unit(unit):
-    """Für den Einheiten-Vergleich beim Berechnen (siehe
-    compute_recipe_nutrition) - Groß-/Kleinschreibung und Leerraum sollen
-    keine Rolle spielen ("g" soll z.B. auch "G" oder " g " treffen), und
-    stückbasierte Schreibweisen sollen alle gegen eine "Stk"-Referenz
-    matchen (siehe Moduldocstring)."""
+    """For the unit comparison during calculation (see
+    compute_recipe_nutrition) - case and whitespace should not matter
+    ("g" should e.g. also match "G" or " g "), and piece-based spellings
+    should all match against a "Stk" reference (see module docstring)."""
     key = (unit or '').strip().lower()
     return 'stk' if key in _PIECE_LIKE_UNITS else key
 
 
 def compute_calories(protein, carbs, fat):
-    """Errechnet Kalorien aus Eiweiß/Kohlenhydraten/Fett nach der
-    Atwater-Faustregel (4 kcal je g Eiweiß/Kohlenhydrate, 9 kcal je g
-    Fett) - die einzige Stelle, an der Kalorien überhaupt bestimmt werden
-    (siehe Moduldocstring). None-Werte zählen als 0, damit Aufrufer nicht
-    selbst vorab absichern müssen."""
+    """Calculates calories from protein/carbohydrates/fat using the
+    Atwater rule of thumb (4 kcal per g protein/carbohydrates, 9 kcal per
+    g fat) - the only place where calories are determined at all (see
+    module docstring). None values count as 0, so callers don't have to
+    guard against that themselves beforehand."""
     return round((protein or 0) * 4 + (carbs or 0) * 4 + (fat or 0) * 9)
 
 
 def get_nutrition_entry(plan_id, name):
-    """Liefert den Nährwert-Eintrag EINES Plans für eine Zutat (beliebige
-    Schreibweise - wird intern über normalize_ingredient_name() auf ihre
-    kanonische Form aufgelöst) oder None, falls noch keiner hinterlegt ist."""
+    """Returns the nutrition entry of ONE plan for an ingredient (any
+    spelling - resolved internally to its canonical form via
+    normalize_ingredient_name()), or None if none has been stored yet."""
     canonical = normalize_ingredient_name(plan_id, name)
     return IngredientNutrition.query.filter_by(plan_id=plan_id, canonical_name=canonical).first()
 
 
 def get_all_nutrition_entries(plan_id):
-    """Alle für plan_id gepflegten Nährwert-Referenzen als Dict {kanonischer
-    Name: {reference_amount, reference_unit, calories, protein, carbs, fat}} -
-    Grundlage für window.INGREDIENT_NUTRITION (siehe
-    static/ingredient_alias_hint.js), damit der Inline-Hinweis beim
-    Zutat-Eintragen ohne Extra-Request weiß, wofür schon ein Nährwert
-    hinterlegt ist. calories ist dabei kein gespeicherter Wert, sondern
-    wird erst hier für die Anzeige aus protein/carbs/fat errechnet (siehe
-    compute_calories())."""
+    """All nutrition references maintained for plan_id as a dict
+    {canonical name: {reference_amount, reference_unit, calories, protein,
+    carbs, fat}} - the basis for window.INGREDIENT_NUTRITION (see
+    static/ingredient_alias_hint.js), so that the inline hint while
+    entering an ingredient knows, without an extra request, for which ones
+    a nutrition value has already been stored. calories here is not a
+    stored value, but is calculated only here for display from
+    protein/carbs/fat (see compute_calories())."""
     return {
         e.canonical_name: {
             "reference_amount": e.reference_amount, "reference_unit": e.reference_unit,
@@ -113,17 +111,17 @@ def get_all_nutrition_entries(plan_id):
 
 
 def set_nutrition(plan_id, name, reference_unit, protein, carbs, fat):
-    """Legt einen Nährwert-Eintrag für plan_id an oder aktualisiert ihn -
-    name wird wie beim Nachschlagen auf seine kanonische Form normalisiert,
-    damit "Spaghetti" und "Fusilli" (beide -> "Nudeln", falls
-    alias-gruppiert) denselben Eintrag treffen.
+    """Creates or updates a nutrition entry for plan_id - name is
+    normalized to its canonical form the same way as during lookup, so
+    that "Spaghetti" and "Fusilli" (both -> "Pasta", if alias-grouped)
+    hit the same entry.
 
-    reference_amount gibt es hier bewusst NICHT als Parameter - sie ergibt
-    sich immer zwingend aus reference_unit (siehe REFERENCE_BASES/
-    Moduldocstring). Ein unbekannter/leerer reference_unit-Wert fällt auf
-    "g" zurück, statt einen Fehler zu werfen (z.B. bei manipulierten
-    Formulardaten). calories gibt es hier ebenfalls bewusst NICHT als
-    Parameter - es wird nirgends gespeichert, siehe Moduldocstring."""
+    reference_amount is deliberately NOT a parameter here - it always
+    results directly from reference_unit (see REFERENCE_BASES/module
+    docstring). An unknown/empty reference_unit value falls back to "g"
+    instead of raising an error (e.g. with tampered form data). calories
+    is also deliberately NOT a parameter here - it is never stored
+    anywhere, see module docstring."""
     canonical = normalize_ingredient_name(plan_id, name)
     reference_unit = (reference_unit or 'g').strip()
     if reference_unit not in REFERENCE_BASES:
@@ -143,27 +141,26 @@ def set_nutrition(plan_id, name, reference_unit, protein, carbs, fat):
 
 
 def list_alias_canonical_names(plan_id):
-    """Alle kanonischen Namen, auf die MINDESTENS eine Zutat per
-    IngredientAlias INNERHALB von plan_id verweist (die eigentlichen
-    Alias-Zielnamen wie "Nudeln"/"Öl", NICHT jede einzelne unaliasierte
-    Einzelzutat) - genau die Menge, die die Nährwertverwaltungsseite
-    auflisten soll."""
+    """All canonical names that AT LEAST ONE ingredient references via
+    IngredientAlias WITHIN plan_id (the actual alias target names like
+    "Pasta"/"Oil", NOT every single unaliased individual ingredient) -
+    exactly the set the nutrition management page should list."""
     rows = db.session.query(IngredientAlias.canonical_name).filter_by(plan_id=plan_id).distinct().all()
     return sorted({r[0] for r in rows})
 
 
 def infer_reference_unit(plan_id, canonical_name):
-    """Rät eine sinnvolle Standard-Referenzeinheit (g/ml/Stk, siehe
-    REFERENCE_BASES) für einen NEUEN Nährwert-Eintrag: welche der drei
-    Familien unter dieser kanonischen Zutat (unter den für plan_id
-    SICHTBAREN Rezepten, siehe services/recipe_visibility.py) am
-    häufigsten tatsächlich verwendet wird. Jede Zutatenzeile wird dafür
-    über services/units.py: normalize_amount_unit() auf ihre Masse-/
-    Volumen-Familie geprüft (deckt z.B. "kg" oder "EL" korrekt als Masse/
-    Volumen ab, nicht nur die bereits kanonischen "g"/"ml") - alles andere
-    (Stk, Bund, Dose, Prise, eine leere Einheit, ...) zählt als "Stk",
-    da es sich für eine 100g/100ml-Referenz ohnehin nicht eignet.
-    Fällt auf "g" zurück, wenn dazu noch gar keine Zutat-Zeile existiert."""
+    """Guesses a sensible default reference unit (g/ml/Stk, see
+    REFERENCE_BASES) for a NEW nutrition entry: which of the three
+    families is actually used most often under this canonical ingredient
+    (among the recipes VISIBLE for plan_id, see
+    services/recipe_visibility.py). Each ingredient line is checked for
+    this via services/units.py: normalize_amount_unit() against its mass/
+    volume family (correctly covers e.g. "kg" or "tbsp" as mass/volume,
+    not just the already-canonical "g"/"ml") - everything else (Stk,
+    bunch, can, pinch, an empty unit, ...) counts as "Stk", since it is
+    not suited for a 100g/100ml reference anyway. Falls back to "g" if no
+    ingredient line exists for it yet at all."""
     families = []
     visible_ingredients = Ingredient.query.filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
     for ing in visible_ingredients:
@@ -177,31 +174,30 @@ def infer_reference_unit(plan_id, canonical_name):
 
 
 def compute_recipe_nutrition(plan_id, ingredient_rows, servings):
-    """Berechnet die Nährwerte PRO PORTION aus einer Liste von Zutaten-
-    Zeilen (Dicts/Objekte mit .name/.amount/.unit, z.B. die gerade im
-    Formular abgeschickten oder recipe.ingredients eines bestehenden
-    Rezepts) anhand der Nährwert-Referenzen VON plan_id - bei einem per
-    RecipePlanLink eingebundenen Rezept gelten also die Referenzen des
-    Plans, in dem gerade gespeichert wird, nicht die seines
-    Eigentümer-Plans.
+    """Calculates the nutrition PER SERVING from a list of ingredient
+    lines (dicts/objects with .name/.amount/.unit, e.g. the ones just
+    submitted in the form or recipe.ingredients of an existing recipe)
+    using the nutrition references OF plan_id - for a recipe included via
+    RecipePlanLink, the references of the plan currently being saved to
+    apply, not those of its owning plan.
 
-    Ingredient.amount gilt laut Modell-Dokumentation für die GANZE
-    Portionsanzahl (servings), Recipe.calories/.protein/.carbs/.fat
-    dagegen PRO Portion - die aufsummierten Zutaten-Beiträge werden daher
-    am Ende durch servings geteilt.
+    Ingredient.amount applies, per the model documentation, to the WHOLE
+    number of servings, while Recipe.calories/.protein/.carbs/.fat apply
+    PER serving - the summed ingredient contributions are therefore
+    divided by servings at the end.
 
-    Eine Zutat ohne Nährwert-Eintrag ODER mit abweichender Einheit zur
-    hinterlegten Referenz (z.B. Referenz in "g", diese Zeile aber in
-    "Stk") trägt 0 bei statt einen Fehler zu werfen - der Aufrufer sieht
-    dadurch immer ein vollständiges (wenn auch ggf. unvollständiges)
-    Ergebnis, nie einen Absturz wegen fehlender Daten.
+    An ingredient with no nutrition entry OR with a unit that deviates
+    from the stored reference (e.g. reference in "g", but this line in
+    "Stk") contributes 0 instead of raising an error - the caller thus
+    always sees a complete (though possibly incomplete) result, never a
+    crash due to missing data.
 
-    calories wird NICHT separat aufsummiert (IngredientNutrition hat gar
-    keine eigene Kalorien-Spalte mehr), sondern erst ganz am Ende aus den
-    bereits fertig gerundeten protein/carbs/fat-PRO-PORTION-Werten
-    errechnet (siehe compute_calories()) - so stimmt der angezeigte
-    Kalorienwert immer exakt mit den ebenfalls angezeigten protein/carbs/
-    fat-Werten überein, statt durch getrennte Rundung leicht abzuweichen.
+    calories is NOT summed separately (IngredientNutrition no longer has
+    its own calories column at all), but is only calculated at the very
+    end from the already fully rounded protein/carbs/fat-PER-SERVING
+    values (see compute_calories()) - this way, the displayed calorie
+    value always matches exactly the also-displayed protein/carbs/fat
+    values, instead of deviating slightly due to separate rounding.
     """
     totals = {"protein": 0.0, "carbs": 0.0, "fat": 0.0}
     for ing in ingredient_rows:

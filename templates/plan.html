@@ -1,102 +1,102 @@
-{# Persistente Wochenplan-Seite (/ und /plan/<start_date>) - seit der
-   Kalender-Umstellung die neue Startseite der App, gerendert von
-   routes/plan/pages.py: week_view(). Zeigt entweder den "Neuen Wochenplan
-   erstellen"-Hinweis (falls has_any_data False ist, also für diese Woche
-   noch kein einziger PlanDay in der Datenbank existiert) oder den
-   vollständigen 7-Tage-Plan samt Einkaufsliste.
+{# Persistent weekly plan page (/ and /plan/<start_date>) - since the
+   calendar overhaul, the app's new home page, rendered by
+   routes/plan/pages.py: week_view(). Shows either the "Create new weekly
+   plan" hint (if has_any_data is False, i.e. no PlanDay exists in the
+   database for this week yet) or the full 7-day plan including the
+   shopping list.
 
-   Anders als früher wird der Karteninhalt NICHT mehr server-seitig per
-   Jinja vorgerendert - Jinja liefert hier nur noch die 7 leeren
-   Karten-Hüllen (mit Datum/Drag-Handlern), static/plan.js füllt sie beim
-   Laden der Seite aus window.PLAN_DATA (siehe ganz unten). Das ist bewusst
-   so gewählt, seit Tage mehrere Beilagen und eine manuelle Auswahlbox
-   haben können: die (inzwischen recht umfangreiche) Karten-Markup-Logik
-   existiert dadurch nur noch an EINER Stelle (refreshDayCard in plan.js,
-   das für den Beilagen-Teil wiederum static/plan-sides.js aufruft) statt
-   einmal in Jinja und einmal in JavaScript, die sonst leicht
-   auseinanderlaufen könnten. JEDE Interaktion (würfeln, manuell auswählen,
-   tauschen, Beilagen hinzufügen/entfernen/verschieben, Personenzahl,
-   manuelle Einkaufslisten-Artikel) läuft über dieselbe Rendering-Funktion. #}
+   Unlike before, the card content is NO LONGER pre-rendered server-side
+   via Jinja - Jinja only delivers the 7 empty card shells here (with
+   date/drag handlers), static/plan.js fills them in when the page loads
+   from window.PLAN_DATA (see all the way at the bottom). This is a
+   deliberate choice, since days can now have multiple side dishes and a
+   manual selection box: the (by now fairly extensive) card markup logic
+   thus exists in only ONE place (refreshDayCard in plan.js, which in turn
+   calls static/plan-sides.js for the side-dish part) instead of once in
+   Jinja and once in JavaScript, which could otherwise easily drift apart.
+   EVERY interaction (rolling the dice, manual selection, swapping, adding/
+   removing/moving side dishes, number of servings, manual shopping-list
+   items) goes through this same rendering function. #}
 {% extends 'base.html' %}
 {% block content %}
 
 {% if no_plan %}
-{# Zero-Plan-Zustand (siehe routes/plan/pages.py: week_view() - z.B. direkt
-   nach dem Löschen des letzten eigenen Plans, oder ein Nutzer, der noch nie
-   einen angelegt hat). Bewusst KEIN window.PLAN_DATA/keine der plan-*.js
-   Dateien hier eingebunden - es gibt schlicht nichts, worauf sie sich
-   beziehen könnten. Eigenes, eigenständiges Formular statt Verweis auf das
-   Sidebar-Modal (templates/base.html), damit der allererste Schritt keine
-   zusätzliche Interaktion mit der Seitenleiste erfordert. #}
+{# Zero-plan state (see routes/plan/pages.py: week_view() - e.g. right
+   after deleting your last own plan, or a user who has never created one).
+   Deliberately NO window.PLAN_DATA/none of the plan-*.js files included
+   here - there is simply nothing for them to refer to. Own, self-contained
+   form instead of pointing to the sidebar modal (templates/base.html), so
+   that the very first step doesn't require an extra interaction with the
+   sidebar. #}
 <div class="card shadow-sm border-0 text-center p-5">
-    <p class="text-muted fs-5 mb-1">Du bist noch in keinem Plan Mitglied.</p>
-    <p class="text-muted mb-4">Leg dir deinen ersten Wochenplan an, um loszulegen.</p>
+    <p class="text-muted fs-5 mb-1">{{ _("You're not a member of any plan yet.") }}</p>
+    <p class="text-muted mb-4">{{ _('Create your first weekly plan to get started.') }}</p>
     <form method="POST" action="{{ url_for('plans.create') }}" class="d-flex gap-2 mx-auto" style="max-width: 420px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="text" name="name" class="form-control" placeholder="Name des Plans" required autofocus>
-        <button type="submit" class="btn btn-primary-custom fw-bold text-nowrap">Plan erstellen</button>
+        <input type="text" name="name" class="form-control" placeholder="{{ _('Plan name') }}" required autofocus>
+        <button type="submit" class="btn btn-primary-custom fw-bold text-nowrap">{{ _('Create plan') }}</button>
     </form>
 </div>
 {% else %}
 
-<!-- Wochen-Navigation im Seitenkopf-Stil (siehe .page-head/.weeknav in
-     static/style.css): Titel links, Vorherige/Datum/Nächste rechts als
-     eigene Gruppe - bricht auf schmalen Bildschirmen als Ganzes unter den
-     Titel um, statt wie früher eine einzelne 3-Spalten-Zeile per
-     space-between zu zerreißen. Ab < 768px (Bootstrap-Breakpoint md) wird
-     der Button-Text durch reine Pfeile ersetzt, damit die Gruppe schmal
-     genug für eine Zeile bleibt. -->
+<!-- Week navigation in page-head style (see .page-head/.weeknav in
+     static/style.css): title on the left, previous/date/next on the right
+     as their own group - wraps as a whole below the title on narrow
+     screens, instead of tearing a single 3-column row apart via
+     space-between like before. Below < 768px (Bootstrap breakpoint md) the
+     button text is replaced by plain arrows so the group stays narrow
+     enough for one line. -->
 <div class="page-head">
     <div class="titles">
-        <p class="eyebrow mb-1">Diese Woche</p>
+        <p class="eyebrow mb-1">{{ _('This week') }}</p>
         <h1 class="page-head-title">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</h1>
     </div>
     <div class="weeknav">
         <a href="{{ url_for('plan.week_view', start_date=prev_start) }}" class="weeknav-btn">
-            <span class="d-none d-md-inline">← Vorherige Woche</span>
+            <span class="d-none d-md-inline">{{ _('← Previous week') }}</span>
             <span class="d-md-none">←</span>
         </a>
-        {# Sichtbares, readonly dd.mm.yyyy-Textfeld statt des
-           browser-lokalisierten <input type="date">-Anzeigetexts (der z.B.
-           in manchen Locales mm/dd/yyyy zeigt). Der eigentliche native
-           Datepicker (unten) bleibt unsichtbar im Hintergrund und wird per
-           Klick auf DIESES Feld über showPicker() geöffnet - siehe
-           static/plan.js, unterster Abschnitt. #}
-        <input type="text" id="weekDateDisplay" class="weeknav-datepill" readonly style="width: 130px;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="Zu einer bestimmten Woche springen">
+        {# Visible, readonly dd.mm.yyyy text field instead of the
+           browser-localized <input type="date"> display text (which shows
+           e.g. mm/dd/yyyy in some locales). The actual native date picker
+           (below) stays invisible in the background and is opened via
+           showPicker() by clicking THIS field - see static/plan.js,
+           bottom section. #}
+        <input type="text" id="weekDateDisplay" class="weeknav-datepill" readonly style="width: 130px;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="{{ _('Jump to a specific week') }}">
         <input type="date" id="weekDatePicker" value="{{ start_date.isoformat() }}" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
         <a href="{{ url_for('plan.week_view', start_date=next_start) }}" class="weeknav-btn">
-            <span class="d-none d-md-inline">Nächste Woche →</span>
+            <span class="d-none d-md-inline">{{ _('Next week →') }}</span>
             <span class="d-md-none">→</span>
         </a>
     </div>
 </div>
 
 {% if not has_any_data %}
-<!-- WOCHE OHNE PLAN -->
+<!-- WEEK WITHOUT A PLAN -->
 <div class="card shadow-sm border-0 text-center p-5">
-    <p class="text-muted fs-5 mb-4">Für diese Woche gibt es noch keinen Plan.</p>
-    <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-primary-custom btn-lg py-3 shadow mx-auto" style="max-width: 420px;">🎲 Neuen Wochenplan erstellen</a>
+    <p class="text-muted fs-5 mb-4">{{ _("There's no plan for this week yet.") }}</p>
+    <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-primary-custom btn-lg py-3 shadow mx-auto" style="max-width: 420px;">🎲 {{ _('Create new weekly plan') }}</a>
 </div>
 {% else %}
 <div class="row">
-    <!-- 1. SPALTE: Der interaktive 7-Tage-Speiseplan -->
+    <!-- COLUMN 1: The interactive 7-day meal plan -->
     <div class="col-12 col-lg-7 mb-4">
         <div class="card shadow-sm border-0 mb-4">
             <div class="panel-head">
-                <h4>🗓️ Dein Wochenplan</h4>
-                <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-secondary fw-bold">✏️ Woche neu erstellen</a>
+                <h4>🗓️ {{ _('Your weekly plan') }}</h4>
+                <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-secondary fw-bold">✏️ {{ _('Recreate week') }}</a>
             </div>
-            <p class="text-muted small px-3 pt-3 mb-0">Ziehe eine Tageskarte per <strong>Drag-and-Drop</strong> auf eine andere, um beide Tage komplett zu tauschen (Beilagen kommen dabei mit). Ziehe eine einzelne Beilage auf eine andere Tageskarte, um nur SIE zu verschieben. ✏️ öffnet eine Suche zur manuellen Auswahl.</p>
+            <p class="text-muted small px-3 pt-3 mb-0">{{ _('Drag a day card with drag-and-drop onto another one to swap both days completely (side dishes come along). Drag a single side dish onto another day card to move only IT. ✏️ opens a search for manual selection.') }}</p>
             <div class="day-card-list" id="wochenplanContainer">
-                {# Der Karteninhalt wird bewusst NICHT hier server-seitig
-                   gerendert, sondern beim Laden der Seite einmal per JS für
-                   alle 7 Tage aufgebaut (siehe static/plan.js:
-                   refreshDayCard, aufgerufen in DOMContentLoaded) - exakt
-                   dieselbe Funktion, die auch jede spätere Änderung
-                   übernimmt. So kann die (inzwischen recht umfangreiche)
-                   Karten-Markup-Logik für Mehrfach-Beilagen und die
-                   manuelle Auswahlbox nur an EINER Stelle gepflegt werden,
-                   statt einmal in Jinja und einmal in JavaScript. #}
+                {# The card content is deliberately NOT rendered server-side
+                   here, but built once via JS for all 7 days when the page
+                   loads (see static/plan.js: refreshDayCard, called in
+                   DOMContentLoaded) - the exact same function that also
+                   handles every later change. This way the (by now fairly
+                   extensive) card markup logic for multiple side dishes and
+                   the manual selection box only needs to be maintained in
+                   ONE place, instead of once in Jinja and once in
+                   JavaScript. #}
                 {% for i in range(7) %}
                 <div class="p-3 recipe-day-card{% if week_dates[i] == today %} today-card{% endif %}"
                      id="day-card-{{ i }}"
@@ -114,91 +114,91 @@
 
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-body p-3">
-                <p class="section-title mb-2">📊 Wochen-Nährwertübersicht</p>
+                <p class="section-title mb-2">📊 {{ _('Weekly nutrition overview') }}</p>
                 <div id="weeklyNutritionSummary"></div>
             </div>
         </div>
     </div>
 
-    <!-- 2. SPALTE: Die Einkaufsliste -->
+    <!-- COLUMN 2: The shopping list -->
     <div class="col-12 col-lg-5">
-        {# Beide Karten hier gemeinsam sticky, statt nur die Einkaufsliste
-           allein (wie ursprünglich): ein einzelnes sticky-Element gibt
-           seinen Platz im Textfluss NICHT an nachfolgende Geschwister ab -
-           die Vorrat-Karte wäre beim Scrollen durch die (längere) Tageskarten-
-           Spalte links unter der fixierten Einkaufsliste weitergelaufen und
-           dahinter verschwunden. Als gemeinsamer, selbst scrollender Block
-           (max-height/overflow-y) bleiben beide zusammen sichtbar, auch wenn
-           sie zusammen höher als der Viewport sind. #}
+        {# Both cards sticky together here, instead of just the shopping
+           list alone (as originally): a single sticky element does NOT
+           hand its space in the text flow to following siblings - the
+           pantry card would have kept scrolling past the (taller) day-card
+           column on the left, underneath the fixed shopping list, and
+           disappeared behind it. As a shared, self-scrolling block
+           (max-height/overflow-y), both stay visible together even when
+           combined they are taller than the viewport. #}
         <div class="sticky-lg-top" style="top: 24px; z-index: 100; max-height: calc(100vh - 48px); overflow-y: auto;">
             <div class="card shadow-sm border-0">
                 <div class="panel-head">
-                    <h4>🛒 Einkaufsliste</h4>
+                    <h4>🛒 {{ _('Shopping list') }}</h4>
                     <span class="count" id="totalIngredientsCount">0</span>
                 </div>
 
-                {# Mini-Formular zum manuellen Hinzufügen eines Artikels, der zu
-                   keinem Rezept gehört (z.B. Hygieneartikel). name ist das
-                   einzige Pflichtfeld; die Kategorie-Auswahl bestimmt, in
-                   welcher Gruppe der Artikel unten in der Liste landet (siehe
-                   static/plan-shopping.js: addExtraShoppingItem/rebuildShoppingList). #}
+                {# Mini form for manually adding an item that doesn't belong
+                   to any recipe (e.g. hygiene items). name is the only
+                   required field; the category selection determines which
+                   group the item ends up in further down the list (see
+                   static/plan-shopping.js: addExtraShoppingItem/
+                   rebuildShoppingList). #}
                 <div class="p-2 border-bottom">
                     <div class="row g-1">
                         <div class="col-12 col-sm-4">
-                            <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="Artikel..." onkeydown="if(event.key==='Enter'){addExtraShoppingItem();}">
+                            <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="{{ _('Item...') }}" onkeydown="if(event.key==='Enter'){addExtraShoppingItem();}">
                         </div>
                         <div class="col-4 col-sm-2">
-                            <input type="number" step="0.1" id="extraItemAmount" class="form-control form-control-sm" placeholder="Menge">
+                            <input type="number" step="0.1" id="extraItemAmount" class="form-control form-control-sm" placeholder="{{ _('Amount') }}">
                         </div>
                         <div class="col-4 col-sm-2">
-                            <input type="text" id="extraItemUnit" class="form-control form-control-sm" placeholder="Einheit">
+                            <input type="text" id="extraItemUnit" class="form-control form-control-sm" placeholder="{{ _('Unit') }}">
                         </div>
                         <div class="col-4 col-sm-3">
-                            <select id="extraItemCategory" class="form-select form-select-sm" title="Einkaufslisten-Kategorie">
-                                <option value="" selected>Sonstiges</option>
+                            <select id="extraItemCategory" class="form-select form-select-sm" title="{{ _('Shopping list category') }}">
+                                <option value="" selected>{{ _('Other') }}</option>
                                 {% for cat in shopping_categories %}
                                 <option value="{{ cat }}">{{ cat }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-12 col-sm-1 d-grid">
-                            <button type="button" class="btn btn-sm btn-success" style="background-color: var(--primary-food) !important; border-color: var(--primary-food) !important;" onclick="addExtraShoppingItem()" title="Zur Einkaufsliste hinzufügen">+</button>
+                            <button type="button" class="btn btn-sm btn-success" style="background-color: var(--primary-food) !important; border-color: var(--primary-food) !important;" onclick="addExtraShoppingItem()" title="{{ _('Add to shopping list') }}">+</button>
                         </div>
                     </div>
                 </div>
 
                 <ul class="list-group list-group-flush p-2" id="shoppingListContainer">
-                    <!-- Wird per JavaScript befüllt -->
+                    <!-- Filled in via JavaScript -->
                 </ul>
             </div>
 
-            {# Gewürze/Vorratsschrank/Verbrauchsartikel aus den geplanten
-               Rezepten dieser Woche - hat man in aller Regel schon zuhause,
-               landet deshalb NICHT automatisch oben in der Einkaufsliste
-               (siehe services/shopping.py: PANTRY_CATEGORIES,
+            {# Spices/pantry staples/consumables from this week's planned
+               recipes - people usually already have these at home, so they
+               are NOT automatically added to the shopping list above (see
+               services/shopping.py: PANTRY_CATEGORIES,
                static/plan-shopping.js: rebuildShoppingList/renderPantryList). #}
             <div class="card shadow-sm border-0 mt-4 mb-4">
                 <div class="panel-head">
-                    <h4>🧂 Vorrat prüfen</h4>
+                    <h4>🧂 {{ _('Check pantry') }}</h4>
                     <span class="count" id="pantryItemsCount">0</span>
                 </div>
-                <p class="text-muted small px-3 pt-3 mb-0">Hat man meist schon zuhause - nur bei Bedarf per Klick auf die Einkaufsliste holen.</p>
+                <p class="text-muted small px-3 pt-3 mb-0">{{ _('Usually already at home - only add to the shopping list by clicking, if needed.') }}</p>
                 <ul class="list-group list-group-flush p-2" id="pantryListContainer">
-                    <!-- Wird per JavaScript befüllt -->
+                    <!-- Filled in via JavaScript -->
                 </ul>
             </div>
         </div>
     </div>
 </div>
 
-{# Rezept-Detail-Fenster (read-only): EIN gemeinsames Modal statt eines
-   pro Gericht (anders als recipe_edit_list.html mit einem Modal pro
-   Rezept) - es zeigt immer nur GENAU EIN Gericht, dessen Inhalt bei
-   jedem Öffnen per JS neu befüllt wird (siehe static/plan.js:
-   openRecipeDetail/renderRecipeDetailBody). Der "Bearbeiten"-Link führt
-   auf die Rezepte-bearbeiten-Seite und öffnet dort automatisch das
-   passende Bearbeiten-Modal (siehe templates/recipe_edit_list.html,
-   ?edit=<id>-Parameter). #}
+{# Recipe detail window (read-only): ONE shared modal instead of one per
+   dish (unlike recipe_edit_list.html with one modal per recipe) - it
+   always shows EXACTLY ONE dish, whose content is refilled via JS every
+   time it opens (see static/plan.js: openRecipeDetail/
+   renderRecipeDetailBody). The "Edit" link leads to the recipe-editing
+   page and automatically opens the matching edit modal there (see
+   templates/recipe_edit_list.html, ?edit=<id> parameter). #}
 <div class="modal fade" id="recipeDetailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable modal-md">
         <div class="modal-content border-0 shadow">
@@ -207,12 +207,12 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
-                <a href="#" id="recipeDetailEditLink" class="btn btn-sm btn-outline-secondary fw-bold mb-3">✏️ Rezept bearbeiten</a>
-                <div id="recipeDetailBody"><!-- per JS befüllt --></div>
+                <a href="#" id="recipeDetailEditLink" class="btn btn-sm btn-outline-secondary fw-bold mb-3">✏️ {{ _('Edit recipe') }}</a>
+                <div id="recipeDetailBody"><!-- filled in via JS --></div>
                 <hr>
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="recipeDetailCookedCheckbox">
-                    <label class="form-check-label fw-bold" for="recipeDetailCookedCheckbox">🍳 Gekocht</label>
+                    <label class="form-check-label fw-bold" for="recipeDetailCookedCheckbox">🍳 {{ _('Cooked') }}</label>
                 </div>
             </div>
         </div>
@@ -220,10 +220,10 @@
 </div>
 
 <style>
-/* Container der 7 Tageskarten: eigenständige, abgerundete/schattierte
-   Karten mit Abstand zueinander statt der früheren zusammenhängenden
-   .list-group-flush-Zeilen - passend zur übrigen Kachel-/Panel-Sprache der
-   Seite (siehe .tile/.panel-list in static/style.css). */
+/* Container for the 7 day cards: standalone, rounded/shadowed cards with
+   spacing between them instead of the previous connected
+   .list-group-flush rows - matching the rest of the page's tile/panel
+   language (see .tile/.panel-list in static/style.css). */
 .day-card-list {
     display: flex;
     flex-direction: column;
@@ -244,35 +244,35 @@
 .recipe-day-card.drag-over {
     background-color: var(--highlight-bg);
 }
-/* Deutlich auffälliger als die frühere reine 4px-Linksrandmarkierung:
-   umlaufender Rahmen plus sanfte Hintergrundfarbe - kein zusätzliches
-   "Heute"-Tag mehr (der Wochentag-Titel trägt den Hinweis "(Heute)"
-   bereits als Text, siehe routes/plan/pages.py: day_labels). */
+/* Noticeably more prominent than the previous plain 4px left-border
+   marker: an all-around border plus a soft background color - no extra
+   "Today" tag anymore (the weekday title already carries the "(Today)"
+   hint as text, see routes/plan/pages.py: day_labels). */
 .recipe-day-card.today-card {
     border: 2px solid var(--primary-food) !important;
     background-color: var(--highlight-bg);
 }
 
-/* Ein Gericht (Hauptgericht oder Beilage) im Wochenplan ist per Klick auf
-   Name/Kategorie/Nährwerte anklickbar (öffnet das read-only Detail-Fenster,
-   siehe static/plan.js: openRecipeDetail) - die 🎲/✏️/❌-Aktionsbuttons
-   bleiben davon bewusst ausgenommen (eigene onclick-Handler, kein
-   umschließendes dish-clickable). */
+/* A dish (main course or side dish) in the weekly plan is clickable via
+   name/category/nutrition (opens the read-only detail window, see
+   static/plan.js: openRecipeDetail) - the 🎲/✏️/❌ action buttons are
+   deliberately excluded from this (their own onclick handlers, no
+   enclosing dish-clickable). */
 .dish-clickable {
     cursor: pointer;
 }
-/* Als "gekocht" markierte Gerichte werden im Wochenplan ausgegraut, ohne
-   unlesbar zu werden (siehe models.py: PlanDay.cooked/PlanDaySide.cooked). */
+/* Dishes marked as "cooked" are grayed out in the weekly plan without
+   becoming unreadable (see models.py: PlanDay.cooked/PlanDaySide.cooked). */
 .dish-cooked {
     opacity: 0.55;
     filter: grayscale(65%);
 }
-/* Einzelne Beilagen-Zeilen sind zusätzlich für sich ziehbar (siehe
-   static/plan-sides.js: sideDragStart/moveSideDish) - eigener Grab-Cursor, damit
-   erkennbar ist, dass sie unabhängig von der ganzen Tageskarte verschoben
-   werden können. Buttons/Eingabefelder innerhalb bekommen ihren normalen
-   Cursor zurück, sonst würde der geerbte "grab"-Cursor überall im
-   Kartenbereich (auch über Klick-Elementen) angezeigt. */
+/* Individual side-dish rows are additionally draggable on their own (see
+   static/plan-sides.js: sideDragStart/moveSideDish) - own grab cursor, so
+   it's recognizable that they can be moved independently of the whole day
+   card. Buttons/input fields inside get their normal cursor back,
+   otherwise the inherited "grab" cursor would show everywhere in the card
+   area (even over clickable elements). */
 .side-dish-card {
     cursor: grab;
 }
@@ -285,20 +285,19 @@
 </style>
 
 {% endif %}
-{# window.PLAN_DATA wird per Jinja tojson-Filter aus dem Python-Dict
-   plan_data (siehe routes/plan/pages.py: week_view) erzeugt - tojson
-   escaped dabei automatisch Anführungszeichen/Sonderzeichen in
-   Rezeptnamen o.ä. korrekt für eingebettetes JavaScript, anders als eine
-   frühere, inzwischen ersetzte Version dieser Seite, die Werte per Hand
-   als JS-String-Literale zusammengesetzt hatte (dort hätte z.B. ein
-   Anführungszeichen im Rezeptnamen das Script gebrochen).
+{# window.PLAN_DATA is generated via the Jinja tojson filter from the
+   Python dict plan_data (see routes/plan/pages.py: week_view) - tojson
+   automatically escapes quotes/special characters in recipe names etc.
+   correctly for embedded JavaScript, unlike an earlier, now-replaced
+   version of this page that assembled values by hand as JS string
+   literals (there, e.g. a quote in a recipe name would have broken the
+   script).
 
-   Vier <script>-Dateien statt einer: plan.js (Kern/Zustand) plus drei
-   thematische Begleitdateien (manuelle Rezeptauswahl, Beilagen,
-   Einkaufsliste) - siehe der Kommentar am Anfang von static/plan.js für
-   die genaue Aufteilung. Alle vier teilen sich denselben globalen Scope
-   (keine ES-Module), die Ladereihenfolge hier spielt für die Korrektheit
-   keine Rolle (siehe ebenda). #}
+   Four <script> files instead of one: plan.js (core/state) plus three
+   topical companion files (manual recipe selection, side dishes, shopping
+   list) - see the comment at the top of static/plan.js for the exact
+   split. All four share the same global scope (no ES modules), the load
+   order here doesn't matter for correctness (see there). #}
 <script>
 window.PLAN_DATA = {{ plan_data | tojson }};
 </script>

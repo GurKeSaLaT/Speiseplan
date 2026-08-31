@@ -1,12 +1,12 @@
-"""Anlegen und Löschen eines ganzen Plans (siehe services/plans.py für die
-eigentliche Logik) - anders als routes/sharing.py (Mitglieder/Stern EINES
-bereits bestehenden Plans verwalten) geht es hier um den Plan als Ganzes.
+"""Creating and deleting an entire plan (see services/plans.py for the
+actual logic) - unlike routes/sharing.py (managing members/star of ONE
+already-existing plan), this is about the plan as a whole.
 
-Seit Pläne von Accounts entkoppelt sind (kein automatischer Plan mehr pro
-Nutzer), ist "gar keinen Plan haben" ein normaler, erreichbarer Zustand
-(z.B. direkt nach dem Löschen des letzten eigenen Plans) - siehe app.py:
-require_login() für das globale Zero-Plan-Gate, das create_plan() dafür
-auf seiner eigenen Allowlist führt."""
+Since plans were decoupled from accounts (no more automatic plan per
+user), "having no plan at all" is a normal, reachable state (e.g. right
+after deleting one's last own plan) - see app.py: require_login() for the
+global zero-plan gate, which keeps create_plan() on its own allowlist for
+that reason."""
 
 from flask import Blueprint, abort, redirect, request, url_for, session
 
@@ -19,11 +19,10 @@ plans_bp = Blueprint('plans', __name__)
 
 @plans_bp.route('/plan/create', methods=['POST'])
 def create():
-    """Legt einen neuen, eigenen Plan für den eingeloggten Nutzer an und
-    wechselt sofort dorthin (session['active_plan_id']) - ein leerer/
-    fehlender Name wird stillschweigend ignoriert (kein Fehlertext nötig,
-    das Namensfeld im Modal ist bereits als "required" markiert, siehe
-    templates/base.html)."""
+    """Creates a new, own plan for the logged-in user and switches to it
+    right away (session['active_plan_id']) - an empty/missing name is
+    silently ignored (no error text needed, the name field in the modal
+    is already marked "required", see templates/base.html)."""
     name = (request.form.get('name') or '').strip()
     if not name:
         return redirect(url_for('plan.index'))
@@ -35,13 +34,13 @@ def create():
 
 @plans_bp.route('/plan/<int:plan_id>/delete', methods=['POST'])
 def delete(plan_id):
-    """Löscht einen Plan unwiderruflich (siehe services/plans.py:
-    delete_plan) - jedes Mitglied darf das, nicht nur der, der ihn
-    ursprünglich angelegt hat (siehe models.py: Plan-Docstring, owner_user_id
-    verleiht keine besonderen Rechte). War plan_id der gerade aktive Plan,
-    wird die Session-Markierung entfernt, damit der nächste current_plan()-
-    Aufruf frisch auf einen verbleibenden Plan (oder None) auflöst, statt
-    auf eine ID zu zeigen, die es nicht mehr gibt."""
+    """Deletes a plan irrevocably (see services/plans.py:
+    delete_plan) - any member may do this, not just whoever originally
+    created it (see models.py: Plan docstring, owner_user_id doesn't grant
+    any special rights). If plan_id was the currently active plan, the
+    session marker is removed, so that the next current_plan() call
+    resolves freshly to a remaining plan (or None), instead of pointing to
+    an ID that no longer exists."""
     user = current_user()
     if not user_has_plan_access(user, plan_id):
         abort(404)
@@ -55,12 +54,11 @@ def delete(plan_id):
 
 @plans_bp.route('/plan/<int:plan_id>/rename', methods=['POST'])
 def rename(plan_id):
-    """Benennt einen Plan um - jedes Mitglied darf das (dieselbe
-    Begründung wie bei delete() oben: owner_user_id verleiht keine
-    besonderen Rechte). Ein leerer Name wird ignoriert, der bisherige
-    bleibt dann unverändert stehen (kein Fehlertext nötig, das Namensfeld
-    im Modal ist bereits als "required" markiert, siehe
-    templates/sharing.html)."""
+    """Renames a plan - any member may do this (same reasoning as with
+    delete() above: owner_user_id doesn't grant any special rights). An
+    empty name is ignored, the previous one then remains unchanged (no
+    error text needed, the name field in the modal is already marked
+    "required", see templates/sharing.html)."""
     user = current_user()
     if not user_has_plan_access(user, plan_id):
         abort(404)

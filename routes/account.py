@@ -1,12 +1,13 @@
-"""Profil-Verwaltung des eingeloggten Nutzers (/manage/account): eigenen
-Namen/E-Mail-Adresse ändern, Passwort ändern, Konto löschen.
+"""Profile management for the logged-in user (/manage/account): change own
+name/email address, change password, delete account.
 
-Kein Flash-Messaging-System in dieser App (siehe templates/login.html:
-dasselbe re-render-mit-error-Muster für ungültige Formulare) - Erfolg/
-Fehler jeder der drei Aktionen wird deshalb direkt beim erneuten Rendern
-von account.html mitgegeben, statt nach dem POST umzuleiten."""
+No flash-messaging system in this app (see templates/login.html: the same
+re-render-with-error pattern for invalid forms) - success/error of each of
+the three actions is therefore passed directly into the re-render of
+account.html, instead of redirecting after the POST."""
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask_babel import gettext as _
 
 from services.accounts import delete_account, update_password, update_profile
 from services.auth import current_user, verify_password
@@ -37,15 +38,15 @@ def update_password_route():
 
 @account_bp.route('/manage/account/delete', methods=['POST'])
 def delete_account_route():
-    """Löscht das eigene Konto unwiderruflich (services/accounts.py:
-    delete_account()) - erfordert zusätzlich zum Bestätigungs-Modal
-    (templates/account.html) die Eingabe des AKTUELLEN Passworts, damit
-    ein einzelner Klick auf einer sonst noch offenen Sitzung nicht
-    reicht. Löscht danach die Session komplett (der Nutzer existiert ja
-    nicht mehr) und leitet zur Login-Seite."""
+    """Deletes the user's own account irrevocably (services/accounts.py:
+    delete_account()) - requires entering the CURRENT password in addition
+    to the confirmation modal (templates/account.html), so that a single
+    click on an otherwise still-open session isn't enough. Afterward
+    clears the session entirely (the user no longer exists) and redirects
+    to the login page."""
     user = current_user()
     if not verify_password(user, request.form.get('password') or ''):
-        return render_template('account.html', user=user, delete_error='Passwort ist falsch.')
+        return render_template('account.html', user=user, delete_error=_('Password is incorrect.'))
 
     delete_account(user)
     session.clear()

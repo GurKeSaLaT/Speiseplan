@@ -1,16 +1,17 @@
-"""Kategorie-Verwaltung: anzeigen, anlegen und löschen. Kategorien sind
-bewusst simpel gehalten (nur ein Name) - die eigentliche "Intelligenz" rund
-um Kategorien (Balance über die Woche, Nachbarschaftsregel) steckt in
-services/planning.py, nicht hier.
+"""Category management: display, create, and delete. Categories are
+deliberately kept simple (just a name) - the actual "intelligence" around
+categories (balance across the week, adjacency rule) lives in
+services/planning.py, not here.
 
-Jeder Plan pflegt seine eigenen Kategorien (siehe models.py: Category.
-plan_id) - hat ein Nutzer Zugriff auf mehr als einen Plan (eigener +
-freigegebene), zeigt die Seite einen Tab-Umschalter (siehe
-services/auth.py: selected_plan_id/user_plan_memberships) und
-add_category()/delete_category() wirken auf den GERADE ausgewählten Plan,
-nicht zwingend den sonst aktiven (current_plan())."""
+Each plan maintains its own categories (see models.py: Category.
+plan_id) - if a user has access to more than one plan (own + shared),
+the page shows a tab switcher (see services/auth.py:
+selected_plan_id/user_plan_memberships) and
+add_category()/delete_category() act on the CURRENTLY selected plan,
+not necessarily the otherwise active one (current_plan())."""
 
 from flask import Blueprint, abort, render_template, request, redirect, url_for
+from flask_babel import gettext as _
 
 from models import db, Category
 from services.auth import current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
@@ -20,11 +21,10 @@ categories_bp = Blueprint('categories', __name__)
 
 @categories_bp.route('/manage/categories')
 def category_manage_view():
-    """Zeigt die Liste aller Kategorien des ausgewählten Plans mit
-    Lösch-Button und ein Formular zum Anlegen einer neuen. Kategorien,
-    denen noch Rezepte zugeordnet sind, werden hier mit deaktiviertem
-    Lösch-Button dargestellt (siehe templates/category_manage.html:
-    cat.recipes)."""
+    """Shows the list of all categories of the selected plan with a
+    delete button and a form for creating a new one. Categories that
+    still have recipes assigned to them are shown here with the delete
+    button disabled (see templates/category_manage.html: cat.recipes)."""
     user = current_user()
     plan_id = selected_plan_id(request.args, user)
     categories = Category.query.filter_by(plan_id=plan_id).order_by(Category.name).all()
@@ -36,11 +36,11 @@ def category_manage_view():
 
 @categories_bp.route('/add-category', methods=['POST'])
 def add_category():
-    """Legt eine neue Kategorie im ausgewählten Plan an, sofern der Name
-    nicht leer ist und dort noch nicht existiert (Category hat zusätzlich
-    eine unique-Constraint auf (plan_id, name) in der Datenbank, dieser
-    Vorab-Check verhindert nur die weniger hilfreiche
-    IntegrityError-Fehlermeldung bei einem Duplikat)."""
+    """Creates a new category in the selected plan, provided the name
+    isn't empty and doesn't already exist there (Category additionally
+    has a unique constraint on (plan_id, name) in the database - this
+    upfront check only prevents the less helpful IntegrityError message
+    for a duplicate)."""
     user = current_user()
     plan_id = selected_plan_id(request.form, user)
     name = request.form.get('category_name').strip()
@@ -55,23 +55,23 @@ def add_category():
 
 @categories_bp.route('/delete-category/<int:id>', methods=['POST'])
 def delete_category(id):
-    """Löscht eine Kategorie - aber nur, wenn ihr aktuell KEIN Rezept mehr
-    zugeordnet ist. Ein Rezept ohne gültige Kategorie wäre inkonsistent
-    (category_id ist nicht nullable), daher wird das Löschen mit einer
-    Fehlermeldung abgelehnt statt die Rezepte automatisch zu verwaisen oder
-    mitzulöschen - der Nutzer muss sie erst manuell umkategorisieren oder
-    entfernen.
+    """Deletes a category - but only if it currently has NO recipe
+    assigned to it anymore. A recipe without a valid category would be
+    inconsistent (category_id is not nullable), so the deletion is
+    rejected with an error message instead of automatically orphaning or
+    deleting the recipes along with it - the user must first manually
+    recategorize or remove them.
 
-    Zusätzlicher Besitz-Check: die Kategorie muss zu einem Plan gehören,
-    auf den der eingeloggte Nutzer tatsächlich Zugriff hat (siehe
-    selected_plan_id() für dieselbe Prüfung beim Anzeigen/Anlegen) - sonst
-    ließe sich über eine erratene ID eine fremde Kategorie löschen."""
+    Additional ownership check: the category must belong to a plan the
+    logged-in user actually has access to (see selected_plan_id() for the
+    same check when displaying/creating) - otherwise a guessed ID could
+    be used to delete someone else's category."""
     user = current_user()
     category = Category.query.get_or_404(id)
     if not user_has_plan_access(user, category.plan_id):
         abort(404)
     if len(category.recipes) > 0:
-        return "Fehler: Diese Kategorie enthält noch Rezepte!", 400
+        return _("Error: This category still contains recipes!"), 400
     db.session.delete(category)
     db.session.commit()
     return redirect(url_for('categories.category_manage_view', plan_id=category.plan_id))

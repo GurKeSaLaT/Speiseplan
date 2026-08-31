@@ -1,10 +1,11 @@
-"""Login/Registrierung/Logout sowie das Umschalten des aktiven Plans
-(siehe services/auth.py: current_plan() für die Auflösungsreihenfolge).
+"""Login/registration/logout as well as switching the active plan
+(see services/auth.py: current_plan() for the resolution order).
 """
 
 from datetime import timedelta
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
+from flask_babel import gettext as _
 
 from models import PlanMembership, User, db
 from services.auth import EMAIL_PATTERN, current_user, hash_password, verify_password
@@ -12,25 +13,25 @@ from services.plans import accept_pending_invites
 
 auth_bp = Blueprint('auth', __name__)
 
-# Wie lange eine Session ohne erneuten Login gültig bleibt (siehe
-# app.py: SECRET_KEY-Kommentar) - großzügig bemessen, da es sich um private
-# Geräte im eigenen Heimnetz handelt, kein ständiges Neu-Einloggen gewollt.
+# How long a session stays valid without a fresh login (see
+# app.py: SECRET_KEY comment) - set generously since these are private
+# devices on one's own home network, no desire for constant re-logins.
 SESSION_LIFETIME = timedelta(days=30)
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
-    """Zeigt das Login-Formular (templates/login.html, EIGENSTÄNDIGE Seite
-    ohne die App-Navigationsleiste - die setzt einen eingeloggten Nutzer
-    mit aktivem Plan voraus) bzw. verarbeitet dessen Absenden.
+    """Shows the login form (templates/login.html, a STANDALONE page
+    without the app navigation bar - that requires a logged-in user with
+    an active plan) or processes its submission.
 
-    Bereits eingeloggte Nutzer, die die Login-Seite trotzdem aufrufen
-    (z.B. über den Browser-Verlauf), werden direkt weitergeleitet statt
-    das Formular erneut zu zeigen. `next` (optionales Query-Argument, von
-    app.py: require_login() gesetzt) führt nach erfolgreichem Login zurück
-    zu der Seite, die den Redirect ausgelöst hat - fehlt es oder zeigt es
-    aus irgendeinem Grund nicht auf einen internen Pfad, geht es stattdessen
-    zur Wochenplan-Startseite.
+    Users who are already logged in but still call up the login page
+    (e.g. via browser history) are redirected immediately instead of
+    the form being shown again. `next` (optional query argument, set by
+    app.py: require_login()) leads back after a successful login to the
+    page that triggered the redirect - if it is missing or, for whatever
+    reason, doesn't point to an internal path, it goes to the weekly plan
+    home page instead.
     """
     if current_user() is not None:
         return redirect(url_for('plan.index'))
@@ -49,27 +50,25 @@ def login():
             destination = next_path if next_path.startswith('/') and not next_path.startswith('//') else url_for('plan.index')
             return redirect(destination)
 
-        error = 'E-Mail-Adresse oder Passwort falsch.'
+        error = _('Email address or password is incorrect.')
 
     return render_template('login.html', error=error, next=request.args.get('next', ''))
 
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
-    """Zeigt das Registrierungsformular (templates/register.html, gleiches
-    eigenständiges Seiten-Muster wie login.html) bzw. verarbeitet dessen
-    Absenden. Erreichbar über den "Konto erstellen"-Button auf der
-    Login-Seite, oder über einen Einladungs-Link (?email=<adresse>
-    befüllt dann nur das Feld vor, ändert aber nichts an der eigentlichen
-    Zuordnung - die läuft ausschließlich über die tatsächlich eingegebene
-    E-Mail bei accept_pending_invites() unten).
+    """Shows the registration form (templates/register.html, the same
+    standalone page pattern as login.html) or processes its submission.
+    Reachable via the "create account" button on the login page, or via an
+    invite link (?email=<address> then only pre-fills the field, but
+    doesn't change the actual assignment - that runs exclusively via the
+    email address actually entered, in accept_pending_invites() below).
 
-    Nach erfolgreicher Registrierung sofort eingeloggt (wie nach einem
-    normalen Login) und auf die Wochenplan-Startseite weitergeleitet -
-    landet dort entweder direkt im per Einladung erhaltenen Plan
-    (accept_pending_invites) oder, ohne passende Einladung, auf der
-    Zero-Plan-Landing-Seite mit dem "eigenen Plan erstellen"-Formular
-    (siehe routes/plan/pages.py: week_view())."""
+    After successful registration, immediately logged in (as after a normal
+    login) and redirected to the weekly plan home page - lands there either
+    directly in the plan received via invite (accept_pending_invites) or,
+    without a matching invite, on the zero-plan landing page with the
+    "create your own plan" form (see routes/plan/pages.py: week_view())."""
     if current_user() is not None:
         return redirect(url_for('plan.index'))
 
@@ -82,11 +81,11 @@ def register():
         password = request.form.get('password') or ''
 
         if not name or not email or not password:
-            error = 'Bitte Name, E-Mail-Adresse und Passwort angeben.'
+            error = _('Please provide name, email address, and password.')
         elif not EMAIL_PATTERN.match(email):
-            error = 'Bitte eine gültige E-Mail-Adresse angeben.'
+            error = _('Please provide a valid email address.')
         elif User.query.filter_by(email=email).first() is not None:
-            error = 'Für diese E-Mail-Adresse existiert bereits ein Konto.'
+            error = _('An account already exists for this email address.')
         else:
             user = User(name=name, email=email, password_hash=hash_password(password))
             db.session.add(user)
@@ -109,12 +108,12 @@ def logout():
 
 @auth_bp.route('/plan/switch/<int:plan_id>', methods=['POST'])
 def switch_plan(plan_id):
-    """Wechselt den aktiven Plan des eingeloggten Nutzers (siehe
-    templates/base.html: die Plan-Liste in der Seitenleiste) - nur erlaubt,
-    wenn tatsächlich eine Mitgliedschaft für diesen Plan besteht, sonst
-    bleibt session['active_plan_id'] unverändert (kein Fehler nötig: ein
-    Nutzer ohne Zugriff sieht den fremden Plan im Rail-Menü gar nicht erst,
-    ein manuell zusammengebauter Aufruf läuft hier einfach ins Leere)."""
+    """Switches the active plan of the logged-in user (see
+    templates/base.html: the plan list in the sidebar) - only allowed if a
+    membership for this plan actually exists, otherwise
+    session['active_plan_id'] stays unchanged (no error needed: a user
+    without access doesn't even see the other plan in the rail menu in the
+    first place, a manually crafted request here simply has no effect)."""
     user = current_user()
     if user is not None and PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first():
         session['active_plan_id'] = plan_id

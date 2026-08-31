@@ -1,37 +1,37 @@
-{# Basis-Layout, von JEDEM anderen Template per {% extends 'base.html' %}
-   eingebunden. Definiert Kopfbereich (CSS-Einbindung, Meta-Tags),
-   Navigationsleiste und den Fußbereich (Bootstrap-JS-Bundle) einmalig - die
-   einzelnen Seiten füllen nur noch den {% block content %}-Bereich. #}
+{# Base layout, included by EVERY other template via
+   {% extends 'base.html' %}. Defines the header area (CSS includes, meta
+   tags), navigation bar and footer (Bootstrap JS bundle) once - the
+   individual pages only fill in the {% block content %} area. #}
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🍽️ Speiseplanhelfer</title>
 
-    {# Hell-/Dunkelmodus: läuft bewusst als ALLERERSTES im <head>, noch vor
-       den CSS-Links weiter unten, damit data-bs-theme auf <html> gesetzt
-       ist, BEVOR der Browser die Stylesheets anwendet - sonst würde beim
-       Laden kurz das falsche Theme aufblitzen. Drei mögliche Einstellungen
-       (gespeichert in localStorage, pro Browser/Gerät - siehe
-       templates/manage.html für den Umschalter):
-       "system" (Default, folgt der Betriebssystem-Einstellung),
-       "light", "dark". Bootstrap 5.3 selbst reagiert auf dasselbe
-       data-bs-theme-Attribut und passt darüber automatisch fast alle
-       eigenen Komponenten an (Karten, Formulare, Modals, Navbar, ...) -
-       die projekteigenen Farb-Tokens in style.css folgen demselben
-       Attribut über [data-bs-theme="dark"], plus ein paar gezielte
-       Korrekturen für die Bootstrap-Klassen, die "dark"/"light" als reinen
-       Farbnamen statt als "an die Umgebung anpassen" verstehen (siehe
-       Kommentare dort). #}
+    {# Light/dark mode: deliberately runs as the VERY FIRST thing in <head>,
+       even before the CSS links further down, so that data-bs-theme is set
+       on <html> BEFORE the browser applies the stylesheets - otherwise the
+       wrong theme would briefly flash on load. Three possible settings
+       (stored in localStorage, per browser/device - see
+       templates/manage.html for the toggle):
+       "system" (default, follows the OS setting),
+       "light", "dark". Bootstrap 5.3 itself reacts to the same
+       data-bs-theme attribute and automatically adapts almost all of its
+       own components (cards, forms, modals, navbar, ...) accordingly -
+       the project's own color tokens in style.css follow the same
+       attribute via [data-bs-theme="dark"], plus a few targeted
+       corrections for the Bootstrap classes that interpret "dark"/"light"
+       as a plain color name rather than "adapt to the environment" (see
+       the comments there). #}
     <script>
     (function() {
         var STORAGE_KEY = 'speiseplan-theme';
 
-        // localStorage kann in seltenen Fällen (privates Fenster, vom
-        // Nutzer blockierte Website-Daten) einen Fehler werfen statt null
-        // zurückzugeben - dann wird "system" angenommen, statt die Seite
-        // mit einem Fehler abbrechen zu lassen.
+        // localStorage can, in rare cases (private window, website data
+        // blocked by the user), throw an error instead of returning null -
+        // in that case "system" is assumed instead of letting the page
+        // fail with an error.
         function getPreference() {
             try {
                 return localStorage.getItem(STORAGE_KEY) || 'system';
@@ -40,9 +40,9 @@
             }
         }
 
-        // "system" wird anhand der Betriebssystem-/Browser-Einstellung
-        // sofort in "light" oder "dark" aufgelöst - data-bs-theme kennt nur
-        // diese beiden konkreten Werte, nicht "system" selbst.
+        // "system" is immediately resolved into "light" or "dark" based on
+        // the OS/browser setting - data-bs-theme only knows these two
+        // concrete values, not "system" itself.
         function applyTheme(preference) {
             var resolved = preference === 'system'
                 ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -50,47 +50,47 @@
             document.documentElement.setAttribute('data-bs-theme', resolved);
         }
 
-        // Global verfügbar gemacht, damit der Umschalter auf der
-        // Verwaltungsseite (templates/manage.html) dieselbe Logik nutzen
-        // kann, statt sie zu duplizieren.
+        // Made globally available so the toggle on the management page
+        // (templates/manage.html) can use the same logic instead of
+        // duplicating it.
         window.speiseplanGetThemePreference = getPreference;
         window.speiseplanApplyTheme = applyTheme;
         window.speiseplanSetThemePreference = function(preference) {
             try {
                 localStorage.setItem(STORAGE_KEY, preference);
             } catch (e) {
-                // localStorage nicht verfügbar - die Auswahl gilt dann nur
-                // für die aktuelle Seitenanzeige, ohne Fehlermeldung für
-                // den Nutzer (kein kritischer Vorgang).
+                // localStorage not available - the choice then only
+                // applies to the current page view, with no error message
+                // for the user (not a critical operation).
             }
             applyTheme(preference);
         };
 
         applyTheme(getPreference());
 
-        // Ändert sich die Systemeinstellung, während die Seite bereits
-        // offen ist (z.B. automatischer Wechsel bei Sonnenuntergang), UND
-        // der Nutzer hat "System" gewählt (kein expliziter Override), wird
-        // sofort nachgezogen.
+        // If the system setting changes while the page is already open
+        // (e.g. automatic switch at sunset) AND the user has chosen
+        // "System" (no explicit override), the change is applied
+        // immediately.
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
             if (getPreference() === 'system') applyTheme('system');
         });
     })();
     </script>
 
-    {# CSRF-Token für die per fetch() abgesetzten POST-Requests in
-       static/plan.js (Formulare bekommen ihr Token als eigenes verstecktes
-       Feld direkt im jeweiligen <form>, siehe dort - fetch()-Aufrufe haben
-       kein Formular und lesen den Token stattdessen aus window.CSRF_TOKEN
-       unten, gesetzt als X-CSRFToken-Header). #}
+    {# CSRF token for the POST requests sent via fetch() in
+       static/plan.js (forms get their token as their own hidden
+       field directly inside the respective <form>, see there - fetch()
+       calls have no form and instead read the token from window.CSRF_TOKEN
+       below, set as the X-CSRFToken header). #}
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script>window.CSRF_TOKEN = {{ csrf_token() | tojson }};</script>
 
-    {# Feste Einkaufslisten-Kategorie-Reihenfolge (siehe services/shopping.py,
-       app.py: inject_shopping_categories) - static/plan.js sortiert/gruppiert
-       die Einkaufsliste danach, unabhängig davon, welche Seite gerade
-       geladen ist (die Kategorie-Dropdowns beim Zutaten-Eintragen bekommen
-       dieselbe Liste zusätzlich direkt server-seitig gerendert, siehe
+    {# Fixed shopping-list category order (see services/shopping.py,
+       app.py: inject_shopping_categories) - static/plan.js sorts/groups
+       the shopping list by this, regardless of which page is currently
+       loaded (the category dropdowns for entering ingredients also get
+       the same list rendered directly server-side, see
        recipe_form.html). #}
     <script>
         window.SHOPPING_CATEGORIES = {{ shopping_categories | tojson }};
@@ -98,20 +98,20 @@
         window.PANTRY_CATEGORIES = {{ pantry_categories | tojson }};
     </script>
 
-    {# 1. Lokales Bootstrap-CSS (als Datei im static-Ordner, nicht per CDN
-       geladen) - die App soll auch ganz ohne Internetzugang im Heimnetz
-       funktionieren. #}
+    {# 1. Local Bootstrap CSS (as a file in the static folder, not loaded
+       via CDN) - the app should also work entirely without internet
+       access on the home network. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" type="text/css">
 
-    {# 2. Eigenes CSS mit Cache-Bremse: der ?v=...-Query-Parameter kommt aus
-       app.py (inject_css_version, siehe dort) und ändert sich automatisch
-       mit dem Änderungszeitpunkt der Datei, damit Browser nach einem
-       Deployment nicht versehentlich eine alte, gecachte style.css
-       weiterverwenden. #}
+    {# 2. Own CSS with cache-busting: the ?v=...  query parameter comes
+       from app.py (inject_css_version, see there) and changes
+       automatically with the file's modification time, so that browsers
+       don't accidentally keep using an old, cached style.css after a
+       deployment. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_version }}" type="text/css">
 
     <style>
-        /* Fallback für die Schriftart, falls Google Fonts blockiert ist */
+        /* Fallback font in case Google Fonts is blocked */
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         }
@@ -119,20 +119,20 @@
 </head>
 <body>
 
-    {# Persistente Seitenleiste statt der früheren grünen Top-Navbar mit
-       Hover-Dropdown - auf JEDER Seite identisch (site-weites App-Shell,
-       siehe static/style.css: .app-shell/.app-rail). Zwei feste
-       Hauptziele oben (Wochenplan/Übersicht), darunter direkte
-       Kurzlinks zu den einzelnen Verwaltungsbereichen - ersetzt damit
-       sowohl den früheren "Wochenplaner"-Link als auch das
-       "Einstellungen"-Dropdown-Menü, beide brauchten keine eigene
-       Öffnen/Schließen-Logik mehr, da alle Ziele ohnehin permanent
-       sichtbar sind. Aktive Markierung rein serverseitig über
-       request.path (kein JS nötig). Auf schmalen Bildschirmen klappt die
-       Leiste zu einer horizontal scrollbaren Reiterleiste zusammen (siehe
-       @media in static/style.css) - Marke/Gruppentitel/Darstellung
-       werden dort ausgeblendet, um Platz für die eigentlichen Linkziele
-       zu lassen. #}
+    {# Persistent sidebar replacing the former green top navbar with
+       hover dropdown - identical on EVERY page (site-wide app shell,
+       see static/style.css: .app-shell/.app-rail). Two fixed
+       main destinations at the top (weekly plan/overview), below that
+       direct shortcut links to the individual management areas - this
+       replaces both the former "Weekly Planner" link and the
+       "Settings" dropdown menu, neither of which needed their own
+       open/close logic any more, since all destinations are permanently
+       visible anyway. Active marker purely server-side via
+       request.path (no JS needed). On narrow screens the bar collapses
+       into a horizontally scrollable tab bar (see
+       @media in static/style.css) - the brand/group titles/appearance
+       toggle are hidden there to leave room for the actual link
+       destinations. #}
     <div class="app-shell">
         <aside class="app-rail">
             <a class="rail-brand" href="/">
@@ -141,23 +141,23 @@
             </a>
 
             <div class="nav-primary">
-                <a class="nav-link {% if request.path == '/' or request.path.startswith('/plan') %}active{% endif %}" href="/"><span class="ic">🗓️</span>Wochenplan</a>
-                <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>Übersicht</a>
+                <a class="nav-link {% if request.path == '/' or request.path.startswith('/plan') %}active{% endif %}" href="/"><span class="ic">🗓️</span>{{ _('Weekly Plan') }}</a>
+                <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>{{ _('Overview') }}</a>
             </div>
 
-            {# Eigene Pläne (eigener + eingeladene, siehe models.py:
-               PlanMembership) - Klick wechselt den aktiven Plan
-               (routes/auth.py: switch_plan) und springt auf dessen
-               aktuelle Woche. Der gesternte steht immer zuerst (siehe
-               app.py: inject_current_user_and_plans) und ist zusätzlich
-               optisch als "aktiv" markiert, wenn er gerade der
-               tatsächlich aktive Plan ist. Seit Pläne von Accounts
-               entkoppelt sind (services/plans.py), IMMER sichtbar (auch
-               mit nur einem einzigen Plan oder gar keinem) - der
-               "+ Neuer Plan"-Eintrag gehört immer mit rein, nicht nur der
-               Umschalter. #}
+            {# Own plans (own + invited, see models.py:
+               PlanMembership) - clicking switches the active plan
+               (routes/auth.py: switch_plan) and jumps to its
+               current week. The starred one is always listed first (see
+               app.py: inject_current_user_and_plans) and is additionally
+               visually marked as "active" when it is currently the
+               actually active plan. Ever since plans were decoupled
+               from accounts (services/plans.py), ALWAYS visible (even
+               with only a single plan or none at all) - the
+               "+ New Plan" entry always belongs in there too, not just the
+               switcher. #}
             <div class="rail-section">
-                <div class="rail-label">Meine Pläne</div>
+                <div class="rail-label">{{ _('My Plans') }}</div>
                 {% for membership in nav_user_plans %}
                 <form method="POST" action="{{ url_for('auth.switch_plan', plan_id=membership.plan_id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -167,28 +167,28 @@
                 </form>
                 {% endfor %}
                 <button type="button" class="rail-link w-100 text-start border-0 bg-transparent" data-bs-toggle="modal" data-bs-target="#createPlanModal">
-                    <span class="ic">➕</span>Neuer Plan
+                    <span class="ic">➕</span>{{ _('New Plan') }}
                 </button>
             </div>
 
             <div class="rail-section">
-                <div class="rail-label">Rezepte</div>
-                <a class="rail-link {% if request.path == '/manage/recipe/create' %}active{% endif %}" href="/manage/recipe/create"><span class="ic">✨</span>Erstellen</a>
-                <a class="rail-link {% if request.path == '/manage/recipe/edit-list' or request.path.startswith('/manage/recipe/edit/') %}active{% endif %}" href="/manage/recipe/edit-list"><span class="ic">📝</span>Bearbeiten</a>
+                <div class="rail-label">{{ _('Recipes') }}</div>
+                <a class="rail-link {% if request.path == '/manage/recipe/create' %}active{% endif %}" href="/manage/recipe/create"><span class="ic">✨</span>{{ _('Create') }}</a>
+                <a class="rail-link {% if request.path == '/manage/recipe/edit-list' or request.path.startswith('/manage/recipe/edit/') %}active{% endif %}" href="/manage/recipe/edit-list"><span class="ic">📝</span>{{ _('Edit') }}</a>
             </div>
 
             <div class="rail-section">
-                <div class="rail-label">Daten</div>
-                <a class="rail-link {% if request.path == '/manage/categories' %}active{% endif %}" href="/manage/categories"><span class="ic">🏷️</span>Kategorien</a>
-                <a class="rail-link {% if request.path == '/manage/units' %}active{% endif %}" href="/manage/units"><span class="ic">📏</span>Einheiten</a>
-                <a class="rail-link {% if request.path == '/manage/ingredient-aliases' %}active{% endif %}" href="/manage/ingredient-aliases"><span class="ic">🔗</span>Zutaten gleichsetzen</a>
-                <a class="rail-link {% if request.path == '/manage/ingredient-nutrition' %}active{% endif %}" href="/manage/ingredient-nutrition"><span class="ic">🍎</span>Nährwerte</a>
+                <div class="rail-label">{{ _('Data') }}</div>
+                <a class="rail-link {% if request.path == '/manage/categories' %}active{% endif %}" href="/manage/categories"><span class="ic">🏷️</span>{{ _('Categories') }}</a>
+                <a class="rail-link {% if request.path == '/manage/units' %}active{% endif %}" href="/manage/units"><span class="ic">📏</span>{{ _('Units') }}</a>
+                <a class="rail-link {% if request.path == '/manage/ingredient-aliases' %}active{% endif %}" href="/manage/ingredient-aliases"><span class="ic">🔗</span>{{ _('Merge Ingredients') }}</a>
+                <a class="rail-link {% if request.path == '/manage/ingredient-nutrition' %}active{% endif %}" href="/manage/ingredient-nutrition"><span class="ic">🍎</span>{{ _('Nutrition') }}</a>
             </div>
 
             <div class="rail-section">
-                <div class="rail-label">Konto</div>
-                <a class="rail-link {% if request.path == '/manage/account' %}active{% endif %}" href="/manage/account"><span class="ic">👤</span>Profil</a>
-                <a class="rail-link {% if request.path == '/manage/sharing' %}active{% endif %}" href="/manage/sharing"><span class="ic">🤝</span>Freigabe</a>
+                <div class="rail-label">{{ _('Account') }}</div>
+                <a class="rail-link {% if request.path == '/manage/account' %}active{% endif %}" href="/manage/account"><span class="ic">👤</span>{{ _('Profile') }}</a>
+                <a class="rail-link {% if request.path == '/manage/sharing' %}active{% endif %}" href="/manage/sharing"><span class="ic">🤝</span>{{ _('Sharing') }}</a>
             </div>
 
             <div class="rail-theme">
@@ -197,75 +197,75 @@
                     <span class="lbl">👤 {{ nav_current_user.name }}</span>
                     <form method="POST" action="{{ url_for('auth.logout') }}" class="d-inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">Abmelden</button>
+                        <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">{{ _('Log Out') }}</button>
                     </form>
                 </div>
                 {% endif %}
-                <div class="theme-row"><span class="lbl">🎨 Darstellung</span></div>
+                <div class="theme-row"><span class="lbl">🎨 {{ _('Appearance') }}</span></div>
                 <div class="segmented" id="themeSwitcher">
-                    <button type="button" data-theme-choice="system">System</button>
-                    <button type="button" data-theme-choice="light">Hell</button>
-                    <button type="button" data-theme-choice="dark">Dunkel</button>
+                    <button type="button" data-theme-choice="system">{{ _('System') }}</button>
+                    <button type="button" data-theme-choice="light">{{ _('Light') }}</button>
+                    <button type="button" data-theme-choice="dark">{{ _('Dark') }}</button>
                 </div>
             </div>
         </aside>
 
         <div class="app-content">
-            {# Hauptinhalt: wird von jeder Unterseite über {% block content %}...{% endblock %} befüllt #}
+            {# Main content: filled in by each subpage via {% block content %}...{% endblock %} #}
             <div class="container pb-5">
                 {% block content %}{% endblock %}
             </div>
         </div>
     </div>
 
-    {# Modal zum Anlegen eines weiteren eigenen Plans - von jeder Seite aus
-       erreichbar (lebt deshalb hier in base.html statt in einer einzelnen
-       Unterseite, Trigger-Button siehe oben in .app-rail), gleiches Muster
-       wie das Rezept-Detail-Fenster in templates/plan.html. Erfolgreiches
-       Absenden wechselt sofort auf den neuen Plan (siehe
+    {# Modal for creating another own plan - reachable from any page
+       (which is why it lives here in base.html instead of in a single
+       subpage; see the trigger button above in .app-rail), same pattern
+       as the recipe detail window in templates/plan.html. Successful
+       submission immediately switches to the new plan (see
        routes/plans.py: create()).
 
-       BEWUSST außerhalb von .app-shell/.app-rail platziert, als direktes
-       Kind von <body>: .app-rail ist position:sticky (siehe static/
-       style.css) - jeder position:fixed-Nachfahre eines solchen Elements
-       (wie dieses Bootstrap-Modal) landet sonst in DESSEN lokalem
-       Stapelkontext statt oberhalb der gesamten Seite und wird von
-       .app-content optisch verdeckt/unterlaufen, obwohl er per CSS
-       eigentlich "fixed" positioniert ist (siehe data-bs-target oben -
-       funktioniert unabhängig von der DOM-Position, da rein über die
-       ID angesteuert). #}
+       DELIBERATELY placed outside .app-shell/.app-rail, as a direct
+       child of <body>: .app-rail is position:sticky (see static/
+       style.css) - any position:fixed descendant of such an element
+       (like this Bootstrap modal) would otherwise end up in ITS local
+       stacking context instead of above the entire page, and would be
+       visually obscured/undermined by .app-content even though it is
+       actually positioned "fixed" via CSS (see data-bs-target above -
+       works independently of DOM position, since it's addressed purely
+       via the ID). #}
     <div class="modal fade" id="createPlanModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content border-0 shadow">
                 <form method="POST" action="{{ url_for('plans.create') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="modal-header">
-                        <h5 class="modal-title fw-bold">➕ Neuer Plan</h5>
+                        <h5 class="modal-title fw-bold">➕ {{ _('New Plan') }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <label class="form-label small text-muted" for="createPlanName">Name des Plans</label>
+                        <label class="form-label small text-muted" for="createPlanName">{{ _('Plan Name') }}</label>
                         <input type="text" id="createPlanName" name="name" class="form-control" required autofocus>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Abbrechen</button>
-                        <button type="submit" class="btn btn-primary-custom fw-bold">Erstellen</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _('Cancel') }}</button>
+                        <button type="submit" class="btn btn-primary-custom fw-bold">{{ _('Create') }}</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    {# 3. Lokales Bootstrap-JS-Bundle (inkl. Popper) - wird u.a. für die
-       Bearbeiten-Modals (recipe_edit_list.html) und das Rezept-Detail-
-       Fenster (templates/plan.html) benötigt. #}
+    {# 3. Local Bootstrap JS bundle (incl. Popper) - needed for, among
+       other things, the edit modals (recipe_edit_list.html) and the
+       recipe detail window (templates/plan.html). #}
     <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 
-    {# Darstellung-Segmented-Control in der Seitenleiste: nutzt die weiter
-       oben in diesem Template definierte globale Logik
+    {# Appearance segmented control in the sidebar: uses the global
+       logic defined earlier in this template
        (window.speiseplanGetThemePreference/speiseplanSetThemePreference) -
-       auf jeder Seite identisch, da die Seitenleiste jetzt global ist
-       (früher nur auf /manage, siehe templates/manage.html). #}
+       identical on every page, since the sidebar is now global
+       (previously only on /manage, see templates/manage.html). #}
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         var buttons = document.querySelectorAll('#themeSwitcher button');
@@ -286,4 +286,3 @@
     </script>
 </body>
 </html>
-

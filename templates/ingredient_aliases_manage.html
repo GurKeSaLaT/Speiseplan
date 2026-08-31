@@ -1,19 +1,19 @@
-{# Zutaten-Gleichsetzung (/manage/ingredient-aliases): eine Zeile pro
-   aktuell in irgendeinem Rezept verwendetem Zutatennamen, mit einem
-   editierbaren "gilt als"-Feld - siehe routes/settings.py:
-   ingredient_aliases_view()/update_ingredient_aliases() und
-   services/ingredient_aliases.py. Trägt ein Nutzer z.B. bei "Fusilli" den
-   Namen "Nudeln" ein, werden "Fusilli" und jede andere Zutat mit "Nudeln"
-   als gilt-als-Wert auf der Einkaufsliste zu EINEM Posten zusammengefasst
-   - die Zutatenliste eines einzelnen Rezepts zeigt weiterhin "Fusilli". #}
+{# Ingredient aliasing (/manage/ingredient-aliases): one row per
+   ingredient name currently used in any recipe, with an editable
+   "counts as" field - see routes/settings.py:
+   ingredient_aliases_view()/update_ingredient_aliases() and
+   services/ingredient_aliases.py. If a user enters, say, "Noodles" for
+   "Fusilli", "Fusilli" and any other ingredient with "Noodles"
+   as its counts-as value are merged into ONE line item on the shopping
+   list - the ingredient list of an individual recipe still shows "Fusilli". #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-md-8">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">🔗 Zutaten gleichsetzen</h4>
-                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- Zurück</a>
+                <h4 class="card-title mb-0 fw-bold">🔗 {{ _('Merge Ingredients') }}</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
                 {% if user_plans|length > 1 %}
@@ -28,22 +28,18 @@
                 </ul>
                 {% endif %}
                 <p class="text-muted">
-                    Trage bei "Gilt als" einen gemeinsamen Namen ein, um mehrere Zutaten auf der
-                    Einkaufsliste zu einem Posten zusammenzufassen (z.B. "Spaghetti" und "Fusilli" →
-                    "Nudeln", "Olivenöl" und "Sonnenblumenöl" → "Öl"). Ohne Änderung gilt eine Zutat
-                    weiterhin nur sich selbst. Betrifft nur die Einkaufsliste - Rezepte zeigen weiterhin
-                    ihren ursprünglich eingetragenen Zutatennamen.
+                    {{ _('Enter a common name under "Counts as" to merge several ingredients on the shopping list into one line item (e.g. "Spaghetti" and "Fusilli" → "Noodles", "Olive Oil" and "Sunflower Oil" → "Oil"). Without a change, an ingredient still only counts as itself. This only affects the shopping list - recipes still show the ingredient name as originally entered.') }}
                 </p>
 
                 {% if rows %}
-                <input type="text" id="ingredientFilter" class="form-control mb-3" placeholder="🔍 Zutat suchen..." autocomplete="off">
+                <input type="text" id="ingredientFilter" class="form-control mb-3" placeholder="🔍 {{ _('Search ingredient...') }}" autocomplete="off">
 
                 <form action="/update-ingredient-aliases" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="plan_id" value="{{ plan_id }}">
                     <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2">
-                        <div class="col-6">Zutat</div>
-                        <div class="col-6">Gilt als</div>
+                        <div class="col-6">{{ _('Ingredient') }}</div>
+                        <div class="col-6">{{ _('Counts As') }}</div>
                     </div>
                     <div id="ingredientRows">
                         {% for row in rows %}
@@ -58,10 +54,10 @@
                         </div>
                         {% endfor %}
                     </div>
-                    <button type="submit" class="btn btn-dark fw-bold mt-3">Speichern</button>
+                    <button type="submit" class="btn btn-dark fw-bold mt-3">{{ _('Save') }}</button>
                 </form>
                 {% else %}
-                <div class="text-center p-5 text-muted">Noch keine Zutaten vorhanden.</div>
+                <div class="text-center p-5 text-muted">{{ _('No ingredients yet.') }}</div>
                 {% endif %}
             </div>
         </div>
@@ -70,9 +66,9 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Rein clientseitiger Fuzzy-Filter (siehe static/fuzzy_search.js) - kein
-// Server-Roundtrip nötig. Bei potenziell hunderten Zutaten sonst
-// unpraktisch, alle auf einmal zu überblicken.
+// Purely client-side fuzzy filter (see static/fuzzy_search.js) - no
+// server round-trip needed. With potentially hundreds of ingredients it
+// would otherwise be impractical to see them all at once.
 wireFuzzyFilter(
     document.getElementById('ingredientFilter'), '.ingredient-alias-row',
     row => row.querySelector('input[name="raw_name[]"]').value

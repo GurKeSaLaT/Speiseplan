@@ -1,60 +1,59 @@
 /**
- * ingredient_alias_hint.js - Live-Hinweis neben jedem Zutatennamen-Feld
- * beim Rezept anlegen/bearbeiten (templates/recipe_form.html):
- * zeigt beim Eintragen einer Zutat, ob dafür bereits eine Zutaten-
- * Gleichsetzung (siehe services/ingredient_aliases.py, Verwaltung ->
- * 🔗 Zutaten gleichsetzen) besteht, und erlaubt es, direkt eine neue
- * anzulegen, ohne die Seite zu verlassen. Genau drei Fälle:
+ * ingredient_alias_hint.js - Live hint next to each ingredient-name field
+ * when creating/editing a recipe (templates/recipe_form.html):
+ * shows, as an ingredient is entered, whether an ingredient alias
+ * (see services/ingredient_aliases.py, Management ->
+ * 🔗 Ingredient aliases) already exists for it, and allows creating a
+ * new one directly, without leaving the page. Exactly three cases:
  *
- * A) Für den eingetragenen Namen existiert bereits ein Alias
- *    (z.B. "Olivenöl" -> "Öl") - zeigt, als was er auf der Einkaufsliste
- *    zusammengefasst wird.
- * B) Der eingetragene Name ist selbst der kanonische Name, auf den
- *    ANDERE Zutaten verweisen ("Grundzutat", z.B. "Öl" selbst) - zeigt,
- *    für welche Zutaten er Grundzutat ist.
- * C) Weder A noch B: der Name ist bislang komplett unabhängig - bietet
- *    ein Mini-Formular an, um direkt einen Alias zu setzen.
+ * A) An alias already exists for the entered name
+ *    (e.g. "Olive oil" -> "Oil") - shows what it's grouped under on the
+ *    shopping list.
+ * B) The entered name is itself the canonical name that OTHER
+ *    ingredients point to ("base ingredient", e.g. "Oil" itself) - shows
+ *    which ingredients it's the base ingredient for.
+ * C) Neither A nor B: the name is so far entirely independent - offers
+ *    a mini form to set an alias directly.
  *
- * Zusätzlich (unabhängig von A/B/C, siehe renderNutritionPart unten):
- * prüft, ob für die aufgelöste kanonische Zutat bereits Nährwerte
- * hinterlegt sind (services/nutrition.py, Verwaltung -> 🍎 Nährwerte) -
- * falls nicht, bietet ein zweites Mini-Formular an, um sie direkt
- * nachzutragen, ohne die Rezept-Seite zu verlassen.
+ * Additionally (independent of A/B/C, see renderNutritionPart below):
+ * checks whether nutrition data is already on file for the resolved
+ * canonical ingredient (services/nutrition.py, Management ->
+ * 🍎 Nutrition) - if not, offers a second mini form to add it directly,
+ * without leaving the recipe page.
  *
- * window.INGREDIENT_ALIASES ({raw_name: canonical_name}, siehe
- * app.py: inject_ingredient_aliases()) und window.INGREDIENT_NUTRITION
+ * window.INGREDIENT_ALIASES ({raw_name: canonical_name}, see
+ * app.py: inject_ingredient_aliases()) and window.INGREDIENT_NUTRITION
  * ({canonical_name: {reference_amount, reference_unit, calories, protein,
- * carbs, fat}}, siehe app.py: inject_ingredient_nutrition()) müssen VOR
- * diesem Skript im DOM eingebettet sein. Arbeitet rein über Event-
- * Delegation auf document.body, damit sowohl serverseitig gerenderte
- * Zeilen als auch per JS dynamisch hinzugefügte Zutatenzeilen
- * (static/recipe_form.js: rformAddIngredientRow) ohne separate
- * Initialisierung funktionieren.
+ * carbs, fat}}, see app.py: inject_ingredient_nutrition()) must be
+ * embedded in the DOM BEFORE this script. Works purely through event
+ * delegation on document.body, so that both server-rendered rows and
+ * rows added dynamically via JS (static/recipe_form.js:
+ * rformAddIngredientRow) work without separate initialization.
  */
 
 (function () {
     const ALIASES = window.INGREDIENT_ALIASES || {};
     const NUTRITION = window.INGREDIENT_NUTRITION || {};
 
-    // Menge aller kanonischen Zielnamen, für den schnellen "ist das
-    // selbst eine Grundzutat?"-Check (Fall B). Wird bei jedem neu
-    // gesetzten Alias (siehe submitAlias unten) mit aktualisiert.
+    // Set of all canonical target names, for a fast "is this itself a
+    // base ingredient?" check (case B). Kept up to date whenever a new
+    // alias is set (see submitAlias below).
     let canonicalNames = new Set(Object.values(ALIASES));
 
-    /** Python-.title()-Äquivalent für einen clientseitigen Vorab-Check -
-     * MUSS exakt dasselbe Ergebnis liefern wie Pythons str.title() (siehe
-     * services/ingredient_aliases.py: normalize_name), sonst schlagen
-     * ALIASES-Lookups für Namen mit Satzzeichen fehl (z.B. Pythons
-     * "(ca. 20 g) Ingwer".title() == "(Ca. 20 G) Ingwer" - jeder
-     * Buchstabe direkt NACH einem Nicht-Buchstaben wird groß, nicht nur
-     * der erste jedes leerzeichen-getrennten "Worts"). Eine frühere,
-     * einfachere Version hier trennte nur an Leerzeichen/Bindestrich und
-     * traf bei Klammern/Punkten wie oben die falsche Schreibweise -
-     * dadurch wurde weder der bestehende Alias gefunden noch beim
-     * Zurückklappen des Namensfelds der Alias statt des Rohnamens
-     * angezeigt. \p{L} (Unicode-"ist ein Buchstabe") statt eines festen
-     * a-z/äöü-Musters, damit das auch für Umlaute & Akzente korrekt
-     * greift wie Pythons eigene, unicode-bewusste .title(). */
+    /** Python .title() equivalent for a client-side pre-check - MUST
+     * produce exactly the same result as Python's str.title() (see
+     * services/ingredient_aliases.py: normalize_name), otherwise
+     * ALIASES lookups fail for names with punctuation (e.g. Python's
+     * "(ca. 20 g) ginger".title() == "(Ca. 20 G) Ginger" - every
+     * letter directly AFTER a non-letter is capitalized, not just
+     * the first of each space-separated "word"). An earlier, simpler
+     * version here only split on space/hyphen and got the wrong
+     * capitalization for parentheses/periods as above - which meant
+     * neither finding the existing alias nor, when collapsing the name
+     * field back, showing the alias instead of the raw name. \p{L}
+     * (Unicode "is a letter") instead of a fixed plain-ASCII pattern, so
+     * this also works correctly for umlauts & accents, just like
+     * Python's own Unicode-aware .title(). */
     function titleCase(value) {
         let result = '';
         let prevIsLetter = false;
@@ -72,11 +71,11 @@
             .map(([raw]) => raw);
     }
 
-    /** Auf welchen kanonischen Namen die Nährwert-Suche für "name" läuft:
-     * bei bestehendem Alias (Fall A) dessen Ziel, sonst der Name selbst
-     * (Fall B/C - server-seitig verhält sich normalize_ingredient_name()
-     * für einen unaliasierten Namen genauso, siehe services/nutrition.py:
-     * get_nutrition_entry). */
+    /** Which canonical name the nutrition lookup for "name" runs
+     * against: for an existing alias (case A) its target, otherwise the
+     * name itself (case B/C - server-side, normalize_ingredient_name()
+     * behaves the same way for a non-aliased name, see
+     * services/nutrition.py: get_nutrition_entry). */
     function resolveNutritionCanonical(name) {
         return Object.prototype.hasOwnProperty.call(ALIASES, name) ? ALIASES[name] : name;
     }
@@ -97,26 +96,26 @@
 
     function renderAliasPart(wrap, name, hintEl) {
         if (Object.prototype.hasOwnProperty.call(ALIASES, name)) {
-            // Fall A
+            // Case A
             wrap.classList.add('text-muted');
-            wrap.innerHTML = `→ wird als „<b>${escapeHtml(ALIASES[name])}</b>" zusammengefasst`;
+            wrap.innerHTML = `→ grouped as „<b>${escapeHtml(ALIASES[name])}</b>"`;
             return;
         }
 
         if (canonicalNames.has(name)) {
-            // Fall B
+            // Case B
             const examples = rawNamesFor(name).slice(0, 3).join(', ');
             wrap.classList.add('text-muted');
-            wrap.innerHTML = `🧺 Grundzutat${examples ? ' (z.B. für ' + escapeHtml(examples) + ')' : ''}`;
+            wrap.innerHTML = `🧺 Base ingredient${examples ? ' (e.g. for ' + escapeHtml(examples) + ')' : ''}`;
             return;
         }
 
-        // Fall C: weder Alias noch Grundzutat - Mini-Formular zum Setzen anbieten
+        // Case C: neither alias nor base ingredient - offer a mini form to set one
         const group = document.createElement('div');
         group.className = 'input-group input-group-sm mt-1';
         group.innerHTML = `
-            <input type="text" class="form-control form-control-sm alias-target-input" placeholder="Alias setzen, z.B. Nudeln" list="canonical-names-datalist">
-            <button type="button" class="btn btn-outline-secondary alias-set-btn">Setzen</button>
+            <input type="text" class="form-control form-control-sm alias-target-input" placeholder="Set alias, e.g. Pasta" list="canonical-names-datalist">
+            <button type="button" class="btn btn-outline-secondary alias-set-btn">Set</button>
         `;
         const input = group.querySelector('.alias-target-input');
         const button = group.querySelector('.alias-set-btn');
@@ -127,11 +126,11 @@
         wrap.appendChild(group);
     }
 
-    /** Zeigt, sofern für die aufgelöste kanonische Zutat noch KEIN
-     * Nährwert-Eintrag existiert, ein Mini-Formular zum sofortigen
-     * Nachtragen an (POST /api/ingredient-nutrition/set, siehe
-     * routes/settings.py: api_set_ingredient_nutrition). Existiert
-     * bereits ein Eintrag, wird nichts angezeigt. */
+    /** Shows a mini form for adding nutrition data right away, provided
+     * the resolved canonical ingredient does NOT yet have a nutrition
+     * entry (POST /api/ingredient-nutrition/set, see
+     * routes/settings.py: api_set_ingredient_nutrition). If an entry
+     * already exists, nothing is shown. */
     function renderNutritionPart(wrap, name, hintEl) {
         const canonical = resolveNutritionCanonical(name);
         if (Object.prototype.hasOwnProperty.call(NUTRITION, canonical)) return;
@@ -139,36 +138,37 @@
         const box = document.createElement('div');
         box.className = 'mt-1 p-2 border rounded';
         box.innerHTML = `
-            <div class="text-danger small fw-bold mb-2">⚠️ Keine Nährwerte für „${escapeHtml(canonical)}" hinterlegt</div>
+            <div class="text-danger small fw-bold mb-2">⚠️ No nutrition data on file for „${escapeHtml(canonical)}"</div>
             <div class="row g-2">
                 <div class="col-6 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Bezug</label>
+                    <label class="form-label small text-muted mb-1">Reference</label>
                     <select class="form-select form-select-sm nutrition-ref-unit">
-                        <option value="g" selected>pro 100 g</option>
-                        <option value="ml">pro 100 ml</option>
-                        <option value="Stk">pro 1 Stk</option>
+                        <option value="g" selected>per 100 g</option>
+                        <option value="ml">per 100 ml</option>
+                        <option value="Stk">per 1 pc</option>
                     </select>
                 </div>
                 <div class="col-4 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Eiweiß (g)</label>
+                    <label class="form-label small text-muted mb-1">Protein (g)</label>
                     <input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="0">
                 </div>
                 <div class="col-4 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Kohlh. (g)</label>
+                    <label class="form-label small text-muted mb-1">Carbs (g)</label>
                     <input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="0">
                 </div>
                 <div class="col-4 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Fett (g)</label>
+                    <label class="form-label small text-muted mb-1">Fat (g)</label>
                     <input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="0">
                 </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-danger mt-2 nutrition-set-btn">Nährwerte speichern</button>
+            <button type="button" class="btn btn-sm btn-outline-danger mt-2 nutrition-set-btn">Save nutrition data</button>
         `;
-        // Kcal wird nirgends eingegeben, nur aus Eiweiß/Kohlenhydraten/Fett
-        // errechnet (services/nutrition.py: compute_calories()) - hier gibt
-        // es dafür also bewusst kein Eingabefeld, auch keine Live-Anzeige
-        // (die kompakte Inline-Box hat dafür keinen Platz, die berechneten
-        // Kcal sind auf der Nährwertverwaltungsseite einsehbar).
+        // Calories are never entered directly, only computed from
+        // protein/carbs/fat (services/nutrition.py: compute_calories()) -
+        // so there is deliberately no input field for it here, and no
+        // live display either (the compact inline box has no room for
+        // one; the computed calories can be seen on the nutrition
+        // management page).
         box.querySelector('.nutrition-set-btn').addEventListener('click', () => submitNutrition(canonical, box, name, hintEl));
         wrap.appendChild(box);
     }
@@ -182,27 +182,27 @@
         })
         .then(response => response.json().then(data => ({ ok: response.ok, data })))
         .then(({ ok, data }) => {
-            if (!ok) { alert('Hinweis: ' + (data.error || 'Alias konnte nicht gesetzt werden.')); return; }
+            if (!ok) { alert('Note: ' + (data.error || 'Could not set alias.')); return; }
             ALIASES[data.raw_name] = data.canonical_name;
             canonicalNames = new Set(Object.values(ALIASES));
             fillUnitFromNutrition(hintEl, data.canonical_name);
             fillCategoryFromAlias(hintEl, data.category);
             renderHint(hintEl, data.raw_name);
         })
-        .catch(() => alert('Hinweis: Alias konnte nicht gesetzt werden.'));
+        .catch(() => alert('Note: Could not set alias.'));
     }
 
-    /** Übernimmt beim Setzen eines Alias automatisch die für die
-     * kanonische Zutat bereits verwendete Einkaufslisten-Kategorie (vom
-     * Server anhand bestehender Zutat-Zeilen geraten, siehe
+    /** When setting an alias, automatically takes over the shopping-list
+     * category already in use for the canonical ingredient (guessed
+     * server-side from existing ingredient rows, see
      * routes/settings.py: api_set_ingredient_alias/services/shopping.py:
-     * infer_category) in das Kategorie-Feld DIESER Zutatenzeile - nur,
-     * wenn dort noch die Standardauswahl "Sonstiges" (leerer Wert) steht,
-     * eine bereits bewusst getroffene Auswahl wird nie überschrieben.
-     * Damit landen alle auf denselben Namen gleichgesetzten Zutaten (z.B.
-     * "Spaghetti"/"Fusilli" -> "Nudeln") konsistent in derselben Gruppe
-     * auf der Einkaufsliste, statt je nach Rezept unterschiedlich
-     * einsortiert zu sein. */
+     * infer_category) into the category field of THIS ingredient row -
+     * only if it's still on the default selection "Other" (empty value);
+     * a category the user already deliberately chose is never
+     * overwritten. This keeps all ingredients aliased to the same name
+     * (e.g. "Spaghetti"/"Fusilli" -> "Pasta") consistently grouped
+     * together on the shopping list, instead of being sorted
+     * differently depending on the recipe. */
     function fillCategoryFromAlias(hintEl, category) {
         if (!category) return;
         const categorySelect = hintEl.closest('.ingredient-row')?.querySelector('[name="ing_category[]"]');
@@ -211,14 +211,14 @@
         }
     }
 
-    /** Übernimmt beim Setzen eines Alias automatisch die für die
-     * kanonische Zutat bereits hinterlegte Einheit (reference_unit aus
-     * window.INGREDIENT_NUTRITION) in das Einheit-Feld DIESER Zutatenzeile
-     * - nur, wenn das Feld noch leer ist (ein bereits eingetragener Wert
-     * wird nie überschrieben) und nur, wenn überhaupt schon ein
-     * Nährwert-Eintrag existiert. Verhindert genau das Problem, dass
-     * gleichgesetzte Zutaten mit uneinheitlichen Einheiten in der
-     * Einkaufsliste als mehrere Posten auftauchen (siehe
+    /** When setting an alias, automatically takes over the unit already
+     * on file for the canonical ingredient (reference_unit from
+     * window.INGREDIENT_NUTRITION) into the unit field of THIS
+     * ingredient row - only if the field is still empty (a value
+     * already entered is never overwritten) and only if a nutrition
+     * entry exists at all. Prevents exactly the problem of aliased
+     * ingredients with inconsistent units showing up as multiple
+     * separate entries on the shopping list (see
      * services/ingredient_aliases.py). */
     function fillUnitFromNutrition(hintEl, canonicalName) {
         const entry = NUTRITION[canonicalName];
@@ -245,11 +245,11 @@
         })
         .then(response => response.json().then(data => ({ ok: response.ok, data })))
         .then(({ ok, data }) => {
-            if (!ok) { alert('Hinweis: ' + (data.error || 'Nährwerte konnten nicht gespeichert werden.')); return; }
+            if (!ok) { alert('Note: ' + (data.error || 'Could not save nutrition data.')); return; }
             NUTRITION[data.canonical_name] = data;
             renderHint(hintEl, name);
         })
-        .catch(() => alert('Hinweis: Nährwerte konnten nicht gespeichert werden.'));
+        .catch(() => alert('Note: Could not save nutrition data.'));
     }
 
     function escapeHtml(text) {
@@ -269,41 +269,42 @@
         renderHint(hintEl, titleCase(event.target.value));
     });
 
-    /** Nächstgelegener gemeinsamer Rahmen einer Zutatenzeile: das
-     * umschließende <form> (auf recipe_form.html das einzige Formular der
-     * Seite - anders als früher, als recipe_edit_list.html leicht 50+
-     * Bearbeiten-Modals gleichzeitig im DOM hielt und ein ungebremstes
-     * document.querySelectorAll(...) bei JEDEM Fokuswechsel dadurch
-     * spürbar als Ruckeln auffiel; die eigene Seite pro Rezept macht diese
-     * Eingrenzung inzwischen überflüssig, sie schadet als zusätzliche
-     * Absicherung aber nicht). */
+    /** Nearest shared scope of an ingredient row: the enclosing <form>
+     * (on recipe_form.html the only form on the page - unlike before,
+     * when recipe_edit_list.html kept up to 50+ edit modals in the DOM
+     * at once and an unthrottled document.querySelectorAll(...) on
+     * EVERY focus change was noticeably visible as jank; the dedicated
+     * page per recipe now makes this scoping unnecessary, but it
+     * doesn't hurt as an extra safeguard). */
     function formScopeOf(el) {
         return el.closest('form') || document.body;
     }
 
-    /** Leert den Alias-/Nährwert-Hinweis JEDER Zutatenzeile DESSELBEN
-     * Rezepts außer der übergebenen - der Hinweis (inkl. des ggf.
-     * enthaltenen "Nährwerte nachtragen"-Kastens) soll immer nur an GENAU
-     * EINER Zeile stehen, nämlich der gerade fokussierten/bearbeiteten,
-     * statt an allen gleichzeitig (das wäre bei einer Zutatenliste mit
-     * vielen Zeilen schnell unübersichtlich). */
+    /** Clears the alias/nutrition hint of EVERY ingredient row of THE
+     * SAME recipe except the one passed in - the hint (including any
+     * "add nutrition data" box it may contain) should always be shown
+     * on exactly ONE row at a time, namely the one currently
+     * focused/being edited, instead of on all of them simultaneously
+     * (which would quickly get confusing for an ingredient list with
+     * many rows). */
     function clearOtherHints(exceptHintEl) {
         formScopeOf(exceptHintEl).querySelectorAll('.ingredient-alias-hint').forEach(el => {
             if (el !== exceptHintEl && el.innerHTML) el.innerHTML = '';
         });
     }
 
-    /** Zeigt den Hinweis für das gerade fokussierte Namensfeld (und leert
-     * alle übrigen, siehe oben) - sowohl beim echten Hineinklicken als
-     * auch, wenn ein Klick auf die Alias-Anzeige (.ing-name-display,
-     * siehe openIngredientNameField weiter unten) das darunterliegende
-     * <input> programmatisch fokussiert. 'focusin' statt 'focus', da Letzteres
-     * nicht bubbelt und sich damit nicht auf document.body delegieren
-     * ließe. Bewusst KEIN Leeren beim Verlassen des Felds (blur/focusout):
-     * die Hinweis-Box enthält selbst anklickbare Buttons ("Alias setzen",
-     * "Nährwerte speichern") - ein Leeren beim Blur würde deren Klick
-     * (blur feuert VOR click) ins Leere laufen lassen. Der Hinweis bleibt
-     * daher stehen, bis eine ANDERE Zutatenzeile fokussiert wird. */
+    /** Shows the hint for the currently focused name field (and clears
+     * all others, see above) - both on an actual click into it and
+     * when a click on the alias display (.ing-name-display, see
+     * openIngredientNameField further below) programmatically focuses
+     * the underlying <input>. 'focusin' instead of 'focus', since the
+     * latter doesn't bubble and thus couldn't be delegated to
+     * document.body. Deliberately NOT cleared on leaving the field
+     * (blur/focusout): the hint box itself contains clickable buttons
+     * ("Set alias", "Save nutrition data") - clearing on blur would
+     * cause their click (blur fires BEFORE click) to hit nothing. The
+     * hint therefore stays put until a DIFFERENT ingredient row is
+     * focused. */
     document.body.addEventListener('focusin', event => {
         if (!event.target.matches('input[name="ing_name[]"]')) return;
         const hintEl = hintContainerFor(event.target);
@@ -312,34 +313,34 @@
         renderHint(hintEl, titleCase(event.target.value));
     });
 
-    /** Zeigt bei bereits bestehenden Zutatenzeilen (recipe_form.html im
-     * Bearbeiten-Modus) standardmäßig den aufgelösten Alias-Namen
-     * (server-seitig als .ing-name-display-<span> vorbefüllt, siehe dort)
-     * statt des tatsächlich gespeicherten Namens - erst ein Klick/
-     * Tastatur-Aktivieren blendet das eigentliche, editierbare <input>
-     * ein (dessen Wert sich dadurch NIE von selbst ändert).
+    /** For already-existing ingredient rows (recipe_form.html in edit
+     * mode) shows by default the resolved alias name (pre-filled
+     * server-side as .ing-name-display-<span>, see there) instead of
+     * the actually stored name - only a click/keyboard activation
+     * reveals the actual, editable <input> (whose value therefore
+     * NEVER changes on its own).
      *
-     * Komplett über Event-Delegation auf document/document.body (wie der
-     * Rest dieser Datei) statt über direkte Listener pro Zeile - kommt so
-     * mit einer Handvoll Listenern für die GESAMTE Seite aus, unabhängig
-     * davon, wie viele Zutatenzeilen ein Rezept hat oder wie viele davon
-     * erst nachträglich per rformAddIngredientRow() hinzukommen.
+     * Entirely via event delegation on document/document.body (like
+     * the rest of this file) instead of direct listeners per row - this
+     * way a handful of listeners suffice for the ENTIRE page,
+     * regardless of how many ingredient rows a recipe has or how many
+     * of them are added later via rformAddIngredientRow().
      *
-     * Zum Schließen (zurück auf die Alias-Anzeige) wird bewusst NICHT auf
-     * das blur-Ereignis des <input> gesetzt: das würde voraussetzen, dass
-     * ein Klick auf ein anderes Element dessen Fokus übernimmt - manche
-     * Browser (v.a. Safari) verschieben den Tastaturfokus bei einem Klick
-     * aber NUR auf echte Formularfelder, nicht auf ein einfaches <span>,
-     * wodurch das bisherige Feld dort nie zuverlässig blurte. Stattdessen
-     * ein waschechter 'click'-Listener auf dem gesamten Dokument, der
-     * JEDES noch offene Feld schließt, dessen Zutatenzeile (.ingredient-
-     * row - bewusst die GANZE Zeile inkl. Alias-/Nährwert-Hinweis, nicht
-     * nur die Namens-Spalte, damit ein Klick auf "Alias setzen"/"Nährwerte
-     * speichern" für dieselbe Zeile es nicht versehentlich mit-schließt)
-     * den Klick NICHT enthält - unabhängig davon, ob der Browser dabei
-     * überhaupt einen Fokuswechsel für nötig hält. Per Tastatur (Tab)
-     * ergänzt der focusin-Listener ganz unten dasselbe zusätzlich
-     * zuverlässig, da Tab in jedem Browser echte Fokus-Ereignisse auslöst. */
+     * To close (revert back to the alias display) we deliberately do
+     * NOT rely on the <input>'s blur event: that would require a click
+     * on another element to take over focus - but some browsers
+     * (especially Safari) only move keyboard focus on a click to actual
+     * form fields, not to a plain <span>, so the previous field would
+     * never reliably blur there. Instead, a genuine 'click' listener on
+     * the entire document closes EVERY still-open field whose
+     * ingredient row (.ingredient-row - deliberately the WHOLE row
+     * including the alias/nutrition hint, not just the name column, so
+     * a click on "Set alias"/"Save nutrition data" for the same row
+     * doesn't accidentally close it too) does NOT contain the click -
+     * regardless of whether the browser even considers a focus change
+     * necessary for that. Via keyboard (Tab), the focusin listener
+     * further below additionally covers the same case reliably, since
+     * Tab triggers real focus events in every browser. */
     function ingNameInputFor(display) {
         const input = display.nextElementSibling;
         return (input && input.matches('.ing-name-input')) ? input : null;
@@ -382,9 +383,9 @@
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openIngredientNameField(event.target); }
     });
     document.addEventListener('click', event => {
-        // formScopeOf() statt document.querySelectorAll(...): dieser
-        // Listener feuert bei JEDEM Klick irgendwo auf der Seite (nicht
-        // nur auf Zutatenfeldern), siehe Kommentar bei formScopeOf.
+        // formScopeOf() instead of document.querySelectorAll(...): this
+        // listener fires on EVERY click anywhere on the page (not just
+        // on ingredient fields), see comment at formScopeOf.
         formScopeOf(event.target).querySelectorAll('.ing-name-input:not(.d-none)').forEach(openInput => {
             const row = openInput.closest('.ingredient-row');
             if (row && !row.contains(event.target)) revertIngredientNameField(openInput);

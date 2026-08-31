@@ -1,16 +1,16 @@
-"""Anzeige-Einstellungen EINES Plans (aktuell: bevorzugte Einheiten für
-Masse und Volumen, siehe services/units.py und models.py: AppSettings) -
-jeder Plan pflegt seine eigene Zeile, unabhängig von anderen Plänen."""
+"""Display settings of A SINGLE plan (currently: preferred units for mass
+and volume, see services/units.py and models.py: AppSettings) - each plan
+maintains its own row, independent of other plans."""
 
 from models import AppSettings, db
 from services.units import DEFAULT_DISPLAY_UNIT, DISPLAY_UNIT_CHOICES, MASS, VOLUME
 
 
 def get_settings(plan_id):
-    """Liefert die AppSettings-Zeile EINES Plans, legt sie bei Bedarf lazy
-    mit den Standardwerten (g/ml) an, statt dafür einen eigenen
-    Migrationsschritt für jeden neu angelegten Plan zu brauchen (siehe
-    app.py: init_db() für die einmalige Migration bestehender Bestandsdaten)."""
+    """Returns the AppSettings row of A SINGLE plan, lazily creating it with
+    the default values (g/ml) if needed, instead of requiring a separate
+    migration step for every newly created plan (see app.py: init_db() for
+    the one-time migration of existing legacy data)."""
     settings = AppSettings.query.filter_by(plan_id=plan_id).first()
     if not settings:
         settings = AppSettings(
@@ -24,19 +24,18 @@ def get_settings(plan_id):
 
 
 def get_display_units(plan_id):
-    """Liefert das Dict {'mass': ..., 'volume': ...} für
+    """Returns the dict {'mass': ..., 'volume': ...} for
     services/units.py: convert_for_display()."""
     settings = get_settings(plan_id)
     return {MASS: settings.mass_unit, VOLUME: settings.volume_unit}
 
 
 def update_display_units(plan_id, mass_unit, volume_unit):
-    """Speichert eine neue Anzeige-Einheiten-Wahl für EINEN Plan, sofern
-    beide Werte zu den erlaubten Optionen (services/units.py:
-    DISPLAY_UNIT_CHOICES) gehören. Gibt True bei Erfolg zurück, False bei
-    einem ungültigen Wert (dann bleibt die bisherige Einstellung
-    unverändert) - der Aufrufer (routes/settings.py) entscheidet, wie er
-    das dem Nutzer meldet."""
+    """Saves a new display-unit choice for A SINGLE plan, provided both
+    values are among the allowed options (services/units.py:
+    DISPLAY_UNIT_CHOICES). Returns True on success, False for an invalid
+    value (the previous setting then remains unchanged) - the caller
+    (routes/settings.py) decides how to report that to the user."""
     if mass_unit not in DISPLAY_UNIT_CHOICES[MASS] or volume_unit not in DISPLAY_UNIT_CHOICES[VOLUME]:
         return False
     settings = get_settings(plan_id)

@@ -1,6 +1,6 @@
-"""Tests für services/ingredient_aliases.py: Zutaten-Gleichsetzung für die
-Einkaufsliste (z.B. "Spaghetti"/"Fusilli" -> "Nudeln") - pro Plan getrennt
-gepflegt."""
+"""Tests for services/ingredient_aliases.py: ingredient aliasing for the
+shopping list (e.g. "Spaghetti"/"Fusilli" -> "Nudeln") - maintained
+separately per plan."""
 
 from services.ingredient_aliases import (
     delete_alias,
@@ -27,7 +27,7 @@ def test_set_alias_creates_mapping(app, test_plan_id):
     with app.app_context():
         set_alias(test_plan_id, "Spaghetti", "Nudeln")
         assert normalize_ingredient_name(test_plan_id, "Spaghetti") == "Nudeln"
-        # Andere Schreibweise/Groß-Kleinschreibung muss denselben Alias treffen.
+        # A different spelling/case must hit the same alias.
         assert normalize_ingredient_name(test_plan_id, "  spaghetti ") == "Nudeln"
 
 
@@ -37,7 +37,7 @@ def test_set_alias_groups_multiple_raw_names(app, test_plan_id):
         set_alias(test_plan_id, "Fusilli", "Nudeln")
         assert normalize_ingredient_name(test_plan_id, "Spaghetti") == "Nudeln"
         assert normalize_ingredient_name(test_plan_id, "Fusilli") == "Nudeln"
-        # Ein nicht zugeordneter Name bleibt unabhängig davon er selbst.
+        # An unmapped name remains itself regardless.
         assert normalize_ingredient_name(test_plan_id, "Reis") == "Reis"
 
 
@@ -68,7 +68,7 @@ def test_delete_alias_reverts_to_self(app, test_plan_id):
 
 def test_delete_alias_without_existing_mapping_is_a_noop(app, test_plan_id):
     with app.app_context():
-        delete_alias(test_plan_id, "Nichtvorhanden")  # darf keine Exception werfen
+        delete_alias(test_plan_id, "Nichtvorhanden")  # must not raise an exception
 
 
 def test_get_all_aliases_returns_dict(app, test_plan_id):

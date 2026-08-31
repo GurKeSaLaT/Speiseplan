@@ -1,5 +1,5 @@
-"""Tests für routes/plan/day_actions.py: AJAX-Endpunkte für einzelne
-Kalendertage (würfeln, manuell auswählen, Beilagen, Personenzahl, Tausch)."""
+"""Tests for routes/plan/day_actions.py: AJAX endpoints for individual
+calendar days (reroll, manual selection, side dishes, servings, swap)."""
 from datetime import date
 
 
@@ -434,14 +434,14 @@ def test_swap_days_swaps_main_recipe_excluded_and_sides(client, app, make_recipe
         assert row_b.main_recipe_id == recipe_a
         assert row_a.excluded is True
         assert row_b.excluded is False
-        # servings wandert bewusst NICHT mit (siehe Docstring von swap_days)
+        # servings is deliberately NOT swapped along (see docstring of swap_days)
         assert row_a.servings == 2
         assert row_b.servings == 3
-        # cooked gehört zum Hauptgericht (wie main_recipe_id/excluded),
-        # wandert beim Tausch also MIT.
+        # cooked belongs to the main dish (like main_recipe_id/excluded),
+        # so it DOES swap along.
         assert row_a.cooked is False
         assert row_b.cooked is True
-        # Die Beilage ist jetzt an Tag B, nicht mehr an Tag A.
+        # The side dish is now on day B, no longer on day A.
         assert PlanDaySide.query.filter_by(plan_day_id=row_a.id).count() == 0
         assert PlanDaySide.query.filter_by(plan_day_id=row_b.id).count() == 1
 
@@ -455,7 +455,7 @@ def test_swap_days_creates_missing_plan_day_rows(client, app):
         assert PlanDay.query.filter_by(date=date(2026, 6, 16)).first() is not None
 
 
-# --- cooked (Hauptgericht) ---
+# --- cooked (main dish) ---
 
 def test_set_day_cooked_invalid_date_returns_400(client):
     resp = client.post("/day/garbage/cooked", json={"cooked": True})
@@ -492,7 +492,7 @@ def test_set_day_cooked_toggles_true_and_false(client, app, make_recipe):
         assert PlanDay.query.filter_by(date=date(2026, 6, 15)).first().cooked is False
 
 
-# --- cooked (Beilage) ---
+# --- cooked (side dish) ---
 
 def test_set_side_cooked_invalid_date_returns_400(client):
     resp = client.post("/day/garbage/side/1/cooked", json={"cooked": True})

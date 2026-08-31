@@ -1,21 +1,20 @@
-{# Reine Rezept-Übersicht (/manage/recipe/edit-list): Suche/Filter, Badges,
-   Bearbeiten-/Löschen-Link. Das eigentliche Bearbeiten-Formular liegt seit
-   der Formular-Überarbeitung auf einer eigenen Seite PRO Rezept (siehe
-   routes/recipes.py: recipe_edit_view(), /manage/recipe/edit/<id>,
-   templates/recipe_form.html) - vorher steckte hier für JEDES Rezept ein
-   vollständiges, nur per <template> inert gehaltenes Bearbeiten-Formular
-   (siehe frühere static/recipe_edit_modal.js), das beim tatsächlichen
-   Öffnen erst in ein gemeinsames Modal geklont wurde. Eine eigene Seite
-   pro Rezept braucht diesen ganzen Klon-Mechanismus gar nicht erst: es
-   liegt ohnehin nie mehr als EIN Rezept-Formular gleichzeitig im DOM. #}
+{# Plain recipe overview (/manage/recipe/edit-list): search/filter, badges,
+   edit/delete link. Since the form overhaul, the actual edit form lives on
+   its own page PER recipe (see routes/recipes.py: recipe_edit_view(),
+   /manage/recipe/edit/<id>, templates/recipe_form.html) - before that, a
+   full edit form for EVERY recipe sat here, kept inert only via
+   <template> (see the former static/recipe_edit_modal.js), and was only
+   cloned into a shared modal when actually opened. A dedicated page per
+   recipe doesn't need this whole cloning mechanism in the first place:
+   there is never more than ONE recipe form in the DOM at a time anyway. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-12 col-md-9">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-warning text-dark py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">📝 Rezepte bearbeiten oder löschen</h4>
-                <a href="/manage" class="btn btn-sm btn-outline-dark fw-bold"><- Zurück</a>
+                <h4 class="card-title mb-0 fw-bold">📝 {{ _('Edit or delete recipes') }}</h4>
+                <a href="/manage" class="btn btn-sm btn-outline-dark fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
                 {% if user_plans|length > 1 %}
@@ -30,53 +29,54 @@
                 </ul>
                 {% endif %}
                 {% if recipes %}
-                <input type="text" id="recipeFilter" class="form-control mb-3" placeholder="🔍 Rezept oder Kategorie suchen..." autocomplete="off">
+                <input type="text" id="recipeFilter" class="form-control mb-3" placeholder="{{ _('🔍 Search recipe or category...') }}" autocomplete="off">
                 {% endif %}
-                {# Kachel-Raster statt der früheren .list-group-Zeilen - einheitliche
-                   Tag-"Chips" (.chip, siehe static/style.css) statt gemischter
-                   bg-secondary/bg-info/bg-light-Badges, Knöpfe teilen sich per
-                   .rc-actions/flex:1 immer zu gleichen Teilen die Kartenbreite, und
-                   .rc-spacer schiebt sie unabhängig von der Tag-Anzahl an die
-                   Unterkante - mit dem Nutzer abgestimmtes Mockup. #}
+                {# Tile grid instead of the previous .list-group rows -
+                   uniform tag "chips" (.chip, see static/style.css) instead
+                   of mixed bg-secondary/bg-info/bg-light badges, buttons
+                   always share the card width equally via
+                   .rc-actions/flex:1, and .rc-spacer pushes them to the
+                   bottom edge regardless of the tag count - mockup agreed
+                   with the user. #}
                 {% if recipes %}
                 <div class="recipe-grid" id="recipeList">
                     {% for recipe in recipes %}
                     <div class="recipe-card recipe-list-row" data-search="{{ recipe.name|lower }} {{ recipe.category.name|lower }}">
                         <div class="rc-head">
                             <span class="rc-name">{{ recipe.name }}</span>
-                            {% if recipe.is_favorite %}<span class="rc-star" title="Favorit">⭐</span>{% endif %}
+                            {% if recipe.is_favorite %}<span class="rc-star" title="{{ _('Favorite') }}">⭐</span>{% endif %}
                         </div>
                         <div class="rc-tags">
                             <span class="chip chip-fact">{{ recipe.category.name }}</span>
                             <span class="chip chip-fact">👥 {{ recipe.servings }}</span>
                             {% if recipe.is_side_dish %}
-                            <span class="chip chip-flag">🥗 Beilage</span>
+                            <span class="chip chip-flag">🥗 {{ _('Side dish') }}</span>
                             {% endif %}
                             {% if recipe.owner_plan_id != own_plan_id %}
-                            <span class="chip chip-linked" title="Aus einem anderen Plan eingebunden">🔗 Verknüpft</span>
+                            <span class="chip chip-linked" title="{{ _('Linked in from another plan') }}">🔗 {{ _('Linked') }}</span>
                             {% endif %}
                             {% for label in recipe_labels[recipe.id] %}
                             <span class="chip chip-flag">{{ label }}</span>
                             {% endfor %}
                             {% if recipe.source_url %}
-                            <a href="{{ recipe.source_url }}" target="_blank" rel="noopener noreferrer" class="chip chip-linked text-decoration-none" title="Quelle öffnen">🔗 Quelle</a>
+                            <a href="{{ recipe.source_url }}" target="_blank" rel="noopener noreferrer" class="chip chip-linked text-decoration-none" title="{{ _('Open source') }}">🔗 {{ _('Source') }}</a>
                             {% endif %}
                         </div>
                         <div class="rc-spacer"></div>
                         <div class="rc-actions">
                             <a href="{{ url_for('recipes.recipe_edit_view', id=recipe.id, plan_id=plan_id) }}" class="rc-btn-edit">
-                                Bearbeiten ✏️
+                                {{ _('Edit') }} ✏️
                             </a>
                             {% if recipe.owner_plan_id == own_plan_id %}
                             <button type="button" class="rc-btn-delete" onclick="deleteRecipeSafely({{ recipe.id }}, '{{ recipe.name }}')">
-                                Löschen 🗑️
+                                {{ _('Delete') }} 🗑️
                             </button>
                             {% else %}
                             <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=own_plan_id) }}" class="m-0 flex-fill">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="plan_id" value="{{ plan_id }}">
-                                <button type="submit" class="rc-btn-unlink w-100" title="Nur aus diesem Plan entfernen, das Rezept bleibt in seinem Ursprungsplan erhalten">
-                                    Entfernen 🔗
+                                <button type="submit" class="rc-btn-unlink w-100" title="{{ _('Remove from this plan only, the recipe remains in its original plan') }}">
+                                    {{ _('Remove') }} 🔗
                                 </button>
                             </form>
                             {% endif %}
@@ -85,7 +85,7 @@
                     {% endfor %}
                 </div>
                 {% else %}
-                <div class="text-center p-5 text-muted">Noch keine Essen eingetragen.</div>
+                <div class="text-center p-5 text-muted">{{ _('No dishes added yet.') }}</div>
                 {% endif %}
             </div>
         </div>
@@ -94,21 +94,20 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Rein clientseitiger Fuzzy-Filter über die Rezeptliste (siehe
-// static/fuzzy_search.js) - kein Server-Roundtrip nötig.
-// row.dataset.search enthält Name UND Kategorie (siehe data-search oben) -
-// eine Suche nach "Beilagen" findet so auch Rezepte, deren Name selbst
-// nicht "Beilagen" enthält.
+// Purely client-side fuzzy filter over the recipe list (see
+// static/fuzzy_search.js) - no server roundtrip needed.
+// row.dataset.search contains both name AND category (see data-search
+// above) - so a search for "side dishes" also finds recipes whose name
+// itself doesn't contain "side dishes".
 const recipeFilterInput = document.getElementById('recipeFilter');
 wireFuzzyFilter(recipeFilterInput, '.recipe-list-row', row => row.dataset.search);
 
-// Suchbegriff über einen echten Seitenaufruf hinweg merken: das
-// Bearbeiten-Formular liegt jetzt auf einer eigenen Seite (siehe
-// routes/recipes.py: recipe_edit_view()) - ein Speichern lädt danach diese
-// Liste über den redirect(url_for(...)) in edit_recipe() komplett neu,
-// ohne das hier würde ein eingetippter Suchbegriff dabei verloren gehen.
-// sessionStorage statt localStorage, da der Suchbegriff nur für die
-// laufende Sitzung sinnvoll ist, nicht dauerhaft.
+// Remember the search term across an actual page load: the edit form now
+// lives on its own page (see routes/recipes.py: recipe_edit_view()) - a
+// save then fully reloads this list via the redirect(url_for(...)) in
+// edit_recipe(), without this a typed search term would be lost in the
+// process. sessionStorage instead of localStorage, since the search term
+// only makes sense for the current session, not permanently.
 if (recipeFilterInput) {
     const FILTER_STORAGE_KEY = 'speiseplan.recipeEditFilter';
     const savedFilter = sessionStorage.getItem(FILTER_STORAGE_KEY);
@@ -121,19 +120,19 @@ if (recipeFilterInput) {
     });
 }
 
-// Löscht ein Rezept per erzeugtem, sofort abgeschicktem POST-Formular (der
-// Löschen-Button selbst ist kein <button type="submit"> in einem echten
-// Formular, da er außerhalb jedes <form> in der Listen-Zeile steht - siehe
-// oben "Löschen 🗑️"). recipeName wird aktuell nicht verwendet (keine
-// Sicherheitsabfrage vor dem Löschen), ist aber Teil der Signatur, falls
-// später ein Bestätigungsdialog ergänzt werden soll.
+// Deletes a recipe via a dynamically created, immediately submitted POST
+// form (the Delete button itself is not a <button type="submit"> inside a
+// real form, since it sits outside any <form> in the list row - see above
+// "Delete 🗑️"). recipeName is currently unused (no confirmation prompt
+// before deleting), but is part of the signature in case a confirmation
+// dialog is added later.
 function deleteRecipeSafely(recipeId, recipeName) {
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/delete-recipe/' + recipeId;
-    // CSRF-Token aus dem <meta>-Tag in base.html - dieses Formular existiert
-    // nur zur Laufzeit im DOM (siehe oben), braucht das Token also genauso
-    // wie jedes server-gerenderte <form>.
+    // CSRF token from the <meta> tag in base.html - this form only exists
+    // in the DOM at runtime (see above), so it needs the token just like
+    // any server-rendered <form>.
     const tokenInput = document.createElement('input');
     tokenInput.type = 'hidden';
     tokenInput.name = 'csrf_token';
