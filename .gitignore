@@ -8,15 +8,15 @@ __pycache__/
 .venv/
 venv/
 
-# SQLite runtime files (die eigentliche speiseplan.db bleibt versioniert)
+# SQLite runtime files (the actual speiseplan.db stays version-controlled)
 instance/*.db-journal
 instance/*.db-wal
 instance/*.db-shm
 
-# Automatisch generierter Flask-Signierschlüssel (CSRF/Sessions, siehe
-# app.py: load_or_create_secret_key) - pro Umgebung eigenständig erzeugt,
-# gehört NICHT ins Repo (sonst könnten alle Deployments dieselben Tokens
-# fälschen).
+# Auto-generated Flask signing key (CSRF/sessions, see app.py:
+# load_or_create_secret_key) - generated independently per environment,
+# does NOT belong in the repo (otherwise all deployments could forge each
+# other's tokens).
 instance/secret_key
 
 # Editor/OS
