@@ -4,21 +4,18 @@ index 0-6 within that week - unlike the day actions in day_actions.py,
 which work directly with concrete calendar days.
 """
 
-from collections import Counter
 from datetime import date, timedelta
 
 from flask import render_template, request, redirect, url_for, abort
 from flask_babel import gettext as _
 
-from models import db, Category, Recipe, PlanDay, PlanDaySide, ExtraShoppingItem
+from models import db, Category, PlanDay, PlanDaySide, ExtraShoppingItem
 from services.auth import current_plan, current_user, user_plan_memberships
-from services.planning import (
-    DAY_NAMES, monday_of, week_dates_for, parse_iso_date,
-    assign_balanced_categories, choose_recipe, jsonify_recipe, jsonify_side
-)
+from services.planning import DAY_NAMES, monday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
 from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
+from services.week_generation import generate_week
 from routes.plan import plan_bp
 
 
@@ -240,7 +237,7 @@ def week_generate(start_date):
     balanced way to fill the rest, and writes the result permanently to
     the database as PlanDay rows.
 
-    Flow in six steps (numbered in the code):
+    Flow in three steps (numbered in the code):
 
     1. Read the form: for each of the 7 days (index 0=Monday...6=Sunday,
        NOT the same as a calendar date - the form only knows the position
@@ -251,34 +248,19 @@ def week_generate(start_date):
        regardless of exclusion status - an excluded day (no main dish)
        can still have fixed side dishes.
 
-    2./2b. The recipe IDs referenced in the form are looked up in ONE
-       database query per list (instead of one query per day) and
-       entered into final_plan (a list with 7 entries, None = nothing
-       assigned yet) or final_side_plan (a list of 7 LISTS of recipes).
-       used_recipe_ids collects all already fixed MAIN DISH IDs along the
-       way, so they aren't assigned twice during the automatic fill-in in
-       step 5. Side dishes are deliberately NEVER rolled automatically -
-       only fixed side dishes end up in the plan at creation time;
-       everything else runs via the dice/pencil buttons on the finished
-       plan page (see day_actions.py: add_side/reroll_one_side/set_one_side).
+    2. The actual balanced-category-assignment + recipe-selection
+       orchestration (looking up the fixed dishes, determining which
+       days still need automatic filling, assigning a category to each,
+       then rolling a concrete recipe per day) lives in
+       services/week_generation.py: generate_week() - see there for the
+       detailed step-by-step docstring. Side dishes are deliberately
+       NEVER rolled automatically - only fixed side dishes end up in the
+       plan at creation time; everything else runs via the dice/pencil
+       buttons on the finished plan page (see
+       routes/plan/day_actions_sides.py: add_side/reroll_one_side/
+       set_one_side).
 
-    3. days_to_fill: the day indices that are neither excluded nor
-       already fixed - exactly the ones the next two steps still need to
-       fill.
-
-    4. For each of these days, a CATEGORY (not yet a recipe) is
-       determined via assign_balanced_categories() - see
-       services/planning.py for the balance/neighborhood logic. Already
-       fixed days are factored in as a "preload" (preexisting_counts), so
-       the category distribution stays balanced across the ENTIRE week,
-       not just across the newly filled days.
-
-    5. For each day, a concrete recipe from the assigned category is
-       then rolled (choose_recipe); if that category has no matching
-       candidates left, a category-independent roll is made instead, so
-       that SOME recipe ends up in the plan rather than none at all.
-
-    6. Only now is anything persisted: for each of the 7 calendar days of
+    3. Only now is anything persisted: for each of the 7 calendar days of
        this week, the matching PlanDay row is fetched or newly created
        (get-or-create) and overwritten with the result. For the side
        dishes, ALL existing PlanDaySide rows of this day are deleted
@@ -294,8 +276,6 @@ def week_generate(start_date):
     start = monday_of(start)
     dates = week_dates_for(start)
     plan = current_plan()
-
-    all_categories = Category.query.filter_by(plan_id=plan.id).all()
 
     # 1. Read form data per day: fixed assignment + exclusion status
     excluded_days = set()
@@ -317,68 +297,11 @@ def week_generate(start_date):
         if side_rids:
             day_side_recipe_ids[i] = list(dict.fromkeys(side_rids))
 
-    # 2. Look up fixed main dishes by their ID
-    final_plan = [None] * 7
-    used_recipe_ids = set()
+    # 2. Balanced category assignment + recipe selection (see
+    # services/week_generation.py: generate_week()).
+    final_plan, final_side_plan = generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids)
 
-    if day_recipe_ids:
-        unique_ids = list(set(day_recipe_ids.values()))
-        recipes_by_id = {str(r.id): r for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(unique_ids)).all()}
-        for day_index, rid in day_recipe_ids.items():
-            recipe = recipes_by_id.get(rid)
-            if recipe:
-                final_plan[day_index] = recipe
-                used_recipe_ids.add(recipe.id)
-
-    # 2b. Look up fixed additional dishes (side dishes) by their IDs -
-    # now a LIST of recipes per day instead of at most a single one.
-    final_side_plan = [[] for _ in range(7)]
-
-    if day_side_recipe_ids:
-        unique_side_ids = list({rid for rids in day_side_recipe_ids.values() for rid in rids})
-        side_recipes_by_id = {
-            str(r.id): r for r in visible_recipes_query(plan.id).filter(Recipe.id.in_(unique_side_ids)).all()
-        }
-        for day_index, rids in day_side_recipe_ids.items():
-            for rid in rids:
-                recipe = side_recipes_by_id.get(rid)
-                if recipe:
-                    final_side_plan[day_index].append(recipe)
-
-    # 3. Which days still need to be filled automatically?
-    days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
-
-    # 4. Determine category per day to fill (see docstring above)
-    preexisting_counts = Counter(
-        final_plan[day_index].category_id
-        for day_index in day_recipe_ids
-        if final_plan[day_index] is not None
-    )
-    category_by_day = assign_balanced_categories(
-        all_categories, days_to_fill, final_plan, preexisting_counts=preexisting_counts
-    )
-
-    # 5. Fill remaining days with matching, not-yet-used main dishes.
-    # reference_date=dates[day_index] activates the soft repetition
-    # weighting in choose_recipe() (see services/planning.py) - recipes
-    # that have already been used often in the weeks BEFORE exactly this
-    # calendar day are thereby rolled less often (but never made
-    # impossible).
-    for day_index, needed_cat_id in category_by_day.items():
-        chosen = choose_recipe(
-            is_side_dish=False, exclude_ids=used_recipe_ids, plan_id=plan.id, category_id=needed_cat_id,
-            reference_date=dates[day_index]
-        )
-        if not chosen:
-            chosen = choose_recipe(
-                is_side_dish=False, exclude_ids=used_recipe_ids, plan_id=plan.id, reference_date=dates[day_index]
-            )
-
-        if chosen:
-            final_plan[day_index] = chosen
-            used_recipe_ids.add(chosen.id)
-
-    # 6. Save permanently: one PlanDay per real calendar day of this week
+    # 3. Save permanently: one PlanDay per real calendar day of this week
     for i in range(7):
         day_date = dates[i]
         plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=day_date).first()
