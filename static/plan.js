@@ -625,7 +625,7 @@ function renderRecipeDetailBody(recipe, targetServings) {
 /**
  * Saves the changed "cooked" checkbox of the currently open detail
  * window server-side (routes/plan/day_actions.py: set_day_cooked()/
- * set_side_cooked()) and, on success, updates both the local state
+ * routes/plan/day_actions_sides.py: set_side_cooked()) and, on success, updates both the local state
  * (dayCooked, or the cooked field directly on the side-dish object) and
  * - via refreshDayCard()/refreshSidesSection() - the grayed-out state of
  * the affected day card, without closing the detail window for it.

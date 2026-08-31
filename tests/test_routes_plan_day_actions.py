@@ -1,5 +1,5 @@
-"""Tests for routes/plan/day_actions.py: AJAX endpoints for individual
-calendar days (reroll, manual selection, side dishes, servings, swap)."""
+"""Tests for routes/plan/day_actions.py and day_actions_sides.py: AJAX
+endpoints for individual calendar days (reroll, manual selection, side dishes, servings, swap)."""
 from datetime import date
 
 

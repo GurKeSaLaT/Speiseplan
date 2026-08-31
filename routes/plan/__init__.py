@@ -5,15 +5,18 @@ PlanDay/PlanDaySide.
 
 This package replaces the former single routes/plan.py, which had grown
 to over 800 lines over time (page routes, day actions, side-dish actions,
-and shopping-list actions all in one file) - now split across three
+and shopping-list actions all in one file) - now split across four
 topically separated files, which all share the SAME plan_bp blueprint
 (defined here, imported and populated there via @plan_bp.route(...)):
 
 - pages.py: page routes (/, /plan/<start_date>, /plan/<start_date>/create,
   /plan/<start_date>/generate) - deliver whole HTML pages or redirect.
-- day_actions.py: AJAX endpoints for individual calendar days (roll/select
-  main dish, add/roll/select/remove/move side dishes, servings, swap
-  days).
+- day_actions.py: AJAX endpoints for a day's MAIN DISH, plus the
+  whole-day swap/servings/cooked-toggle actions.
+- day_actions_sides.py: AJAX endpoints for a day's SIDE DISHES
+  (add/reroll/select/remove/move/cooked-toggle) - split out from
+  day_actions.py since these are additionally ITEM-specific (a day can
+  have any number of side dishes).
 - shopping.py: AJAX endpoints for items manually added to the shopping
   list (ExtraShoppingItem) that don't belong to any recipe.
 
@@ -28,8 +31,8 @@ from flask import Blueprint
 plan_bp = Blueprint('plan', __name__)
 
 # The imports here are what actually trigger route registration: each of
-# the three files decorates its functions with @plan_bp.route(...), which
+# the four files decorates its functions with @plan_bp.route(...), which
 # only happens when the respective module is executed. Without these
 # imports (even though plan_bp appears "unused") the routes simply would
 # not be registered.
-from routes.plan import pages, day_actions, shopping  # noqa: E402,F401
+from routes.plan import pages, day_actions, day_actions_sides, shopping  # noqa: E402,F401

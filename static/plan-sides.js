@@ -98,7 +98,7 @@ function openSideManualSelect(dayIndex, sideId) {
 
 /**
  * Creates a NEW side dish for a day (calls
- * routes/plan/day_actions.py: add_side() server-side) - in addition to
+ * routes/plan/day_actions_sides.py: add_side() server-side) - in addition to
  * any already present, a day can have any number. recipeId is optional:
  * if set (manual selection via ✏️), exactly that recipe is used; if
  * missing (🎲 button), the server rolls one at random, taking weekly
@@ -200,7 +200,7 @@ function sideDragStart(event, dayIndex, sideId) {
 
 /**
  * Moves A SINGLE side dish from sourceDayIndex to targetDayIndex (calls
- * routes/plan/day_actions.py: move_one_side() server-side) - a one-way
+ * routes/plan/day_actions_sides.py: move_one_side() server-side) - a one-way
  * move, not a swap: the target day keeps everything it already had, and
  * gets the side dish in addition. On success, updates both affected side
  * dish sections (not the whole card, the main dish stays untouched after
