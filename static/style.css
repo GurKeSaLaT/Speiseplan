@@ -1,52 +1,52 @@
 /* static/style.css */
 
-/* Helle Standardwerte (auch der Fallback, falls JavaScript deaktiviert ist -
-   ohne das früh in base.html laufende Theme-Skript bleibt data-bs-theme
-   unbesetzt, und :root greift dann ganz normal). --card-bg/--border-subtle/
-   --scrollbar-thumb/--highlight-bg/--excluded-bg sind zusätzliche, rein
-   app-eigene Tokens (kein Bootstrap-Äquivalent) für die Stellen, an denen
-   früher fest verdrahtete Hex-Farben standen (Karten-Hintergrund,
-   Listen-Trennlinien, Scrollbar, Drag-over-/Ausgenommen-Hervorhebung). */
+/* Light default values (also the fallback if JavaScript is disabled -
+   without the theme script that runs early in base.html, data-bs-theme
+   stays unset, and :root applies normally). --card-bg/--border-subtle/
+   --scrollbar-thumb/--highlight-bg/--excluded-bg are additional, purely
+   app-own tokens (no Bootstrap equivalent) for the spots that used to
+   have hardwired hex colors (card background, list dividers, scrollbar,
+   drag-over/excluded highlight). */
 :root {
-    --primary-food: #2E6F40;       /* Salbeigrün */
-    --primary-dark: #1E4A2A;       /* Dunkelgrün für Hover */
-    --accent-warm: #F4C430;        /* Sonnengelb */
-    --bg-warm: #F9F9F6;            /* Creme-Weiß */
-    --text-dark: #2B302A;          /* Anthrazit-Grün */
-    --radius-main: 1rem;           /* 16px abgerundete Ecken */
+    --primary-food: #2E6F40;       /* Sage green */
+    --primary-dark: #1E4A2A;       /* Dark green for hover */
+    --accent-warm: #F4C430;        /* Sun yellow */
+    --bg-warm: #F9F9F6;            /* Creamy white */
+    --text-dark: #2B302A;          /* Anthracite green */
+    --radius-main: 1rem;           /* 16px rounded corners */
 
     --card-bg: #ffffff;
     --border-subtle: #F1F1EE;
     --scrollbar-thumb: #D1D1CB;
-    --highlight-bg: #E8EFEA;       /* Drag-over-/Hover-Hervorhebung */
-    --excluded-bg: #eeeeee;        /* von der Planung ausgenommener Tag */
+    --highlight-bg: #E8EFEA;       /* Drag-over/hover highlight */
+    --excluded-bg: #eeeeee;        /* Day excluded from planning */
 
-    /* Seitenleiste der Verwaltungs-Übersichtsseite (templates/manage.html) -
-       ein Hauch dunkler/wärmer als --bg-warm, damit sich die feste
-       Navigationsspalte optisch vom Hauptinhalt absetzt, ohne wie eine
-       weitere Karte auf demselben Hintergrund zu wirken. */
+    /* Sidebar of the management overview page (templates/manage.html) -
+       a touch darker/warmer than --bg-warm, so the fixed navigation
+       column visually sets itself apart from the main content, instead
+       of looking like just another card on the same background. */
     --rail-bg: #EFEBE1;
     --rail-border: #E2DCCB;
 }
 
-/* --- DUNKELMODUS ---
-   Wird durch das Attribut data-bs-theme="dark" auf <html> aktiviert - je
-   nach gewählter Einstellung (System/Hell/Dunkel) setzt das früh in
-   base.html laufende Theme-Skript dieses Attribut, BEVOR die Seite sichtbar
-   wird (kein Aufblitzen des falschen Modus). Bootstrap 5.3 selbst reagiert
-   auf genau dasselbe Attribut und passt darüber automatisch alle eigenen
-   Komponenten an (Karten, Formulare, Modals, Badges, Navbar, ...) - hier
-   werden nur die APP-EIGENEN Tokens von oben für den Dunkelmodus neu
-   definiert, plus ein paar gezielte Korrekturen für Bootstrap-Klassen, die
-   NICHT automatisch mitziehen (siehe Kommentare unten bei .text-dark/
-   .bg-dark/.btn-dark/.btn-outline-dark - Bootstrap versteht "dark" als
-   Farbnamen, nicht als "passt sich der Umgebung an", wird im Dunkelmodus
-   selbst aber kaum noch sichtbar). */
+/* --- DARK MODE ---
+   Activated by the data-bs-theme="dark" attribute on <html> - depending
+   on the chosen setting (system/light/dark), the theme script that runs
+   early in base.html sets this attribute BEFORE the page becomes visible
+   (no flash of the wrong mode). Bootstrap 5.3 itself reacts to this exact
+   same attribute and automatically adapts all of its own components
+   through it (cards, forms, modals, badges, navbar, ...) - here, only the
+   APP'S OWN tokens from above are redefined for dark mode, plus a few
+   targeted fixes for Bootstrap classes that do NOT follow along
+   automatically (see the comments below at .text-dark/.bg-dark/
+   .btn-dark/.btn-outline-dark - Bootstrap understands "dark" as a color
+   name, not as "adapts to its surroundings", and becomes barely visible
+   in dark mode itself). */
 [data-bs-theme="dark"] {
-    --primary-food: #4CAE6E;       /* etwas heller als im Hellmodus, sonst zu dunkel auf dunklem Grund */
+    --primary-food: #4CAE6E;       /* Slightly lighter than in light mode, otherwise too dark on a dark background */
     --primary-dark: #3C8E56;
-    --accent-warm: #F4C430;        /* bleibt gut sichtbar, unverändert */
-    --bg-warm: #1B1F1C;            /* dunkler, leicht grünlicher Hintergrund passend zum Farbthema */
+    --accent-warm: #F4C430;        /* Stays clearly visible, unchanged */
+    --bg-warm: #1B1F1C;            /* Darker, slightly greenish background matching the color theme */
     --text-dark: #E7E7E2;
 
     --card-bg: #262B27;
@@ -66,13 +66,12 @@ body {
 }
 
 /* ============================================================
-   APP-SHELL: die persistente Seitenleiste (siehe templates/base.html),
-   auf JEDER Seite - ersetzt die frühere grüne Top-Navbar mit
-   Hover-Dropdown. Zusammen mit den darunter stehenden Kachel-/Stat-/
-   Panel-Klassen (ursprünglich nur auf /manage, siehe templates/manage.html)
-   das gemeinsame, site-weite Design-System - deshalb hier global statt in
-   einem Seiten-eigenen <style>-Block, wie es die Kachel-Vorgängerversion
-   dieser Seite noch hatte.
+   APP SHELL: the persistent sidebar (see templates/base.html), on EVERY
+   page - replaces the former green top navbar with hover dropdown.
+   Together with the tile/stat/panel classes further below (originally
+   only on /manage, see templates/manage.html), this is the shared,
+   site-wide design system - kept global here instead of in a page's own
+   <style> block, unlike the tile-based predecessor version of this page.
    ============================================================ */
 .app-shell {
     display: grid;
@@ -167,9 +166,9 @@ body {
     .nav-link, .rail-link { white-space: nowrap; }
 }
 
-/* ---- Dashboard-Bausteine (Kachel/Kennzahl/Panel) - ursprünglich nur auf
-   /manage, jetzt als gemeinsames Vokabular auch für andere Seiten (z.B.
-   die Wochen-Nährwertübersicht auf templates/plan.html) verfügbar. ---- */
+/* ---- Dashboard building blocks (tile/stat/panel) - originally only on
+   /manage, now available as shared vocabulary for other pages too (e.g.
+   the weekly nutrition overview on templates/plan.html). ---- */
 .eyebrow {
     font-size: 0.72rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
     color: var(--primary-food); margin: 0 0 0.5rem;
@@ -249,10 +248,10 @@ body {
     padding: 0.5rem 1rem !important; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
 }
 
-/* Karten-Kopfzeile mit dünner Trennlinie statt vollflächiger Akzentfarbe
-   (z.B. "Dein Wochenplan"/"Einkaufsliste" auf templates/plan.html) - ersetzt
-   die frühere durchgehend grün gefüllte .card-header-custom für Panels,
-   die eher wie ein Datenblock als wie ein Seitenabschnitt wirken sollen. */
+/* Card header with a thin divider instead of a full accent-color fill
+   (e.g. "Your weekly plan"/"Shopping list" on templates/plan.html) -
+   replaces the former solid-green-filled .card-header-custom for panels
+   meant to read more like a data block than a page section. */
 .panel-head {
     padding: 1rem 1.2rem; border-bottom: 1px solid var(--border-subtle);
     display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
@@ -334,30 +333,29 @@ body {
     border-radius: 10px;
 }
 
-/* --- Gezielte Dunkelmodus-Korrekturen für Bootstrap-Klassen, die "dark"
-   wörtlich als feste Farbe verstehen und dadurch im Dunkelmodus kaum noch
-   sichtbar wären (Bootstraps --bs-dark bleibt auch im eigenen Dunkelmodus
-   nahezu identisch mit --bs-body-bg - Text/Buttons mit "dark" würden sonst
-   fast unsichtbar auf dem jetzt ebenfalls dunklen Seitenhintergrund
-   verschwinden). Bewusst NICHT die Bootstrap-Variable --bs-dark selbst
-   umdefiniert (das würde Text- UND Hintergrund-Nutzungen gleichzeitig und
-   nicht immer sinnvoll treffen), sondern die paar tatsächlich in diesem
-   Projekt vorkommenden .text-dark/.bg-dark/.btn-dark/.btn-outline-dark-
-   Stellen gezielt korrigiert.
+/* --- Targeted dark-mode fixes for Bootstrap classes that understand
+   "dark" literally as a fixed color and would therefore become barely
+   visible in dark mode (Bootstrap's --bs-dark stays nearly identical to
+   --bs-body-bg even in its own dark mode - text/buttons with "dark"
+   would otherwise nearly disappear on the now-also-dark page
+   background). Deliberately NOT redefining the Bootstrap variable
+   --bs-dark itself (that would hit text AND background uses at once,
+   not always sensibly), but instead targeting the few .text-dark/
+   .bg-dark/.btn-dark/.btn-outline-dark spots that actually occur in this
+   project.
 
-   Für .btn-dark/.btn-outline-dark werden dabei bewusst die LOKALEN
-   --bs-btn-*-Eigenschaften umgesetzt (--bs-btn-bg/--bs-btn-hover-bg/
-   --bs-btn-active-bg/...) statt einzelner CSS-Properties wie
-   background-color: Bootstraps Button-Varianten setzen ihre Hover-/
-   Active-/Checked-Farben nämlich NICHT über die globale --bs-dark-
-   Variable, sondern über genau diese lokalen, beim Bauen der Bibliothek
-   fest verdrahteten Eigenschaften (z.B. --bs-btn-active-bg:#212529) - ein
-   einfaches background-color-Override würde daher nur den Ruhezustand
-   treffen, nicht aber :hover oder den "ausgewählt"-Zustand des
-   Darstellungs-Umschalters auf der Verwaltungsseite (.btn-check:checked +
-   .btn-outline-dark). Die lokalen Eigenschaften neu zu setzen ist der von
-   Bootstrap 5.3 selbst vorgesehene Weg, eine Variante umzufärben, und
-   funktioniert dadurch automatisch in jedem Button-Zustand. */
+   For .btn-dark/.btn-outline-dark, the LOCAL --bs-btn-* properties are
+   deliberately set (--bs-btn-bg/--bs-btn-hover-bg/--bs-btn-active-bg/...)
+   instead of individual CSS properties like background-color: Bootstrap's
+   button variants do NOT set their hover/active/checked colors via the
+   global --bs-dark variable, but via exactly these local properties
+   hardwired when the library was built (e.g. --bs-btn-active-bg:#212529)
+   - a plain background-color override would therefore only hit the
+   resting state, not :hover or the "selected" state of the display-mode
+   switcher on the management page (.btn-check:checked +
+   .btn-outline-dark). Resetting the local properties is the way
+   Bootstrap 5.3 itself intends for recoloring a variant, and thereby
+   works automatically in every button state. */
 [data-bs-theme="dark"] .btn-dark {
     --bs-btn-bg: var(--primary-food);
     --bs-btn-border-color: var(--primary-food);
@@ -380,23 +378,24 @@ body {
     --bs-btn-active-border-color: var(--primary-food);
 }
 
-/* .text-dark soll im Dunkelmodus normalerweise auf helle Schrift wechseln
-   (Überschriften, Namen in Listen/Kärtchen, ...) - AUSSER es steht
-   zusammen mit einer der wenigen bewusst IMMER hellen/farbigen Bootstrap-
-   Hintergrundklassen auf DEMSELBEN Element (.badge: die kleinen Season-/
-   Link-/Beilage-Badges; .bg-warning/.btn-warning: die "Bearbeiten"-
-   Akzentfarbe in recipe_edit_list.html) - deren Hintergrund bleibt
-   unabhängig vom Theme gleich hell, die dunkle Schrift darauf also
-   weiterhin richtig und muss nicht mitziehen.
-   .bg-light/.bg-white als reine "helle Info-Box"-Hintergründe (Panels wie
-   der Import-Kasten/day-dropzone, Kärtchen wie draggable-recipe-card/
-   side-dish-chip, Info-Zeilen wie die Nährwert-Boxen) sollen dagegen
-   selbst mitziehen - wieder AUSSER bei den kleinen Badges, die ihren
-   fixen hellen Hintergrund ebenfalls behalten (season labels, Link-Badge,
-   Nährwert-Zähler-Pille auf dem grünen Header). Zieht ein Panel mit
-   .bg-light/.bg-white so ins Dunkle, macht das automatisch auch sein
-   eingebetteter .text-dark-Text (der keine der Ausnahmeklassen trägt)
-   wieder korrekt lesbar, ganz ohne Kenntnis der konkreten Verschachtelung. */
+/* .text-dark should normally switch to light text in dark mode
+   (headings, names in lists/cards, ...) - EXCEPT when it's on the SAME
+   element as one of the few Bootstrap background classes that are
+   deliberately ALWAYS light/colored (.badge: the small season/link/
+   side-dish badges; .bg-warning/.btn-warning: the "edit" accent color in
+   recipe_edit_list.html) - their background stays equally light
+   regardless of theme, so dark text on it stays correct and doesn't need
+   to follow along.
+   .bg-light/.bg-white as plain "light info box" backgrounds (panels like
+   the import box/day-dropzone, cards like draggable-recipe-card/
+   side-dish-chip, info rows like the nutrition boxes), on the other
+   hand, SHOULD follow along - again EXCEPT for the small badges, which
+   likewise keep their fixed light background (season labels, link badge,
+   the nutrition-count pill on the green header). When a panel with
+   .bg-light/.bg-white turns dark this way, that automatically makes its
+   embedded .text-dark text (which carries none of the exception classes)
+   correctly readable again too, with no need to know the concrete
+   nesting. */
 [data-bs-theme="dark"] .text-dark:not(.badge):not(.bg-warning):not(.btn-warning) {
     color: var(--bs-body-color) !important;
 }
@@ -412,20 +411,19 @@ body {
 }
 
 /* ============================================================
-   REZEPT-FORMULAR (templates/recipe_form.html, static/recipe_form.js):
-   EIN gemeinsames Formular für Anlegen UND Bearbeiten (siehe
-   routes/recipes.py: recipe_create_view/recipe_edit_view) - vorher zwei
-   grundverschiedene Ansichten (eigene Vollseite vs. Bearbeiten-Modal aus
-   templates/recipe_edit_list.html), was sowohl inkonsistent wirkte als
-   auch (bei vielen gleichzeitig im DOM gehaltenen Modals) die Ursache
-   eines echten Performance-Problems war. Eigene "rform-"-Vorsilbe, damit
-   nichts hier mit Bootstrap-eigenen Klassen (z.B. .field, .chip) oder den
-   Dashboard-Klassen weiter oben kollidiert. Die Zutatenzeilen selbst
-   behalten bewusst ihre ALTEN, unpräfixierten Klassennamen
-   (.ingredient-row/.ing-name-display/.ing-name-input/
-   .ingredient-alias-hint) - static/ingredient_alias_hint.js kennt genau
-   diese Selektoren, eine Umbenennung hätte dort mitziehen müssen, ganz
-   ohne echten Vorteil. ============================================== */
+   RECIPE FORM (templates/recipe_form.html, static/recipe_form.js): ONE
+   shared form for CREATE AND EDIT (see routes/recipes/crud.py:
+   recipe_create_view/recipe_edit_view) - previously two fundamentally
+   different views (its own full page vs. an edit modal from
+   templates/recipe_edit_list.html), which was both inconsistent and (with
+   many modals held in the DOM at once) the cause of a real performance
+   problem. Own "rform-" prefix, so nothing here collides with Bootstrap's
+   own classes (e.g. .field, .chip) or the dashboard classes further
+   above. The ingredient rows themselves deliberately keep their OLD,
+   unprefixed class names (.ingredient-row/.ing-name-display/
+   .ing-name-input/.ingredient-alias-hint) - static/ingredient_alias_hint.js
+   knows exactly these selectors, a rename would have had to follow along
+   there too, with no real benefit. ============================================== */
 .rform-layout { display: grid; grid-template-columns: 1fr 320px; gap: 1.4rem; align-items: start; }
 
 .rform-entry-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; margin-bottom: 1.4rem; }
@@ -473,13 +471,13 @@ body {
 .rform-grid-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0.9rem; }
 .rform-mb { margin-bottom: 0.9rem; }
 
-/* Pillen (Beilage/Favorit/manuelle Nährwerte) und Saison-Chips: jeweils
-   eine ganz normale <input type="checkbox"> INNERHALB eines <label>, nur
-   per CSS/JS zur Pille/Chip umgestylt - ein Klick irgendwo auf das Label
-   schaltet die Checkbox nativ um (kein eigener Klick-Handler nötig), ein
-   "change"-Listener in recipe_form.js spiegelt den Zustand nur noch in
-   die .on-Klasse für die Optik. So bleibt das echte, mitgeschickte
-   Formularfeld die einzige Wahrheitsquelle. */
+/* Pills (side dish/favorite/manual nutrition) and season chips: each a
+   perfectly normal <input type="checkbox"> INSIDE a <label>, just
+   restyled as a pill/chip via CSS/JS - a click anywhere on the label
+   toggles the checkbox natively (no own click handler needed), a
+   "change" listener in recipe_form.js only mirrors the state into the
+   .on class for appearance. This way the real, submitted form field
+   stays the single source of truth. */
 .rform-pill-input, .rform-chip-input { position: absolute; opacity: 0; width: 1px; height: 1px; overflow: hidden; }
 .rform-pill {
     display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border-subtle);
@@ -574,8 +572,8 @@ body {
 .rform-btn-ghost { background: transparent; color: var(--bs-secondary-color); border: 1px solid var(--border-subtle); }
 .rform-btn-primary { background: linear-gradient(155deg, var(--primary-food), var(--primary-dark)); color: #fff; box-shadow: 0 10px 22px rgba(46, 111, 64, 0.25); }
 
-/* Platz am Fuß der Seite für die fixierte Aktionsleiste, damit sie den
-   letzten Formularabschnitt nicht überdeckt. */
+/* Space at the bottom of the page for the fixed action bar, so it
+   doesn't cover the last form section. */
 .rform-bottom-spacer { height: 5rem; }
 
 @media (max-width: 980px) {
@@ -592,29 +590,29 @@ body {
     .rform-action-bar { padding: 0.8rem 1.1rem; flex-wrap: wrap; }
 }
 
-/* Von den clientseitigen Listen-Filtern verwendet (Rezepte bearbeiten,
-   Kategorien verwalten, Zutaten gleichsetzen - siehe static/fuzzy_search.js),
-   um eine Zeile auszublenden. Bewusst eine EIGENE Klasse statt direkt
-   element.style.display = 'none' zu setzen: gefilterte Zeilen tragen oft
-   auch Bootstraps .d-flex-Utility-Klasse, die mit !important definiert
-   ist (siehe bootstrap.min.css: ".d-flex{display:flex!important}") - ein
-   nicht-!important-Inline-Style dagegen verliert IMMER gegen eine
-   !important-Regel, egal wie spät er gesetzt wird, wodurch die Zeile nie
-   wirklich verschwindet. Diese Regel wird nach bootstrap.min.css geladen
-   (siehe base.html) und gewinnt dadurch bei gleicher !important-Stärke
-   über die Ladereihenfolge. */
+/* Used by the client-side list filters (edit recipes, manage categories,
+   equate ingredients - see static/fuzzy_search.js) to hide a row.
+   Deliberately its OWN class instead of setting
+   element.style.display = 'none' directly: filtered rows often also
+   carry Bootstrap's .d-flex utility class, which is defined with
+   !important (see bootstrap.min.css: ".d-flex{display:flex!important}")
+   - a non-!important inline style, by contrast, ALWAYS loses against an
+   !important rule, no matter how late it's set, so the row would never
+   actually disappear. This rule is loaded after bootstrap.min.css (see
+   base.html) and thereby wins on load order at equal !important
+   strength. */
 .search-hidden {
     display: none !important;
 }
 
 /* ============================================================
-   Rezeptkarten (templates/recipe_edit_list.html) - Kachel-Raster statt
-   der früheren .list-group-Zeilen, mit dem Nutzer abgestimmtes Mockup
-   (Ziel: einheitliche Tag-"Chips" statt gemischter bg-secondary/bg-info/
-   bg-light-Badges mit uneinheitlicher font-size, gleich breite
-   Bearbeiten-/Löschen-/Entfernen-Knöpfe statt an den Text angepasster
-   Breite, und Karten, deren Knopfzeile IMMER an der Unterkante sitzt,
-   egal wie viele Tags eine Karte über der Nachbarkarte hat).
+   Recipe cards (templates/recipe_edit_list.html) - a tile grid instead
+   of the former .list-group rows, a mockup agreed on with the user
+   (goal: uniform tag "chips" instead of mixed bg-secondary/bg-info/
+   bg-light badges with inconsistent font-size, equal-width edit/delete/
+   remove buttons instead of text-fitted width, and cards whose button
+   row ALWAYS sits at the bottom edge, regardless of how many tags a card
+   has compared to its neighbor).
    ============================================================ */
 .recipe-grid {
     display: grid;
@@ -633,11 +631,11 @@ body {
 .rc-name { font-weight: 700; font-size: 1.02rem; line-height: 1.3; }
 .rc-star { color: #E3A62F; flex-shrink: 0; font-size: 1.05rem; }
 
-/* min-height reserviert Platz für eine Chip-Zeile, damit eine Karte ohne
-   Zusatz-Tags (z.B. keine Saison-Hinweise) nicht spürbar niedriger wirkt
-   als eine Nachbarkarte mit welchen - der eigentliche Höhenausgleich
-   zwischen unterschiedlich vielen Tags kommt aber vor allem aus
-   .rc-spacer weiter unten. */
+/* min-height reserves space for a chip row, so a card without extra
+   tags (e.g. no season hints) doesn't noticeably look shorter than a
+   neighboring card that has some - the actual height equalization
+   between different numbers of tags mainly comes from .rc-spacer
+   further below, though. */
 .rc-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; min-height: 1.6rem; }
 .chip {
     display: inline-flex; align-items: center; gap: 0.25rem;
@@ -649,10 +647,10 @@ body {
 .chip-linked { background: var(--border-subtle); color: var(--bs-secondary-color); }
 [data-bs-theme="dark"] .chip-flag { background: #3A331B; color: #E0BB63; }
 
-/* Schiebt die Knopfzeile ans untere Kartenende, unabhängig davon, wie
-   viel Platz Name/Tags darüber einnehmen - dadurch sitzen die Knöpfe
-   AUCH bei unterschiedlich hohen Nachbarkarten (CSS Grid streckt Zeilen
-   auf die Höhe des höchsten Elements) immer auf gleicher Höhe. */
+/* Pushes the button row to the bottom of the card, regardless of how
+   much space the name/tags take up above it - this way the buttons sit
+   at the same height EVEN with differently tall neighboring cards (CSS
+   Grid stretches rows to the height of the tallest element). */
 .rc-spacer { flex: 1; }
 
 .rc-actions { display: flex; gap: 0.5rem; }
