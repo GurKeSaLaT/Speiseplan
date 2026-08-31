@@ -31,8 +31,17 @@ def update_profile_route():
 
 @account_bp.route('/manage/account/password', methods=['POST'])
 def update_password_route():
+    """The new/confirm-new-password match check happens here rather than
+    in services/accounts.py: update_password() - it's a pure form-input
+    concern (two fields that must agree), not a business rule about the
+    account itself, and keeping it here avoids changing that function's
+    signature/tests for something callers other than this one form don't
+    need to care about."""
     user = current_user()
-    ok, error = update_password(user, request.form.get('current_password'), request.form.get('new_password'))
+    new_password = request.form.get('new_password')
+    if new_password != request.form.get('confirm_new_password'):
+        return render_template('account.html', user=user, password_error=_('Passwords do not match.'))
+    ok, error = update_password(user, request.form.get('current_password'), new_password)
     return render_template('account.html', user=user, password_error=error, password_success=ok)
 
 

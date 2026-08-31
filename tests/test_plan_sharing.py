@@ -117,6 +117,35 @@ def test_switch_plan_requires_membership(app, client, make_user):
         assert row.plan_id != other_plan_id
 
 
+def test_switch_plan_strips_stale_plan_id_from_referrer(app, client, make_user):
+    """Regression test (see BUGS.md history): if the referring page still
+    carries the PREVIOUS plan's ?plan_id= (e.g. a settings tab like
+    /manage/recipe/edit-list?plan_id=<old>), the redirect back to it must
+    not keep pointing at that old plan_id - otherwise the target page
+    would silently keep showing the old plan's content even though the
+    sidebar highlight already switched (routes/auth.py: switch_plan /
+    _referrer_without_plan_id)."""
+    other_id, other_plan_id = make_user("Mitbewohner")
+    from models import PlanMembership, db
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    referrer = f"http://localhost/manage/recipe/edit-list?plan_id={client.plan_id}"
+    resp = client.post(f"/plan/switch/{other_plan_id}", headers={"Referer": referrer})
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "http://localhost/manage/recipe/edit-list"
+
+
+def test_switch_plan_keeps_referrer_without_query_string(client):
+    """A referrer with no query string at all is passed through unchanged
+    (nothing to strip)."""
+    referrer = "http://localhost/plan/2026-06-15"
+    resp = client.post(f"/plan/switch/{client.plan_id}", headers={"Referer": referrer})
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == referrer
+
+
 # --- Plan isolation: data from one plan must not show up in another ---
 
 def test_week_view_does_not_show_other_plans_data(app, client, make_recipe, make_user):
@@ -243,7 +272,7 @@ def test_registering_with_invited_email_auto_joins_plan(app, client):
     client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
 
     test_client = app.test_client()
-    resp = test_client.post("/register", data={"name": "Neu", "email": "neu@test.local", "password": "geheim123"})
+    resp = test_client.post("/register", data={"name": "Neu", "email": "neu@test.local", "password": "geheim123", "confirm_password": "geheim123"})
     assert resp.status_code == 302
 
     from models import PendingPlanInvite, PlanMembership, User

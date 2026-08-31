@@ -69,7 +69,7 @@ def test_login_is_case_insensitive_on_email(app):
 
 
 def test_seeded_users_can_log_in_with_placeholder_email(app):
-    """app.py: init_db() creates Nutzer1/Nutzer1 and Nutzer2/Nutzer2 with
+    """migrations.py: init_db() creates Nutzer1/Nutzer1 and Nutzer2/Nutzer2 with
     placeholder emails (<name>@example.com) on the very first start -
     here only the login FUNCTION itself is checked (a separate,
     freshly-created user with the same credentials), not the migration
@@ -156,7 +156,7 @@ def test_register_creates_account_and_logs_in(app):
 
     test_client = app.test_client()
     resp = test_client.post("/register", data={
-        "name": "Neu", "email": "neu@test.local", "password": "geheim123",
+        "name": "Neu", "email": "neu@test.local", "password": "geheim123", "confirm_password": "geheim123",
     })
     assert resp.status_code == 302
     assert "/login" not in resp.headers["Location"]
@@ -179,7 +179,7 @@ def test_register_normalizes_email_to_lowercase(app):
     from models import User
 
     app.test_client().post("/register", data={
-        "name": "Groß", "email": "GROSS@Test.Local", "password": "geheim123",
+        "name": "Groß", "email": "GROSS@Test.Local", "password": "geheim123", "confirm_password": "geheim123",
     })
     with app.app_context():
         assert User.query.filter_by(email="gross@test.local").first() is not None
@@ -192,7 +192,7 @@ def test_register_rejects_duplicate_email(app, make_user):
         email = User.query.get(user_id).email
 
     resp = app.test_client().post("/register", data={
-        "name": "Zweiter", "email": email, "password": "geheim123",
+        "name": "Zweiter", "email": email, "password": "geheim123", "confirm_password": "geheim123",
     })
     assert resp.status_code == 200
     assert "An account already exists".encode("utf-8") in resp.data
@@ -204,9 +204,22 @@ def test_register_rejects_missing_fields(app):
     assert "Please provide name, email address, and password.".encode("utf-8") in resp.data
 
 
+def test_register_rejects_mismatched_password_confirmation(app):
+    from models import User
+
+    resp = app.test_client().post("/register", data={
+        "name": "Mismatch", "email": "mismatch@test.local", "password": "geheim123", "confirm_password": "andereswort",
+    })
+    assert resp.status_code == 200
+    assert "Passwords do not match.".encode("utf-8") in resp.data
+
+    with app.app_context():
+        assert User.query.filter_by(email="mismatch@test.local").first() is None
+
+
 def test_register_rejects_malformed_email(app):
     resp = app.test_client().post("/register", data={
-        "name": "Fehler", "email": "keine-email", "password": "geheim123",
+        "name": "Fehler", "email": "keine-email", "password": "geheim123", "confirm_password": "geheim123",
     })
     assert resp.status_code == 200
     assert "valid email address".encode("utf-8") in resp.data

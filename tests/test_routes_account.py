@@ -45,13 +45,25 @@ def test_update_profile_route_changes_language(app, client):
 
 
 def test_update_password_shows_success(client):
-    resp = client.post("/manage/account/password", data={"current_password": "test", "new_password": "neuespw123"})
+    resp = client.post("/manage/account/password", data={"current_password": "test", "new_password": "neuespw123", "confirm_new_password": "neuespw123"})
     assert resp.status_code == 200
     assert "Password changed.".encode("utf-8") in resp.data
 
 
+def test_update_password_rejects_mismatched_confirmation(app, client):
+    resp = client.post("/manage/account/password", data={"current_password": "test", "new_password": "neuespw123", "confirm_new_password": "andereswort"})
+    assert resp.status_code == 200
+    assert "Passwords do not match.".encode("utf-8") in resp.data
+
+    from models import User
+    from services.auth import verify_password
+    with app.app_context():
+        # Unchanged - the old password still verifies.
+        assert verify_password(User.query.get(client.user_id), "test")
+
+
 def test_update_password_shows_error_on_wrong_current(client):
-    resp = client.post("/manage/account/password", data={"current_password": "falsch", "new_password": "neuespw123"})
+    resp = client.post("/manage/account/password", data={"current_password": "falsch", "new_password": "neuespw123", "confirm_new_password": "neuespw123"})
     assert resp.status_code == 200
     assert "Current password is incorrect.".encode("utf-8") in resp.data
 

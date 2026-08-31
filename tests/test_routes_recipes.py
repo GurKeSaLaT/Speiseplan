@@ -133,6 +133,23 @@ def test_recipe_edit_view_unknown_id_returns_404(client):
     assert resp.status_code == 404
 
 
+def test_recipe_edit_view_link_field_is_empty_not_literal_none(client, make_recipe):
+    """Regression test (see BUGS.md history): a recipe with no source_url
+    (None) must render the link <input> as value="" - not value="None"
+    (Recipe.source_url or '' if recipe else '', templates/recipe_form.html).
+    A literal "None" isn't a valid URL, so browsers with an HTML5-aware
+    type="url" input would refuse to submit the (unrelated) rest of the
+    form until the user typed something over it - making the link field
+    look mandatory even though it's optional."""
+    recipe_id = make_recipe("Ohne Link")
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="sourceUrlInput"' in html
+    assert 'value="None"' not in html
+    assert 'name="source_url"' in html and 'value=""' in html
+
+
 def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe):
     """Since the form rework, the "Edit" button links to a dedicated page
     per recipe (routes/recipes/crud.py: recipe_edit_view,

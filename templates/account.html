@@ -61,10 +61,29 @@
                         <label class="form-label fw-bold small" for="newPassword">{{ _('New Password') }}</label>
                         <input type="password" name="new_password" id="newPassword" class="form-control" required autocomplete="new-password">
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small" for="confirmNewPassword">{{ _('Confirm New Password') }}</label>
+                        <input type="password" name="confirm_new_password" id="confirmNewPassword" class="form-control" required autocomplete="new-password">
+                    </div>
                     <button type="submit" class="btn btn-dark fw-bold">{{ _('Change Password') }}</button>
                 </form>
             </div>
         </div>
+        <script>
+        // Client-side "do both password fields match" check, purely for
+        // immediate feedback - services/accounts.py: update_password()
+        // also enforces this server-side, since a client-side-only check
+        // can always be bypassed.
+        (function() {
+            var newPw = document.getElementById('newPassword');
+            var confirmPw = document.getElementById('confirmNewPassword');
+            function checkMatch() {
+                confirmPw.setCustomValidity(confirmPw.value !== newPw.value ? '{{ _("Passwords do not match.") }}' : '');
+            }
+            newPw.addEventListener('input', checkMatch);
+            confirmPw.addEventListener('input', checkMatch);
+        })();
+        </script>
 
         <div class="card shadow-sm border-0">
             <div class="card-header bg-danger text-white py-3">

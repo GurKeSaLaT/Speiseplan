@@ -58,8 +58,8 @@ def current_user():
 
 def current_plan():
     """Resolves the logged-in user's currently active plan (None if no one
-    is logged in, or the user - practically never the case, see app.py:
-    init_db() - is not yet a member of any plan at all).
+    is logged in, or the user - practically never the case, see
+    migrations.py: init_db() - is not yet a member of any plan at all).
 
     Order: 1. the plan last chosen via /plan/switch/<id>
     (session['active_plan_id']), provided the user is still a member there

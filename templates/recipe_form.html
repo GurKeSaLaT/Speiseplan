@@ -157,7 +157,7 @@
                         </div>
                         <div>
                             <label class="rform-field-label">{{ _('Link (optional)') }}</label>
-                            <input type="url" name="source_url" id="sourceUrlInput" class="rform-field" placeholder="https://..." value="{{ recipe.source_url if recipe else '' }}">
+                            <input type="url" name="source_url" id="sourceUrlInput" class="rform-field" placeholder="https://..." value="{{ recipe.source_url or '' if recipe else '' }}">
                         </div>
                     </div>
                 </div>

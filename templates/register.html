@@ -65,12 +65,31 @@
                     <label class="form-label fw-bold small" for="email">{{ _('Email') }}</label>
                     <input type="email" name="email" id="email" class="form-control" value="{{ email }}" required autocomplete="email">
                 </div>
-                <div class="mb-4">
+                <div class="mb-3">
                     <label class="form-label fw-bold small" for="password">{{ _('Password') }}</label>
                     <input type="password" name="password" id="password" class="form-control" required autocomplete="new-password">
                 </div>
+                <div class="mb-4">
+                    <label class="form-label fw-bold small" for="confirmPassword">{{ _('Confirm Password') }}</label>
+                    <input type="password" name="confirm_password" id="confirmPassword" class="form-control" required autocomplete="new-password">
+                </div>
                 <button type="submit" class="btn btn-success w-100 fw-bold">{{ _('Create Account') }}</button>
             </form>
+            <script>
+            // Client-side "do both password fields match" check, purely
+            // for immediate feedback - services/auth.py: register() also
+            // enforces this server-side, since a client-side-only check
+            // can always be bypassed.
+            (function() {
+                var pw = document.getElementById('password');
+                var confirm = document.getElementById('confirmPassword');
+                function checkMatch() {
+                    confirm.setCustomValidity(confirm.value !== pw.value ? '{{ _("Passwords do not match.") }}' : '');
+                }
+                pw.addEventListener('input', checkMatch);
+                confirm.addEventListener('input', checkMatch);
+            })();
+            </script>
             <a href="{{ url_for('auth.login') }}" class="btn btn-outline-secondary w-100 fw-bold mt-2">{{ _('Already have an account? Sign in') }}</a>
         </div>
     </div>

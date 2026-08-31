@@ -21,3 +21,8 @@ instance/secret_key
 
 # Editor/OS
 .DS_Store
+
+# Local bug-tracking scratch file (see feedback_bugs_md_workflow memory) -
+# not meant for the public repo, checked and cleared before every
+# push/deploy instead.
+BUGS.md

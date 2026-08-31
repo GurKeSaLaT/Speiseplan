@@ -57,7 +57,7 @@ def test_manage_page_lists_recently_updated_recipes(client, app, make_recipe):
 
 def test_manage_page_recipe_without_updated_at_is_excluded_from_recent(client, app, make_recipe):
     """Recipes without updated_at (shouldn't actually occur after the
-    migration anymore, see app.py: init_db()) still defensively don't
+    migration anymore, see migrations.py: init_db()) still defensively don't
     show up in the "recently edited" list, instead of raising an error
     when formatting the timestamp."""
     from models import Recipe, db
