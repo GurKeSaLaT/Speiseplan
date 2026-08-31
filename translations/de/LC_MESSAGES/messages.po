@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-31 19:28+0200\n"
+"POT-Creation-Date: 2026-08-31 20:13+0200\n"
 "PO-Revision-Date: 2026-08-31 13:34+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -110,7 +110,7 @@ msgstr "Keine weiteren Beilagen in der Datenbank verfügbar!"
 msgid "This side dish does not belong to this day."
 msgstr "Diese Beilage gehört nicht zu diesem Tag."
 
-#: routes/plan/pages.py:119
+#: routes/plan/pages.py:186 templates/plan_summary.html:54
 msgid "(Today)"
 msgstr "(Heute)"
 
@@ -134,7 +134,7 @@ msgstr "Mein Konto"
 msgid "Back"
 msgstr "Zurück"
 
-#: templates/account.html:16 templates/base.html:190
+#: templates/account.html:16 templates/base.html:198
 msgid "Profile"
 msgstr "Profil"
 
@@ -216,92 +216,92 @@ msgstr ""
 msgid "Password"
 msgstr "Passwort"
 
-#: templates/account.html:121 templates/base.html:251
+#: templates/account.html:121 templates/base.html:259
 #: templates/recipe_form.html:343 templates/sharing.html:133
 #: templates/sharing.html:158
 msgid "Cancel"
 msgstr "Abbrechen"
 
-#: templates/base.html:144
+#: templates/base.html:151
 msgid "Weekly Plan"
 msgstr "Wochenplan"
 
-#: templates/base.html:145 templates/manage.html:12
+#: templates/base.html:152 templates/manage.html:12
 msgid "Overview"
 msgstr "Übersicht"
 
-#: templates/base.html:160 templates/sharing.html:61
+#: templates/base.html:168 templates/sharing.html:61
 msgid "My Plans"
 msgstr "Meine Pläne"
 
-#: templates/base.html:170 templates/base.html:243
+#: templates/base.html:178 templates/base.html:251
 msgid "New Plan"
 msgstr "Neuer Plan"
 
-#: templates/base.html:175 templates/manage.html:18
+#: templates/base.html:183 templates/manage.html:18
 msgid "Recipes"
 msgstr "Rezepte"
 
-#: templates/base.html:176 templates/base.html:252
+#: templates/base.html:184 templates/base.html:260
 msgid "Create"
 msgstr "Erstellen"
 
-#: templates/base.html:177 templates/recipe_edit_list.html:68
+#: templates/base.html:185 templates/recipe_edit_list.html:68
 msgid "Edit"
 msgstr "Bearbeiten"
 
-#: templates/base.html:181
+#: templates/base.html:189
 msgid "Data"
 msgstr "Daten"
 
-#: templates/base.html:182 templates/manage.html:19
+#: templates/base.html:190 templates/manage.html:19
 msgid "Categories"
 msgstr "Kategorien"
 
-#: templates/base.html:183 templates/manage.html:40
+#: templates/base.html:191 templates/manage.html:40
 #: templates/units_manage.html:13
 msgid "Units"
 msgstr "Einheiten"
 
-#: templates/base.html:184 templates/ingredient_aliases_manage.html:15
+#: templates/base.html:192 templates/ingredient_aliases_manage.html:15
 #: templates/manage.html:44
 msgid "Merge Ingredients"
 msgstr "Zutaten zusammenführen"
 
-#: templates/base.html:185 templates/ingredient_nutrition_manage.html:34
+#: templates/base.html:193 templates/ingredient_nutrition_manage.html:34
 #: templates/manage.html:48 templates/recipe_form.html:265
 msgid "Nutrition"
 msgstr "Nährwerte"
 
-#: templates/base.html:189
+#: templates/base.html:197
 msgid "Account"
 msgstr "Konto"
 
-#: templates/base.html:191 templates/manage.html:52
+#: templates/base.html:199 templates/manage.html:52
 msgid "Sharing"
 msgstr "Teilen"
 
-#: templates/base.html:200
+#: templates/base.html:208
 msgid "Log Out"
 msgstr "Abmelden"
 
-#: templates/base.html:204
+#: templates/base.html:212
 msgid "Appearance"
 msgstr "Erscheinungsbild"
 
-#: templates/base.html:206
+#: templates/base.html:214
 msgid "System"
 msgstr "System"
 
-#: templates/base.html:207
+#: templates/base.html:215
 msgid "Light"
 msgstr "Hell"
 
-#: templates/base.html:208
+#: templates/base.html:216
 msgid "Dark"
 msgstr "Dunkel"
 
-#: templates/base.html:247
+#: templates/base.html:255
 msgid "Plan Name"
 msgstr "Planname"
 
@@ -612,7 +612,7 @@ msgstr "Planname"
 msgid "Create plan"
 msgstr "Plan erstellen"
 
-#: templates/plan.html:51
+#: templates/plan.html:51 templates/plan_summary.html:20
 msgid "This week"
 msgstr "Diese Woche"
 
@@ -710,6 +710,38 @@ msgstr "Rezept bearbeiten"
 #: templates/plan.html:215
 msgid "Cooked"
 msgstr "Gekocht"
+
+#: templates/plan_summary.html:21
+msgid "Weekly Overview"
+msgstr "Wochenübersicht"
+
+#: templates/plan_summary.html:25
+msgid ""
+"What everyone is cooking this week, across all your plans - click a dish "
+"to open its own plan."
+msgstr ""
+"Was diese Woche überall gekocht wird, über alle deine Pläne hinweg - "
+"klicke auf ein Gericht, um dessen Plan zu öffnen."
+
+#: templates/plan_summary.html:30
+msgid "Combined weekly nutrition"
+msgstr "Kombinierte Wochen-Nährwerte"
+
+#: templates/plan_summary.html:32
+msgid "week"
+msgstr "Woche"
+
+#: templates/plan_summary.html:38
+msgid "per planned day"
+msgstr "pro geplantem Tag"
+
+#: templates/plan_summary.html:49
+msgid "Dishes this week"
+msgstr "Gerichte diese Woche"
+
+#: templates/plan_summary.html:70
+msgid "Nothing planned"
+msgstr "Nichts geplant"
 
 #: templates/recipe_edit_list.html:16
 msgid "Edit or delete recipes"

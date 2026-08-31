@@ -6,12 +6,13 @@ which work directly with concrete calendar days.
 
 from datetime import date, timedelta
 
-from flask import render_template, request, redirect, url_for, abort
+from flask import render_template, request, redirect, url_for, abort, session
 from flask_babel import gettext as _
 
-from models import db, Category, PlanDay, PlanDaySide, ExtraShoppingItem
-from services.auth import current_plan, current_user, user_plan_memberships
+from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem
+from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.planning import DAY_NAMES, monday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
+from services.plan_summary import build_week_summary
 from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
@@ -21,21 +22,85 @@ from routes.plan import plan_bp
 
 @plan_bp.route('/')
 def index():
-    """The app's home page: always immediately redirects to the week
-    view of the CURRENT calendar week (/plan/<Monday of today>), IN THE
-    ACTIVE PLAN of the logged-in user (services/auth.py: current_plan() -
-    which plan that is gets decided at login/via the plan switcher in the
-    sidebar, not here). There is no longer a standalone "/" page - that
-    used to be (before the permanent calendar was introduced) the day
-    assignment page, which now lives at /plan/<start_date>/create and is
-    only reachable via the "Create new weekly plan" button."""
+    """The app's home page: a read-only, cross-plan summary of the
+    CURRENT calendar week across EVERY plan the logged-in user has
+    access to (services/plan_summary.py: build_week_summary()) - no
+    dice/edit/create controls, purely "what's cooking, and where".
+
+    The fully interactive single-plan calendar (roll, swap, manual
+    selection etc.) that used to live here now opens one click away: any
+    plan picked in the sidebar's "My Plans" list switches to it and
+    lands directly on its own /plan/<start_date> view (see
+    routes/auth.py: switch_plan()).
+
+    A user without any plan at all still needs the SAME "no plan yet"
+    landing as week_view() shows (this route stays on
+    ZERO_PLAN_ALLOWED_ENDPOINTS in app.py for exactly that reason) -
+    delegated to week_view() directly rather than duplicating that UI
+    here, since there's nothing to summarize across zero plans anyway."""
+    if current_plan() is None:
+        return week_view(date.today().isoformat())
+
     start = monday_of(date.today())
-    return redirect(url_for('plan.week_view', start_date=start.isoformat()))
+    summary = build_week_summary(current_user(), start)
+    return render_template(
+        'plan_summary.html', summary=summary, week_dates=week_dates_for(start), today=date.today(), days=DAY_NAMES
+    )
+
+
+@plan_bp.route('/plan/summary/open', methods=['POST'])
+def summary_open_recipe():
+    """Behind clicking a dish on the cross-plan summary page above: since
+    that dish may belong to a DIFFERENT plan than the currently active
+    one, switches to its plan first (same effect as
+    routes/auth.py: switch_plan(), inlined here since it also needs to
+    redirect to a SPECIFIC day/recipe rather than just "the current
+    week") and then opens that plan's normal week view with the day's
+    recipe detail window pre-opened (?open_day=<date>, read by
+    static/plan.js on load - see the DOMContentLoaded handler there)."""
+    user = current_user()
+    plan_id = request.form.get('plan_id', type=int)
+    day = parse_iso_date(request.form.get('date'))
+    if plan_id is None or day is None or not user_has_plan_access(user, plan_id):
+        abort(400)
+
+    session['active_plan_id'] = plan_id
+    start = monday_of(day)
+    return redirect(url_for(
+        'plan.week_view', start_date=start.isoformat(), plan_id=plan_id, open_day=day.isoformat()
+    ))
+
+
+def _resolve_and_activate_plan(user, request_args):
+    """Resolves which plan a /plan/... page request is FOR (see
+    services/auth.py: selected_plan_id() - an explicit ?plan_id= wins,
+    provided the user is actually a member, otherwise the session's
+    active plan) and, if that resolved to an EXPLICIT choice, makes it
+    the session's active plan too - so that a link carrying ?plan_id=
+    (bookmarked, shared, or a sidebar/summary click) doesn't just READ
+    the right plan's data, but also makes any further AJAX action on the
+    page (day_actions.py etc., which rely on current_plan()/the session,
+    not on a URL parameter) operate on that SAME plan. Returns the Plan
+    object, or None (no plan resolved, or the user has no plan at all)."""
+    plan_id = selected_plan_id(request_args, user)
+    if plan_id is None:
+        return None
+    session['active_plan_id'] = plan_id
+    return Plan.query.get(plan_id)
 
 
 @plan_bp.route('/plan/<start_date>')
 def week_view(start_date):
-    """Shows the weekly plan for the calendar week containing start_date.
+    """Shows the weekly plan for the calendar week containing start_date,
+    for the plan resolved by _resolve_and_activate_plan() above (an
+    explicit ?plan_id= query parameter, falling back to the session's
+    active plan) - every generated link on this page (previous/next
+    week, "Recreate week", the date-jump field) carries this plan's ID
+    forward explicitly, so that /plan/<date>?plan_id=<id> is a complete,
+    shareable/bookmarkable address for a SPECIFIC plan's week, not just
+    "whichever plan happens to be active in this browser session" (a
+    bare /plan/<date> without ?plan_id= still works exactly as before,
+    for old links/bookmarks).
 
     start_date arrives as an arbitrary ISO date string from the URL
     (e.g. from a link to a specific day or the date-jump field) and
@@ -80,9 +145,11 @@ def week_view(start_date):
         abort(404)
     normalized = monday_of(start)
     if normalized != start:
-        return redirect(url_for('plan.week_view', start_date=normalized.isoformat()))
+        return redirect(url_for(
+            'plan.week_view', start_date=normalized.isoformat(), plan_id=request.args.get('plan_id')
+        ))
 
-    active_plan = current_plan()
+    active_plan = _resolve_and_activate_plan(current_user(), request.args)
     # Since plans were decoupled from accounts (services/plans.py), "no
     # plan at all" is a normal, reachable state - e.g. right after
     # deleting one's last remaining plan (routes/plans.py: delete()).
@@ -161,6 +228,10 @@ def week_view(start_date):
         other_plan_meals.append(meals_this_day)
 
     plan_data = {
+        # Read by the date-jump field's JS (static/plan.js) so navigating
+        # to a different week keeps addressing THIS plan explicitly,
+        # instead of silently falling back to the session's active plan.
+        'planId': active_plan.id,
         'weekDates': [d.isoformat() for d in dates],
         'dayLabels': day_labels,
         'excludedDays': [i in excluded_days for i in range(7)],
@@ -196,7 +267,7 @@ def week_view(start_date):
         week_dates=dates, start_date=normalized, has_any_data=has_any_data,
         prev_start=(normalized - timedelta(days=7)).isoformat(),
         next_start=(normalized + timedelta(days=7)).isoformat(),
-        today=today, plan_data=plan_data,
+        today=today, plan_data=plan_data, plan_id=active_plan.id,
     )
 
 
@@ -214,19 +285,27 @@ def week_create_view(start_date):
     (unlike there) without a redirect on mismatch - this page is always
     reached via an already-correct link, a redirect here would only cost
     an unnecessary additional request.
+
+    Resolves its plan the same way week_view() does (see
+    _resolve_and_activate_plan() above) - the "Recreate week" link that
+    leads here already carries ?plan_id= explicitly (see templates/
+    plan.html), so this stays for the SAME plan even if it isn't the
+    session's active one.
     """
     start = parse_iso_date(start_date)
     if start is None:
         abort(404)
     start = monday_of(start)
-    plan = current_plan()
+    plan = _resolve_and_activate_plan(current_user(), request.args)
+    if plan is None:
+        abort(404)
 
     recipes = visible_recipes_query(plan.id).all()
     categories = Category.query.filter_by(plan_id=plan.id).order_by(Category.name).all()
 
     return render_template(
         'create_week.html', recipes=recipes, categories=categories,
-        week_dates=week_dates_for(start), start_date=start, days=DAY_NAMES
+        week_dates=week_dates_for(start), start_date=start, days=DAY_NAMES, plan_id=plan.id
     )
 
 
@@ -275,7 +354,13 @@ def week_generate(start_date):
         abort(404)
     start = monday_of(start)
     dates = week_dates_for(start)
-    plan = current_plan()
+    # The form's own action URL (templates/create_week.html) carries
+    # ?plan_id= as a query-string parameter even though this is a POST,
+    # so the same plan stays addressed as on week_create_view() above -
+    # request.args (not request.form) is where a query string lands.
+    plan = _resolve_and_activate_plan(current_user(), request.args)
+    if plan is None:
+        abort(404)
 
     # 1. Read form data per day: fixed assignment + exclusion status
     excluded_days = set()
@@ -317,4 +402,4 @@ def week_generate(start_date):
             db.session.add(PlanDaySide(plan_day_id=plan_day.id, recipe_id=side_recipe.id))
 
     db.session.commit()
-    return redirect(url_for('plan.week_view', start_date=start.isoformat()))
+    return redirect(url_for('plan.week_view', start_date=start.isoformat(), plan_id=plan.id))

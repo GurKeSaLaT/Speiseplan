@@ -2,8 +2,7 @@
 (see services/auth.py: current_plan() for the resolution order).
 """
 
-from datetime import timedelta
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+from datetime import date, timedelta
 
 from flask import Blueprint, redirect, render_template, request, session, url_for
 from flask_babel import gettext as _
@@ -11,6 +10,7 @@ from flask_babel import gettext as _
 from models import PlanMembership, User, db
 from services.auth import EMAIL_PATTERN, current_user, hash_password, verify_password
 from services.plans import accept_pending_invites
+from services.planning import monday_of
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -119,27 +119,21 @@ def switch_plan(plan_id):
     without access doesn't even see the other plan in the rail menu in the
     first place, a manually crafted request here simply has no effect).
 
-    Redirects back to request.referrer, but with any ?plan_id=... query
-    parameter stripped: several "settings" pages (categories/units/
-    ingredient aliasing/nutrition, recipe edit-list) have their own tab
-    switcher keyed by ?plan_id= (see services/auth.py: selected_plan_id(),
-    which prefers an explicit ?plan_id= over the just-switched active
-    plan) - if the referring page still carried the PREVIOUS plan's ID in
-    its URL, redirecting back unchanged would silently keep showing that
-    old plan's content (only the sidebar highlight would reflect the
-    switch, since that's driven by current_plan() directly). Stripping it
-    lets the target page fall back to the newly active plan instead."""
+    ALWAYS redirects to that plan's own interactive week view for the
+    CURRENT calendar week (routes/plan/pages.py: week_view()) - not back
+    to request.referrer. "/" is the cross-plan read-only summary
+    (routes/plan/pages.py: index()), a different page entirely; jumping
+    there after a sidebar plan pick would just show the same summary
+    again with nothing visibly changed except the highlight. Redirecting
+    back to an arbitrary referring "settings" page (categories/units/
+    ingredient aliasing/nutrition, recipe edit-list) would also be wrong
+    whenever that page still carried the PREVIOUS plan's ?plan_id= in its
+    URL (see services/auth.py: selected_plan_id(), which prefers an
+    explicit ?plan_id= over the just-switched active plan) - it would
+    silently keep showing the old plan's content there too. Always
+    landing on the interactive calendar avoids both cases."""
     user = current_user()
     if user is not None and PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first():
         session['active_plan_id'] = plan_id
-    return redirect(_referrer_without_plan_id() or url_for('plan.index'))
-
-
-def _referrer_without_plan_id():
-    """See switch_plan() above. Returns None if there is no referrer at
-    all (e.g. the request wasn't triggered from within the app)."""
-    if not request.referrer:
-        return None
-    parts = urlsplit(request.referrer)
-    query = [(k, v) for k, v in parse_qsl(parts.query) if k != 'plan_id']
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    start = monday_of(date.today())
+    return redirect(url_for('plan.week_view', start_date=start.isoformat(), plan_id=plan_id))

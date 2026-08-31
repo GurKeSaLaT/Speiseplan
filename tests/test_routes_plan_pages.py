@@ -4,8 +4,6 @@ import json
 import re
 from datetime import date, timedelta
 
-from services.planning import monday_of
-
 
 def _make_many_recipes(make_recipe, count=7, is_side_dish=False, prefix="Gericht"):
     return [make_recipe(f"{prefix} {i}", is_side_dish=is_side_dish) for i in range(count)]
@@ -18,11 +16,94 @@ def _extract_plan_data(resp):
 
 # --- index ---
 
-def test_index_redirects_to_current_week(client):
+def test_index_shows_cross_plan_summary_for_current_week(client):
+    """"/" is the read-only cross-plan summary (routes/plan/pages.py:
+    index(), see services/plan_summary.py) - reachable directly (200),
+    not a redirect into the interactive single-plan view anymore (see
+    routes/auth.py: switch_plan() for how that's now reached instead)."""
     resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Weekly Overview".encode("utf-8") in resp.data
+
+
+def test_index_has_no_dice_or_create_buttons(app, client, make_recipe):
+    """Regression test (see BUGS.md history): the summary page must have
+    NO way to roll/edit/create a plan from it, even when a dish IS shown
+    - it's purely read-only (routes/plan/pages.py: index(),
+    templates/plan_summary.html)."""
+    from datetime import date as _date
+    from models import PlanDay, db
+    from services.planning import monday_of
+
+    recipe_id = make_recipe("Etwas Geplantes")
+    monday = monday_of(_date.today())
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert "🎲" not in html
+    assert "Create new weekly plan" not in html
+    assert "Fill Remaining Days" not in html
+
+
+def test_index_shows_nothing_planned_for_empty_week(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Nothing planned".encode("utf-8") in resp.data
+    assert "🎲" not in resp.get_data(as_text=True)
+
+
+def test_index_shows_dishes_from_other_plans_too(app, client, make_user, make_recipe):
+    from datetime import date as _date
+    from models import PlanDay, PlanMembership, db
+    from services.planning import monday_of
+
+    other_id, other_plan_id = make_user("Mitbewohner")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    recipe_id = make_recipe("Fremdes Gericht", plan_id=other_plan_id)
+    monday = monday_of(_date.today())
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=other_plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+    resp = client.get("/")
+    assert "Fremdes Gericht".encode("utf-8") in resp.data
+    assert "Mitbewohners Plan".encode("utf-8") in resp.data
+
+
+def test_summary_open_recipe_switches_plan_and_redirects_with_open_day(app, client, make_user, make_recipe):
+    from datetime import date as _date
+    from models import PlanDay, PlanMembership, db
+    from services.planning import monday_of
+
+    other_id, other_plan_id = make_user("Mitbewohner")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    recipe_id = make_recipe("Fremdes Gericht", plan_id=other_plan_id)
+    monday = monday_of(_date.today())
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=other_plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+    resp = client.post("/plan/summary/open", data={"plan_id": other_plan_id, "date": monday.isoformat()})
     assert resp.status_code == 302
-    expected_monday = monday_of(date.today()).isoformat()
-    assert expected_monday in resp.headers["Location"]
+    assert resp.headers["Location"] == f"/plan/{monday.isoformat()}?plan_id={other_plan_id}&open_day={monday.isoformat()}"
+
+    with client.session_transaction() as sess:
+        assert sess["active_plan_id"] == other_plan_id
+
+
+def test_summary_open_recipe_rejects_plan_without_access(client, make_user):
+    _, other_plan_id = make_user("Fremd")
+    resp = client.post("/plan/summary/open", data={"plan_id": other_plan_id, "date": "2026-08-31"})
+    assert resp.status_code == 400
 
 
 # --- week_view ---
@@ -32,6 +113,79 @@ def test_week_view_redirects_non_monday_to_monday(client):
     resp = client.get(f"/plan/{wednesday.isoformat()}")
     assert resp.status_code == 302
     assert "2026-06-15" in resp.headers["Location"]
+
+
+def test_week_view_non_monday_redirect_preserves_plan_id(client):
+    """Regression test (see BUGS.md history): the Monday-normalization
+    redirect must keep an explicit ?plan_id= - otherwise a shared/
+    bookmarked link for a non-Monday date belonging to a SPECIFIC plan
+    would silently drop that plan on the redirect (routes/plan/pages.py:
+    week_view())."""
+    wednesday = date(2026, 6, 17)
+    resp = client.get(f"/plan/{wednesday.isoformat()}?plan_id={client.plan_id}")
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == f"/plan/2026-06-15?plan_id={client.plan_id}"
+
+
+def test_week_view_with_explicit_plan_id_shows_that_plans_data(app, client, make_user, make_recipe):
+    """Regression test (see BUGS.md history: "plans have no unique URL")
+    - /plan/<date>?plan_id=<id> must show THAT plan's data, uniquely and
+    reproducibly, regardless of which plan is the session's active one
+    (routes/plan/pages.py: _resolve_and_activate_plan(), see
+    services/auth.py: selected_plan_id())."""
+    other_id, other_plan_id = make_user("Mitbewohner")
+    from models import PlanDay, PlanMembership, db
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    recipe_id = make_recipe("Anderes Gericht", plan_id=other_plan_id)
+    monday = date(2026, 6, 15)
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=other_plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+    # Session's active plan is still the client's own - the query
+    # parameter must win regardless.
+    resp = client.get(f"/plan/{monday.isoformat()}?plan_id={other_plan_id}")
+    assert resp.status_code == 200
+    assert "Anderes Gericht".encode("utf-8") in resp.data
+
+    # And it becomes the new active plan for subsequent requests too
+    # (so AJAX day actions on this page operate on the right plan).
+    with client.session_transaction() as sess:
+        assert sess["active_plan_id"] == other_plan_id
+
+
+def test_week_view_ignores_plan_id_for_plan_without_access(client, make_user):
+    """An explicit ?plan_id= for a plan the user is NOT a member of is
+    silently ignored (falls back to the session's active plan) - same
+    safeguard as services/auth.py: selected_plan_id() already provides
+    for the settings tabs."""
+    _, other_plan_id = make_user("Fremd")
+    resp = client.get(f"/plan/2026-06-15?plan_id={other_plan_id}")
+    assert resp.status_code == 200
+
+    with client.session_transaction() as sess:
+        assert sess["active_plan_id"] == client.plan_id
+
+
+def test_week_view_prev_next_and_recreate_links_carry_plan_id(app, client, make_recipe):
+    """Every link the page generates itself carries its own ?plan_id=
+    forward, so copying ANY of them produces a fully self-describing,
+    shareable URL (see routes/plan/pages.py: week_view() docstring)."""
+    monday = date(2026, 6, 15)
+    recipe_id = make_recipe("Montagsgericht")
+    with app.app_context():
+        from models import PlanDay, db
+        db.session.add(PlanDay(plan_id=client.plan_id, date=monday, main_recipe_id=recipe_id, servings=2))
+        db.session.commit()
+
+    resp = client.get(f"/plan/{monday.isoformat()}")
+    html = resp.get_data(as_text=True)
+    assert f"/plan/2026-06-08?plan_id={client.plan_id}" in html
+    assert f"/plan/2026-06-22?plan_id={client.plan_id}" in html
+    assert f"/plan/2026-06-15/create?plan_id={client.plan_id}" in html
 
 
 def test_week_view_invalid_date_returns_404(client):
@@ -174,11 +328,53 @@ def test_week_create_view_normalizes_non_monday_without_redirect(client):
     assert resp.status_code == 200  # no redirect, see docstring in pages.py
 
 
+def test_week_create_view_uses_explicit_plan_id(app, client, make_user, make_recipe):
+    other_id, other_plan_id = make_user("Mitbewohner")
+    from models import PlanMembership, db
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    make_recipe("Anderes Erstellbares Gericht", plan_id=other_plan_id)
+    resp = client.get(f"/plan/2026-06-15/create?plan_id={other_plan_id}")
+    assert resp.status_code == 200
+    assert b"Anderes Erstellbares Gericht" in resp.data
+    assert f"/plan/2026-06-15?plan_id={other_plan_id}" in resp.get_data(as_text=True)
+
+
 # --- week_generate ---
 
 def test_week_generate_invalid_date_returns_404(client):
     resp = client.post("/plan/garbage/generate", data={})
     assert resp.status_code == 404
+
+
+def test_week_generate_with_explicit_plan_id_writes_to_that_plan(app, client, make_user, make_recipe, make_category):
+    """Regression test (see BUGS.md history: "plans have no unique URL")
+    - the generate form's own action URL (templates/create_week.html)
+    carries ?plan_id=, so the days get written to THAT plan even if it
+    isn't the session's active one."""
+    other_id, other_plan_id = make_user("Mitbewohner")
+    from models import PlanDay, PlanMembership, db
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    cat_id = make_category("Kategorie", plan_id=other_plan_id)
+    recipe_id = make_recipe("Fixiertes Gericht", plan_id=other_plan_id, category_id=cat_id)
+
+    resp = client.post(
+        f"/plan/2026-06-15/generate?plan_id={other_plan_id}", data={"day_recipe_0": str(recipe_id)}
+    )
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == f"/plan/2026-06-15?plan_id={other_plan_id}"
+
+    with app.app_context():
+        own_day = PlanDay.query.filter_by(plan_id=client.plan_id, date=date(2026, 6, 15)).first()
+        other_day = PlanDay.query.filter_by(plan_id=other_plan_id, date=date(2026, 6, 15)).first()
+        assert own_day is None
+        assert other_day is not None
+        assert other_day.main_recipe_id == recipe_id
 
 
 def test_week_generate_fixed_assignment_is_respected(client, app, make_recipe):

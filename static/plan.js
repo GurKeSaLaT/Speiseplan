@@ -125,7 +125,26 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshDayCard(i);
     }
     rebuildShoppingList();
+    openRecipeDetailFromQueryParam();
 });
+
+/**
+ * Arriving from the cross-plan summary page (templates/plan_summary.html,
+ * routes/plan/pages.py: summary_open_recipe()) with ?open_day=<date> in
+ * the URL: finds that date's index in dayDates and, if it still has a
+ * main dish assigned (the plan could in principle have changed between
+ * the summary being rendered and this page loading), opens its read-only
+ * detail window right away - the same window a normal click on the dish
+ * would open (see openRecipeDetail below). Does nothing if the parameter
+ * is absent (the normal case, a plain visit to this page).
+ */
+function openRecipeDetailFromQueryParam() {
+    const openDay = new URLSearchParams(window.location.search).get('open_day');
+    if (!openDay) return;
+    const dayIndex = dayDates.indexOf(openDay);
+    if (dayIndex === -1 || !weeklyPlanRecipes[dayIndex]) return;
+    openRecipeDetail(dayIndex, null);
+}
 
 /**
  * Performs a POST fetch() request and automatically adds the
@@ -514,7 +533,12 @@ function daySwap(i, j) {
 
     picker.addEventListener('change', () => {
         if (picker.value) {
-            location.href = '/plan/' + picker.value;
+            // Carries planId along explicitly (see PLAN_DATA.planId
+            // above, routes/plan/pages.py: week_view()) so jumping to a
+            // different week keeps addressing THIS plan, instead of
+            // silently falling back to whichever plan is active in the
+            // session.
+            location.href = '/plan/' + picker.value + '?plan_id=' + window.PLAN_DATA.planId;
         }
     });
 })();

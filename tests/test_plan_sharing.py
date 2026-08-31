@@ -117,33 +117,35 @@ def test_switch_plan_requires_membership(app, client, make_user):
         assert row.plan_id != other_plan_id
 
 
-def test_switch_plan_strips_stale_plan_id_from_referrer(app, client, make_user):
-    """Regression test (see BUGS.md history): if the referring page still
-    carries the PREVIOUS plan's ?plan_id= (e.g. a settings tab like
-    /manage/recipe/edit-list?plan_id=<old>), the redirect back to it must
-    not keep pointing at that old plan_id - otherwise the target page
-    would silently keep showing the old plan's content even though the
-    sidebar highlight already switched (routes/auth.py: switch_plan /
-    _referrer_without_plan_id)."""
+def test_switch_plan_always_lands_on_interactive_week_view(app, client, make_user):
+    """Regression test (see BUGS.md history): switching plans via the
+    sidebar must land on that plan's own interactive week view for the
+    CURRENT week - regardless of request.referrer (routes/auth.py:
+    switch_plan()). An earlier fix tried to preserve the referrer (minus
+    a stale ?plan_id=), but "/" is now a separate, read-only cross-plan
+    summary page (routes/plan/pages.py: index()) - redirecting there, or
+    back to an arbitrary settings tab that still names the OLD plan,
+    would both silently fail to show the newly active plan's content even
+    though the sidebar highlight already changed."""
     other_id, other_plan_id = make_user("Mitbewohner")
     from models import PlanMembership, db
     with app.app_context():
         db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
         db.session.commit()
 
+    from datetime import date
+    from services.planning import monday_of
+    monday = monday_of(date.today()).isoformat()
+
     referrer = f"http://localhost/manage/recipe/edit-list?plan_id={client.plan_id}"
     resp = client.post(f"/plan/switch/{other_plan_id}", headers={"Referer": referrer})
     assert resp.status_code == 302
-    assert resp.headers["Location"] == "http://localhost/manage/recipe/edit-list"
+    assert resp.headers["Location"] == f"/plan/{monday}?plan_id={other_plan_id}"
 
-
-def test_switch_plan_keeps_referrer_without_query_string(client):
-    """A referrer with no query string at all is passed through unchanged
-    (nothing to strip)."""
-    referrer = "http://localhost/plan/2026-06-15"
-    resp = client.post(f"/plan/switch/{client.plan_id}", headers={"Referer": referrer})
-    assert resp.status_code == 302
-    assert resp.headers["Location"] == referrer
+    # Also true with no referrer at all (e.g. triggered outside the app).
+    resp2 = client.post(f"/plan/switch/{client.plan_id}")
+    assert resp2.status_code == 302
+    assert resp2.headers["Location"] == f"/plan/{monday}?plan_id={client.plan_id}"
 
 
 # --- Plan isolation: data from one plan must not show up in another ---
@@ -285,11 +287,13 @@ def test_registering_with_invited_email_auto_joins_plan(app, client):
         assert membership.is_starred is True
         assert PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first() is None
 
-    # Immediately logged in and lands in the invited plan.
+    # Immediately logged in and lands in the invited plan - "/" is the
+    # cross-plan summary now (routes/plan/pages.py: index()), reachable
+    # directly (200) rather than via a redirect, as long as the user has
+    # at least one plan (the invited one, in this case).
     resp = test_client.get("/")
-    assert resp.status_code == 302
-    resp = test_client.get(resp.headers["Location"])
-    assert b"noch in keinem Plan Mitglied" not in resp.data
+    assert resp.status_code == 200
+    assert "not a member of any plan".encode("utf-8") not in resp.data
 
 
 def test_cancel_invite_removes_pending_invite(app, client):

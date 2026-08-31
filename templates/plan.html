@@ -52,7 +52,7 @@
         <h1 class="page-head-title">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</h1>
     </div>
     <div class="weeknav">
-        <a href="{{ url_for('plan.week_view', start_date=prev_start) }}" class="weeknav-btn">
+        <a href="{{ url_for('plan.week_view', start_date=prev_start, plan_id=plan_id) }}" class="weeknav-btn">
             <span class="d-none d-md-inline">{{ _('← Previous week') }}</span>
             <span class="d-md-none">←</span>
         </a>
@@ -64,7 +64,7 @@
            bottom section. #}
         <input type="text" id="weekDateDisplay" class="weeknav-datepill" readonly style="width: 130px;" value="{{ start_date.strftime('%d.%m.%Y') }}" title="{{ _('Jump to a specific week') }}">
         <input type="date" id="weekDatePicker" value="{{ start_date.isoformat() }}" style="position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;">
-        <a href="{{ url_for('plan.week_view', start_date=next_start) }}" class="weeknav-btn">
+        <a href="{{ url_for('plan.week_view', start_date=next_start, plan_id=plan_id) }}" class="weeknav-btn">
             <span class="d-none d-md-inline">{{ _('Next week →') }}</span>
             <span class="d-md-none">→</span>
         </a>
@@ -75,7 +75,7 @@
 <!-- WEEK WITHOUT A PLAN -->
 <div class="card shadow-sm border-0 text-center p-5">
     <p class="text-muted fs-5 mb-4">{{ _("There's no plan for this week yet.") }}</p>
-    <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-primary-custom btn-lg py-3 shadow mx-auto" style="max-width: 420px;">🎲 {{ _('Create new weekly plan') }}</a>
+    <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat(), plan_id=plan_id) }}" class="btn btn-primary-custom btn-lg py-3 shadow mx-auto" style="max-width: 420px;">🎲 {{ _('Create new weekly plan') }}</a>
 </div>
 {% else %}
 <div class="row">
@@ -84,7 +84,7 @@
         <div class="card shadow-sm border-0 mb-4">
             <div class="panel-head">
                 <h4>🗓️ {{ _('Your weekly plan') }}</h4>
-                <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat()) }}" class="btn btn-sm btn-outline-secondary fw-bold">✏️ {{ _('Recreate week') }}</a>
+                <a href="{{ url_for('plan.week_create_view', start_date=start_date.isoformat(), plan_id=plan_id) }}" class="btn btn-sm btn-outline-secondary fw-bold">✏️ {{ _('Recreate week') }}</a>
             </div>
             <p class="text-muted small px-3 pt-3 mb-0">{{ _('Drag a day card with drag-and-drop onto another one to swap both days completely (side dishes come along). Drag a single side dish onto another day card to move only IT. ✏️ opens a search for manual selection.') }}</p>
             <div class="day-card-list" id="wochenplanContainer">

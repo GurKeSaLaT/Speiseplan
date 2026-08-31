@@ -18,7 +18,7 @@
             <p class="eyebrow mb-1">{{ week_dates[0].strftime('%d.%m.') }} – {{ week_dates[6].strftime('%d.%m.%Y') }}</p>
             <h1 class="page-head-title">📅 {{ _('Create Weekly Plan') }}</h1>
         </div>
-        <a href="{{ url_for('plan.week_view', start_date=start_date.isoformat()) }}" class="weeknav-btn">← {{ _('Back to Plan') }}</a>
+        <a href="{{ url_for('plan.week_view', start_date=start_date.isoformat(), plan_id=plan_id) }}" class="weeknav-btn">← {{ _('Back to Plan') }}</a>
     </div>
 
     <p class="text-muted mb-4">{{ _("Search for dishes. Click one to assign it automatically to the next free day. Drag main courses via drag-and-drop onto other days to move them. Days without a dish are filled in automatically. Use the 🚫 button to exclude a day's main course from the plan. 🥗 extra dishes (side dishes) don't block the day, can be added any number of times in addition to the main course (each going to the day with the fewest side dishes so far) and also work on excluded days - fine-tuning which side dish ends up on which day can always be done afterwards on the finished plan page.") }}</p>
@@ -54,7 +54,7 @@
          fixed field (a day can have any number) - instead create_week.js
          dynamically creates its own hidden field per assigned side dish
          (day_side_recipes_i[]), see assignSideToZone. -->
-    <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat()) }}" method="POST" id="planForm">
+    <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat(), plan_id=plan_id) }}" method="POST" id="planForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
         <div class="create-toolbar">

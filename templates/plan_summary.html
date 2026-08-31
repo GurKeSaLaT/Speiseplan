@@ -1,0 +1,96 @@
+{# Cross-plan weekly summary (/), the app's home page - read-only overview
+   of every main dish planned in ANY of the user's plans for the current
+   calendar week, rendered by routes/plan/pages.py: index() (see
+   services/plan_summary.py: build_week_summary()). Deliberately has NO
+   dice/edit/create controls anywhere on this page - the fully
+   interactive single-plan calendar (routes/plan/pages.py: week_view())
+   is one click away via a specific plan in the sidebar's "My Plans"
+   list (see templates/base.html, routes/auth.py: switch_plan()).
+
+   Each dish is a small POST form (routes/plan/pages.py:
+   summary_open_recipe()) rather than a plain link: clicking it switches
+   the active plan to the one that dish belongs to and opens that plan's
+   week view with the day's recipe detail window pre-opened
+   (?open_day=<date>, read by static/plan.js on load). #}
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="page-head">
+    <div class="titles">
+        <p class="eyebrow mb-1">{{ _('This week') }}</p>
+        <h1 class="page-head-title">🗓️ {{ _('Weekly Overview') }}</h1>
+    </div>
+</div>
+
+<p class="text-muted mb-4">{{ _('What everyone is cooking this week, across all your plans - click a dish to open its own plan.') }}</p>
+
+{% if summary.nutrition %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-3">
+        <p class="section-title mb-2">📊 {{ _('Combined weekly nutrition') }}</p>
+        <div class="text-muted small font-monospace bg-light p-2 rounded mb-1">
+            Σ {{ _('week') }}: {{ summary.nutrition.week.calories | round | int }} kcal |
+            P: {{ '%.1f'|format(summary.nutrition.week.protein) }}g |
+            C: {{ '%.1f'|format(summary.nutrition.week.carbs) }}g |
+            F: {{ '%.1f'|format(summary.nutrition.week.fat) }}g
+        </div>
+        <div class="text-muted small font-monospace bg-light p-2 rounded">
+            Ø {{ _('per planned day') }}: {{ summary.nutrition.daily_avg.calories | round | int }} kcal |
+            P: {{ '%.1f'|format(summary.nutrition.daily_avg.protein) }}g |
+            C: {{ '%.1f'|format(summary.nutrition.daily_avg.carbs) }}g |
+            F: {{ '%.1f'|format(summary.nutrition.daily_avg.fat) }}g
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm border-0">
+    <div class="panel-head">
+        <h4>🍽️ {{ _('Dishes this week') }}</h4>
+    </div>
+    <div class="summary-day-list">
+        {% for i in range(7) %}
+        <div class="summary-day-card p-3{% if week_dates[i] == today %} today-card{% endif %}">
+            <h6 class="fw-bold mb-2">{{ days[i] }}, {{ week_dates[i].strftime('%d.%m.') }}{{ ' ' ~ _('(Today)') if week_dates[i] == today else '' }}</h6>
+            {% if summary.days[i] %}
+            <div class="d-flex flex-column gap-2">
+                {% for entry in summary.days[i] %}
+                <form method="POST" action="{{ url_for('plan.summary_open_recipe') }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="plan_id" value="{{ entry.plan_id }}">
+                    <input type="hidden" name="date" value="{{ entry.date }}">
+                    <button type="submit" class="btn btn-sm btn-light border w-100 text-start d-flex align-items-center gap-2">
+                        <span class="badge bg-light text-dark border">{{ entry.plan_name }}</span>
+                        <span class="text-truncate">{{ entry.recipe_name }}</span>
+                    </button>
+                </form>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted small mb-0">{{ _('Nothing planned') }}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<style>
+.summary-day-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 0.9rem 1.2rem 1.2rem;
+}
+.summary-day-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-main);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+.summary-day-card.today-card {
+    border: 2px solid var(--primary-food) !important;
+    background-color: var(--highlight-bg);
+}
+</style>
+
+{% endblock %}

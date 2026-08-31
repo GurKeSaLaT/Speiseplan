@@ -140,20 +140,28 @@
                 <span class="name">Speiseplan</span>
             </a>
 
+            {# "Weekly Plan" (nav-primary) links to "/", the read-only
+               cross-plan summary (routes/plan/pages.py: index(), see
+               templates/plan_summary.html) - a DIFFERENT page from the
+               interactive single-plan calendar at /plan/<date>, which is
+               only reached via a specific plan below. Only "/" itself
+               marks this link active; a /plan/<date> page instead marks
+               its own entry in "My Plans" below as active. #}
             <div class="nav-primary">
-                <a class="nav-link {% if request.path == '/' or request.path.startswith('/plan') %}active{% endif %}" href="/"><span class="ic">🗓️</span>{{ _('Weekly Plan') }}</a>
+                <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/"><span class="ic">🗓️</span>{{ _('Weekly Plan') }}</a>
                 <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>{{ _('Overview') }}</a>
             </div>
 
             {# Own plans (own + invited, see models/plan.py:
-               PlanMembership) - clicking switches the active plan
-               (routes/auth.py: switch_plan) and jumps to its
-               current week. The starred one is always listed first (see
-               app.py: inject_current_user_and_plans) and is additionally
-               visually marked as "active" when it is currently the
-               actually active plan. Ever since plans were decoupled
-               from accounts (services/plans.py), ALWAYS visible (even
-               with only a single plan or none at all) - the
+               PlanMembership) - clicking switches the active plan and
+               ALWAYS opens its own interactive week view for the current
+               week (routes/auth.py: switch_plan()), regardless of which
+               page the click happened from. The starred one is always
+               listed first (see app.py: inject_current_user_and_plans)
+               and is additionally visually marked as "active" when it is
+               currently the actually active plan. Ever since plans were
+               decoupled from accounts (services/plans.py), ALWAYS visible
+               (even with only a single plan or none at all) - the
                "+ New Plan" entry always belongs in there too, not just the
                switcher. #}
             <div class="rail-section">
