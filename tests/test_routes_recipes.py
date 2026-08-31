@@ -1,4 +1,4 @@
-"""Tests for routes/recipes.py: create/edit/delete recipe including
+"""Tests for routes/recipes/: create/edit/delete recipe including
 ingredients and season assignment, plus the chefkoch.de import preview endpoint."""
 from pathlib import Path
 from unittest.mock import patch
@@ -119,7 +119,7 @@ def test_recipe_edit_view_ingredient_row_has_delete_button(client, make_recipe):
     for a recipe's edit page: both the existing ingredient rows and the
     empty starting row need the delete button. Uses the same
     recipe_form.html/recipe_form.js as the create page (see
-    routes/recipes.py: recipe_edit_view)."""
+    routes/recipes/crud.py: recipe_edit_view)."""
     recipe_id = make_recipe("Gericht mit Zutat", ingredients=[{"name": "Mehl", "amount": 100, "unit": "g"}])
     resp = client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
@@ -135,14 +135,14 @@ def test_recipe_edit_view_unknown_id_returns_404(client):
 
 def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe):
     """Since the form rework, the "Edit" button links to a dedicated page
-    per recipe (routes/recipes.py: recipe_edit_view,
+    per recipe (routes/recipes/crud.py: recipe_edit_view,
     /manage/recipe/edit/<id>) instead of opening a modal via JS - previously
     there was a shared, JS-populated modal for this (see the now-removed
     static/recipe_edit_modal.js)."""
     recipe_id = make_recipe("Irgendein Gericht")
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    # Since the tab switcher (see routes/recipes.py:
+    # Since the tab switcher (see routes/recipes/crud.py:
     # recipe_edit_list_view), also carries ?plan_id=<id> - "in" instead of
     # "ends with" still checks the same target without depending on the
     # exact query-string form.
@@ -151,7 +151,7 @@ def test_recipe_edit_list_view_links_to_dedicated_edit_page(client, make_recipe)
 
 def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_recipe):
     """The edit dialog is a normal <form> - saving fully reloads the page
-    via routes/recipes.py: edit_recipe()'s redirect(); without this, a
+    via routes/recipes/crud.py: edit_recipe()'s redirect(); without this, a
     typed search term would get lost. sessionStorage remembers it across
     the page load instead."""
     make_recipe("Suchbares Gericht")
@@ -164,7 +164,7 @@ def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_re
 def test_recipe_detail_edit_link_points_to_dedicated_edit_page():
     """Since the form rework, the "✏️ Edit recipe" button in the detail
     popup on the plan page (see templates/plan.html) links directly to a
-    recipe's own edit page (routes/recipes.py: recipe_edit_view) instead of,
+    recipe's own edit page (routes/recipes/crud.py: recipe_edit_view) instead of,
     as before, /manage/recipe/edit-list?edit=<id> (the modal auto-start
     mechanism there no longer exists since static/recipe_edit_modal.js was
     removed)."""
@@ -471,7 +471,7 @@ def test_delete_recipe_unknown_id_returns_404(client):
     assert resp.status_code == 404
 
 
-@patch("routes.recipes.fetch_recipe_from_url")
+@patch("routes.recipes.crud.fetch_recipe_from_url")
 def test_import_recipe_preview_success(mock_fetch, client):
     mock_fetch.return_value = {"name": "Importiert", "servings": 4, "ingredients": []}
     resp = client.post("/manage/recipe/import-preview", json={"url": "https://chefkoch.de/x"})
@@ -485,7 +485,7 @@ def test_import_recipe_preview_missing_url(client):
     assert "error" in resp.get_json()
 
 
-@patch("routes.recipes.fetch_recipe_from_url")
+@patch("routes.recipes.crud.fetch_recipe_from_url")
 def test_import_recipe_preview_propagates_import_error(mock_fetch, client):
     mock_fetch.side_effect = RecipeImportError("Nicht unterstützt.")
     resp = client.post("/manage/recipe/import-preview", json={"url": "https://example.com/x"})
@@ -493,7 +493,7 @@ def test_import_recipe_preview_propagates_import_error(mock_fetch, client):
     assert resp.get_json()["error"] == "Nicht unterstützt."
 
 
-@patch("routes.recipes.fetch_recipe_from_url")
+@patch("routes.recipes.crud.fetch_recipe_from_url")
 def test_import_recipe_preview_converts_ingredients_to_display_unit(mock_fetch, client, app):
     from services.settings import update_display_units
 

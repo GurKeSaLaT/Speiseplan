@@ -67,7 +67,7 @@ def delete_plan(plan):
     with the plan).
 
     SQLite runs in this app without PRAGMA foreign_keys=ON (see
-    routes/recipes.py: delete_recipe() docstring) - the deletion order
+    routes/recipes/crud.py: delete_recipe() docstring) - the deletion order
     below is nonetheless deliberately chosen so that at the time of each
     individual step, no reference still needed has already vanished
     (recipes/categories BEFORE the remaining, purely plan-bound data,

@@ -5,7 +5,7 @@
    routes/settings.py: ingredient_nutrition_view()/
    update_ingredient_nutrition(). Recipe nutrition values are computed
    from this automatically (services/nutrition.py: compute_recipe_nutrition,
-   called from routes/recipes.py: add_recipe()/edit_recipe()), unless
+   called from routes/recipes/crud.py: add_recipe()/edit_recipe()), unless
    a recipe is set to "override manually".
 
    The reference basis is always 100 g / 100 ml / 1 pc (services/nutrition.py:

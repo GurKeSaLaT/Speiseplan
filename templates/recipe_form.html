@@ -1,4 +1,4 @@
-{# Shared form for "create recipe" (routes/recipes.py: recipe_create_view,
+{# Shared form for "create recipe" (routes/recipes/crud.py: recipe_create_view,
    /manage/recipe/create) AND "edit recipe" (recipe_edit_view,
    /manage/recipe/edit/<id>) - distinguished solely by the `recipe`
    variable (None when creating, otherwise the Recipe object being
@@ -123,7 +123,7 @@
                         {# Reloads the page (instead of just switching the
                            category list client-side), since categories/
                            ingredient suggestions (ingredient_list) differ
-                           per plan - see routes/recipes.py:
+                           per plan - see routes/recipes/crud.py:
                            recipe_create_view(). Preselected is the starred
                            plan (services/auth.py: default_plan_id()). #}
                         <select name="plan_id" class="rform-field" style="max-width: 320px;" onchange="location.href = '{{ url_for('recipes.recipe_create_view') }}?plan_id=' + this.value;">

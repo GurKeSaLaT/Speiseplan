@@ -50,7 +50,7 @@ def add_shopping_item(start_date):
     category = (data.get('category') or '').strip() or None
 
     # Bring into canonical form like with recipe ingredients
-    # (routes/recipes.py), provided an amount was given - amount may be
+    # (routes/recipes/crud.py), provided an amount was given - amount may be
     # None here (unlike with Ingredient) ("toilet paper" with no amount
     # at all), normalize_amount_unit() couldn't handle None as an amount.
     if amount is not None and unit is not None:

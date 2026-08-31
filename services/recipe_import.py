@@ -13,7 +13,7 @@ visible HTML (CSS selectors etc.) - the JSON-LD format practically never
 changes, since it is a fixed Google/search-engine standard.
 
 The result is deliberately only a PREVIEW, not a directly saved recipe:
-routes/recipes.py: import_recipe_preview() delivers the parsed dict as
+routes/recipes/crud.py: import_recipe_preview() delivers the parsed dict as
 JSON to the create page, which uses it to pre-fill the normal form (see
 recipe_form.html) - the user sees and edits everything (in particular
 the category, which cannot be reliably mapped onto our own categories)
@@ -74,7 +74,7 @@ KNOWN_UNITS = known_unit_keys()
 
 class RecipeImportError(Exception):
     """Raised with an already-translatable, user-facing error message
-    (see routes/recipes.py: import_recipe_preview, which returns exactly
+    (see routes/recipes/crud.py: import_recipe_preview, which returns exactly
     this message 1:1 as a JSON error) - not a technical exception text
     that would need translating."""
     pass

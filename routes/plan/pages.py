@@ -284,7 +284,7 @@ def week_generate(start_date):
        dishes, ALL existing PlanDaySide rows of this day are deleted
        first and then newly created from final_side_plan[i] - much
        simpler than a diff of "changed/new/deleted", analogous to
-       ingredient replacement in edit_recipe() in routes/recipes.py. This
+       ingredient replacement in edit_recipe() in routes/recipes/crud.py. This
        covers both creating a week for the first time and recreating an
        already existing week ("recreate week").
     """

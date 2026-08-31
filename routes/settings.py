@@ -19,7 +19,7 @@ package, since all three areas are small):
 3. Nutrition (ingredient_nutrition_view/update_ingredient_nutrition): the
    nutrition reference per canonical ingredient (see services/nutrition.py),
    from which recipe nutrition values are automatically calculated (see
-   routes/recipes.py: add_recipe()/edit_recipe()).
+   routes/recipes/crud.py: add_recipe()/edit_recipe()).
 
 All three areas are separated PER PLAN (see models/settings.py: AppSettings.
 plan_id/IngredientAlias.plan_id/IngredientNutrition.plan_id) - each page
@@ -151,7 +151,7 @@ def _parse_nutrition_form_values(data):
     """Reads the four nutrition fields from a JSON body (dict-like,
     .get()) and robustly converts them to numbers - an empty or invalid
     field becomes 0 instead of an error, analogous to the other form
-    parsers in this app (e.g. routes/recipes.py: add_recipe()).
+    parsers in this app (e.g. routes/recipes/crud.py: add_recipe()).
     reference_amount is deliberately NOT read - it always follows fixedly
     from reference_unit (see services/nutrition.py: REFERENCE_BASES),
     set_nutrition() checks/enforces this itself. calories doesn't even

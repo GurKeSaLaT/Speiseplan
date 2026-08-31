@@ -7,7 +7,7 @@ the app (see migrations.py: init_db()).
 This file is deliberately kept lean: it no longer contains a single route
 itself (those all live in routes/plan/ (three files: pages.py,
 day_actions.py, shopping.py - all three share the ONE plan_bp
-blueprint), routes/recipes.py, routes/categories.py, routes/manage.py),
+blueprint), routes/recipes/, routes/categories.py, routes/manage.py),
 no planning/selection logic (that lives in services/planning.py and
 services/seasons.py), and no migration logic (that lives in
 migrations.py) - just application setup now.

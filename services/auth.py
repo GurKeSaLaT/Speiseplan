@@ -138,7 +138,7 @@ def default_plan_id(request_args, user):
     default INDEPENDENT of the otherwise active plan (which, e.g. due to a
     previously visited tab, may point at a different, non-starred plan)
     (e.g. "which plan does a newly created recipe belong to" -
-    routes/recipes.py: recipe_create_view()).
+    routes/recipes/crud.py: recipe_create_view()).
 
     Assumes user has at least one membership - routes that use this are
     unreachable anyway for users without any plan at all, via the zero-plan

@@ -1,7 +1,6 @@
-"""Recipe management: the create/edit/delete pages for individual dishes
-(Recipe), including their ingredients (Ingredient), season assignment
-(RecipeSeason, managed via services/seasons.py) and the import from
-chefkoch.de (via services/recipe_import.py).
+"""Create/edit/delete/list views for recipes, plus the chefkoch.de
+import-preview AJAX endpoint (see routes/recipes/__init__.py for how this
+fits into the recipes_bp package).
 
 recipe_create_view() and recipe_edit_view() both render the same form
 template (templates/recipe_form.html), once with recipe=None (create) and
@@ -15,25 +14,20 @@ a chefkoch.de URL, with which recipe_form.html pre-fills the normal form
 category themselves anyway, a direct save without review would be
 riskier).
 
-A recipe belongs to ONE plan (Recipe.owner_plan_id) and can additionally be
-linked into any number of further plans (RecipePlanLink, see models/recipe.py and
-services/recipe_visibility.py: link_recipe_to_plan/
-unlink_recipe_from_plan below) - a genuine link, not a copy. A recipe is
-visible (viewable/editable) in EVERY plan that either owns it or has such a
-link.
-
 The actual season form logic (parsing checkboxes + custom date range,
 pre-filling for the edit view) deliberately does NOT live here, but in
 services/seasons.py - this file stays focused on "create, change, delete
-Recipe/Ingredient".
+Recipe/Ingredient". See routes/recipes/links.py for linking a recipe into
+another plan.
 """
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, abort, render_template, request, redirect, url_for
+from flask import abort, render_template, request, redirect, url_for
 from flask_babel import gettext as _
 
-from models import db, Category, Recipe, RecipePlanLink, Ingredient
+from models import db, Category, Recipe, Ingredient
+from routes.recipes import recipes_bp
 from services.auth import current_plan, current_user, default_plan_id, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
@@ -44,8 +38,6 @@ from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display, normalize_amount_unit
-
-recipes_bp = Blueprint('recipes', __name__)
 
 
 def _canonical_ingredient_list(plan_id):
@@ -375,10 +367,11 @@ def delete_recipe(id):
     """Deletes a recipe irrevocably - only the OWNER plan
     (Recipe.owner_plan_id) may do this; a plan that only has the recipe
     additionally linked in via RecipePlanLink can instead UNLINK it again
-    via unlink_recipe_from_plan() below, without deleting the recipe for
-    all other plans as well. Associated Ingredient/RecipeSeason/
-    RecipePlanLink rows are deleted automatically along with it via the
-    cascade="all, delete-orphan" configuration in models/recipe.py.
+    via unlink_recipe_from_plan() (routes/recipes/links.py), without
+    deleting the recipe for all other plans as well. Associated
+    Ingredient/RecipeSeason/RecipePlanLink rows are deleted automatically
+    along with it via the cascade="all, delete-orphan" configuration in
+    models/recipe.py.
 
     Deliberately NO check whether the recipe is still referenced in the
     weekly plan calendar: PlanDay.main_recipe_id and PlanDaySide.recipe_id
@@ -401,60 +394,6 @@ def delete_recipe(id):
     db.session.delete(recipe)
     db.session.commit()
     return redirect(url_for('recipes.recipe_edit_list_view', plan_id=owner_plan_id))
-
-
-@recipes_bp.route('/manage/recipe/<int:id>/link/<int:target_plan_id>', methods=['POST'])
-def link_recipe_to_plan(id, target_plan_id):
-    """"Add dish to another plan": links a recipe visible for the
-    selected plan (see recipe_edit_view()) ADDITIONALLY into
-    target_plan_id (see models/recipe.py: RecipePlanLink) - a genuine link, not
-    a copy. Requires that the logged-in user is actually a member of
-    target_plan_id (otherwise they could "spam" other people's plans they
-    themselves have no access to with recipes)."""
-    user = current_user()
-    plan_id = selected_plan_id(request.form, user)
-    recipe = visible_recipes_query(plan_id).filter(Recipe.id == id).first()
-    if recipe is None:
-        abort(404)
-    if not user_has_plan_access(user, target_plan_id):
-        abort(403)
-    if target_plan_id != recipe.owner_plan_id and not RecipePlanLink.query.filter_by(
-        recipe_id=recipe.id, plan_id=target_plan_id
-    ).first():
-        db.session.add(RecipePlanLink(recipe_id=recipe.id, plan_id=target_plan_id))
-        db.session.commit()
-    return redirect(url_for('recipes.recipe_edit_view', id=id, plan_id=plan_id))
-
-
-@recipes_bp.route('/manage/recipe/<int:id>/unlink/<int:target_plan_id>', methods=['POST'])
-def unlink_recipe_from_plan(id, target_plan_id):
-    """Removes a link set via link_recipe_to_plan() again - the OWNER
-    plan itself CANNOT be removed via this (delete_recipe() above exists
-    for that), the recipe would otherwise be left without any plan it
-    belongs to.
-
-    If, of all plans, the currently selected plan (plan_id) is the target
-    of the removal (the normal case for the "Remove 🔗" button on
-    recipe_edit_list.html - see target_plan_id=own_plan_id there), the
-    recipe becomes invisible for THIS view: a redirect back to
-    recipe_edit_view() would then immediately return 404, since
-    visible_recipes_query(plan_id) no longer finds it - hence in this
-    case, back to the list instead of the (no longer reachable) detail
-    page. If instead ANOTHER plan is removed (the "✕" badges in
-    templates/recipe_form.html for the remaining links), the recipe
-    remains visible via plan_id - back to the detail page there."""
-    user = current_user()
-    plan_id = selected_plan_id(request.form, user)
-    recipe = visible_recipes_query(plan_id).filter(Recipe.id == id).first()
-    if recipe is None:
-        abort(404)
-    if target_plan_id == recipe.owner_plan_id:
-        abort(400)
-    RecipePlanLink.query.filter_by(recipe_id=recipe.id, plan_id=target_plan_id).delete()
-    db.session.commit()
-    if target_plan_id == plan_id:
-        return redirect(url_for('recipes.recipe_edit_list_view', plan_id=plan_id))
-    return redirect(url_for('recipes.recipe_edit_view', id=id, plan_id=plan_id))
 
 
 @recipes_bp.route('/manage/recipe/import-preview', methods=['POST'])

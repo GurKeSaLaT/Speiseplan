@@ -1,6 +1,6 @@
 {# Plain recipe overview (/manage/recipe/edit-list): search/filter, badges,
    edit/delete link. Since the form overhaul, the actual edit form lives on
-   its own page PER recipe (see routes/recipes.py: recipe_edit_view(),
+   its own page PER recipe (see routes/recipes/crud.py: recipe_edit_view(),
    /manage/recipe/edit/<id>, templates/recipe_form.html) - before that, a
    full edit form for EVERY recipe sat here, kept inert only via
    <template> (see the former static/recipe_edit_modal.js), and was only
@@ -103,7 +103,7 @@ const recipeFilterInput = document.getElementById('recipeFilter');
 wireFuzzyFilter(recipeFilterInput, '.recipe-list-row', row => row.dataset.search);
 
 // Remember the search term across an actual page load: the edit form now
-// lives on its own page (see routes/recipes.py: recipe_edit_view()) - a
+// lives on its own page (see routes/recipes/crud.py: recipe_edit_view()) - a
 // save then fully reloads this list via the redirect(url_for(...)) in
 // edit_recipe(), without this a typed search term would be lost in the
 // process. sessionStorage instead of localStorage, since the search term

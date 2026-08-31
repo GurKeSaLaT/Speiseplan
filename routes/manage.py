@@ -1,7 +1,7 @@
 """Management home page: a dashboard overview with key figures and a
 sidebar navigation to the recipe/category/unit/ingredient/nutrition
 management pages (which each live in their own blueprints -
-routes/recipes.py, routes/categories.py, routes/settings.py).
+routes/recipes/, routes/categories.py, routes/settings.py).
 Deliberately kept as its own, minimal blueprint instead of being packed
 into one of the other files, since it doesn't clearly belong to any one
 of the responsibilities."""
@@ -43,7 +43,7 @@ def manage():
     fixed sidebar with grouped navigation (recipes/data) plus a display
     toggle, and in the main area a small row of key figures as well as the
     recently edited recipes (Recipe.updated_at, see models/recipe.py - updated on
-    every save in routes/recipes.py: edit_recipe()).
+    every save in routes/recipes/crud.py: edit_recipe()).
 
     "Ingredients merged" counts the actual alias TARGET names
     (list_alias_canonical_names(), e.g. "pasta") - not the number of

@@ -136,7 +136,7 @@ def test_convert_for_display_non_base_unit_passes_through():
 def test_convert_for_display_is_reversible_via_normalize():
     # Core requirement: an amount converted for display must, when saved
     # again (normalize_amount_unit), produce exactly the original
-    # canonical value once more (see routes/recipes.py: edit_recipe -
+    # canonical value once more (see routes/recipes/crud.py: edit_recipe -
     # prefilled, displayed values are sent back unchanged when the user
     # doesn't change anything).
     canonical_amount, canonical_unit = 1500, "g"
@@ -150,7 +150,7 @@ def test_renormalize_existing_ingredients_migrates_legacy_units(app, make_recipe
     from models import Ingredient, db
 
     # make_recipe creates Ingredient rows WITHOUT normalization (unlike
-    # routes/recipes.py) - this deliberately simulates "legacy data" from
+    # routes/recipes/crud.py) - this deliberately simulates "legacy data" from
     # before the unit unification.
     recipe_id = make_recipe("Alt", ingredients=[
         {"name": "Mehl", "amount": 1, "unit": "kg"},

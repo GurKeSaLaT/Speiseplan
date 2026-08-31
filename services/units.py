@@ -6,7 +6,7 @@ unambiguous base unit - mass -> grams, volume -> milliliters (incl. kitchen
 measures like tsp/tbsp/cup, see _CONVERSIONS below) - ALWAYS to this base
 when saving, regardless of the entered/imported spelling or magnitude
 ("1kg" becomes "1000g", "2 tbsp" becomes "30 ml"). normalize_amount_unit()
-handles this both for manual recipe entry (routes/recipes.py) and for
+handles this both for manual recipe entry (routes/recipes/crud.py) and for
 import (services/recipe_import.py), as well as once for legacy data
 (renormalize_existing_ingredients(), called from migrations.py: init_db()).
 

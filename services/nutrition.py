@@ -3,7 +3,7 @@
 Recipe.calories/.protein/.carbs/.fat (see models/recipe.py) are, by default, NO
 LONGER maintained by hand, but are calculated when a recipe is saved from
 the stored nutrition references of its ingredients (see
-compute_recipe_nutrition(), called from routes/recipes.py: add_recipe()/
+compute_recipe_nutrition(), called from routes/recipes/crud.py: add_recipe()/
 edit_recipe()) - Recipe.nutrition_override=True switches this off for a
 single recipe and leaves the manually entered values in place (e.g. for a
 ready-made product where only the nutrition value on the package is known).
