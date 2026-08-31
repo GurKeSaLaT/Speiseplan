@@ -1,95 +1,96 @@
 # 🍽️ Speiseplan
 
-Ein selbst gehosteter Wochen-Speiseplaner mit dauerhaftem Kalender: Rezepte
-mit Nährwerten und Zutaten pflegen, Wochen per Klick oder Drag-and-Drop
-zusammenstellen, den Rest automatisch balanciert auffüllen lassen und am
-Ende direkt eine konsolidierte Einkaufsliste bekommen.
+A self-hosted weekly meal planner with a persistent calendar: maintain
+recipes with nutrition info and ingredients, assemble weeks by click or
+drag-and-drop, let the rest fill in automatically in a balanced way, and
+get a consolidated shopping list at the end.
 
 ## Features
 
-- **Nutzerkonten & geteilte Pläne** – Registrierung per Name/E-Mail/Passwort,
-  Login über die E-Mail-Adresse. Jeder Nutzer kann sich beliebig viele eigene
-  Wochenpläne anlegen (Umschalter in der Seitenleiste, Standard ist der
-  gesternte Plan) und einzelne Pläne per E-Mail-Adresse mit anderen teilen –
-  existiert dazu bereits ein Konto, ist der Plan sofort geteilt, sonst wird
-  eine Einladung zum Registrieren "verschickt" (aktuell nur geloggt und als
-  Link auf der Freigabeseite angezeigt, da noch kein SMTP angebunden ist).
-  Rezepte, Kategorien, Einheiten und Zutaten-Gleichsetzung gehören jeweils
-  EINEM Plan; ein Rezept lässt sich zusätzlich in weitere eigene Pläne
-  einbinden (echte Verknüpfung, keine Kopie). Jede Tageskachel im
-  Wochenplan zeigt zusätzlich (pro Plan abschaltbar), was an dem Tag in den
-  ÜBRIGEN eigenen Plänen gekocht wird.
-- **Dauerhafter Plan-Kalender** – jede geplante Woche wird pro Kalendertag
-  in der Datenbank gespeichert, nicht nur flüchtig angezeigt. Die
-  Startseite zeigt die aktuelle Woche mit Navigation (vorherige/nächste
-  Woche, Datumssprung); unbeplante Wochen zeigen einen
-  "Neuen Wochenplan erstellen"-Button.
-- **Hell-/Dunkelmodus** – folgt standardmäßig der Betriebssystem-Einstellung,
-  lässt sich in der Verwaltung (⚙️ → 🎨 Darstellung) aber auch fest auf Hell
-  oder Dunkel stellen. Die Auswahl wird pro Browser/Gerät gespeichert.
-- **Rezeptverwaltung** – Gerichte mit Kategorie, Nährwerten (Kalorien,
-  Eiweiß, Kohlenhydrate, Fett), Personenzahl, einer beliebigen Zutatenliste,
-  Link und Zubereitungsanleitung anlegen, bearbeiten und löschen.
-- **Einheiten-Vereinheitlichung** – Zutatenmengen werden beim Eintragen und
-  Importieren automatisch auf eine kanonische Form gebracht (Masse → Gramm,
-  Volumen inkl. TL/EL/Tasse → Milliliter; "1 kg" wird intern zu "1000 g").
-  In der Verwaltung (⚙️ → 📏 Einheiten) lässt sich einstellen, ob Mengen in
-  g/kg bzw. ml/l angezeigt werden - gilt überall dort, wo Mengen zu sehen
-  sind (Rezept-Bearbeiten, Import-Vorschau, Einkaufsliste).
-- **Zutaten gleichsetzen** – in der Verwaltung (⚙️ → 🔗 Zutaten gleichsetzen)
-  lässt sich festlegen, dass z.B. "Spaghetti" und "Fusilli" auf der
-  Einkaufsliste als "Nudeln" zusammengefasst werden. Betrifft nur die
-  Einkaufsliste - Rezepte zeigen weiterhin ihren eigenen Zutatennamen.
-- **Rezept-Import von neun deutschsprachigen Kochseiten** – chefkoch.de,
+- **User accounts & shared plans** – registration via name/email/password,
+  login via email address. Every user can create any number of their own
+  weekly plans (switcher in the sidebar, defaults to the starred plan) and
+  share individual plans with others by email address – if an account
+  already exists for that address, the plan is shared immediately,
+  otherwise an invite to register is "sent" (currently only logged and
+  shown as a link on the sharing page, since no SMTP is wired up yet).
+  Recipes, categories, units, and ingredient aliasing each belong to ONE
+  plan; a recipe can additionally be linked into further plans of your own
+  (a real link, not a copy). Every day tile in the weekly plan additionally
+  shows (togglable per plan) what's being cooked that day in your OTHER
+  own plans.
+- **Persistent plan calendar** – every planned week is stored per calendar
+  day in the database, not just shown transiently. The home page shows the
+  current week with navigation (previous/next week, date jump); unplanned
+  weeks show a "Create new weekly plan" button.
+- **Light/dark mode** – follows the OS setting by default, but can also be
+  fixed to light or dark in account management (⚙️ → 🎨 Appearance). The
+  choice is saved per browser/device.
+- **Recipe management** – create, edit, and delete dishes with category,
+  nutrition info (calories, protein, carbs, fat), serving count, an
+  arbitrary ingredient list, a link, and preparation instructions.
+- **Unit unification** – ingredient amounts are automatically brought into
+  a canonical form when entered or imported (mass → grams, volume incl.
+  tsp/tbsp/cup → milliliters; "1 kg" becomes "1000 g" internally). Account
+  management (⚙️ → 📏 Units) lets you set whether amounts are shown in
+  g/kg or ml/l – applies everywhere amounts are shown (recipe editing,
+  import preview, shopping list).
+- **Ingredient aliasing** – account management (⚙️ → 🔗 Merge Ingredients)
+  lets you set, for example, that "spaghetti" and "fusilli" are combined
+  as "pasta" on the shopping list. Only affects the shopping list –
+  recipes still show their own ingredient name.
+- **Recipe import from nine German-language cooking sites** – chefkoch.de,
   lecker.de, essen-und-trinken.de, EAT SMARTER, Küchengötter,
-  gutekueche.de/.at, DasKochrezept, BRIGITTE und Emmikochteinfach. Ein Link
-  genügt: Name, Portionszahl, Nährwerte (falls angegeben), Zutaten und
-  Anleitung werden automatisch ausgelesen und ins Anlegen-Formular
-  übernommen; gespeichert wird erst nach Prüfung/Ergänzung (v.a. der
-  Kategorie) durch den Nutzer.
-- **Wochenplanung per Drag-and-Drop** – Gerichte aus der Live-Suche auf
-  einzelne Wochentage ziehen oder klicken, Tage per Drag-and-Drop
-  komplett tauschen (auch auf der fertigen Plan-Seite, Beilagen wandern
-  dabei mit), einzelne Tage von der Planung ausnehmen. Auf der fertigen
-  Plan-Seite lässt sich jedes Hauptgericht und jede Beilage per ✏️-Button
-  auch manuell aus allen Rezepten auswählen statt nur zu würfeln.
-- **Zusatzgerichte/Beilagen** – Rezepte lassen sich als Beilage markieren.
-  Sie belegen keinen eigenen Tages-Slot, sondern werden zusätzlich zum
-  Hauptgericht hinzugefügt – auch an Tagen ohne Hauptgericht – entweder
-  fest vor dem Erstellen des Plans oder nachträglich per Würfel-/
-  Auswahl-Button. Ein Tag kann beliebig viele Beilagen gleichzeitig haben;
-  jede einzelne lässt sich unabhängig neu würfeln, ersetzen, entfernen oder
-  per Drag-and-Drop auf einen anderen Tag verschieben.
-- **Automatisches, balanciertes Auffüllen** – Tage ohne feste Zuweisung
-  werden zufällig, aber möglichst gleichmäßig über alle Kategorien verteilt
-  aufgefüllt, ohne dieselbe Kategorie an zwei aufeinanderfolgenden Tagen zu
-  wiederholen (wenn vermeidbar).
-- **Saison-Zuordnung** – Rezepte können mehrere Standard-Saisons und/oder
-  einen eigenen Zeitraum bekommen; die automatische Auswahl bevorzugt
-  gerade verfügbare Gerichte, schränkt die manuelle Auswahl aber nie ein.
-- **Favoriten** – als Favorit markierte Rezepte werden beim Würfeln
-  häufiger gezogen als andere.
-- **Personenzahl & Mengenskalierung** – jeder Wochentag hat ein eigenes
-  Personen-Feld, das die Zutatenmengen dieses Tages in der Einkaufsliste
-  hoch-/runterrechnet.
-- **Wochen-Nährwertübersicht** – Summe und Durchschnitt von Kalorien und
-  Makros über die ganze Woche.
-- **Einkaufsliste** – Zutaten aller geplanten Haupt- und Zusatzgerichte
-  werden automatisch zusammengerechnet und lassen sich beim Einkaufen
-  abhaken.
+  gutekueche.de/.at, DasKochrezept, BRIGITTE, and Emmikochteinfach. Just a
+  link: name, serving count, nutrition info (if given), ingredients, and
+  instructions are read automatically and carried over into the create
+  form; it's only saved after review/completion (especially the category)
+  by the user.
+- **Drag-and-drop weekly planning** – drag or click dishes from the live
+  search onto individual weekdays, swap days completely via drag-and-drop
+  (also on the finished plan page, side dishes travel along), exclude
+  individual days from planning. On the finished plan page, every main
+  dish and every side dish can also be manually chosen from all recipes
+  via the ✏️ button instead of only rolled.
+- **Extra dishes/side dishes** – recipes can be marked as a side dish.
+  They don't occupy their own day slot, but are added in addition to the
+  main dish – even on days without a main dish – either fixed before
+  creating the plan or added afterward via the dice/select button. A day
+  can have any number of side dishes at once; each one can independently
+  be re-rolled, replaced, removed, or moved to another day via
+  drag-and-drop.
+- **Automatic, balanced filling** – days without a fixed assignment are
+  filled randomly, but distributed as evenly as possible across all
+  categories, without repeating the same category on two consecutive days
+  (where avoidable).
+- **Season assignment** – recipes can get several standard seasons and/or
+  a custom date range; automatic selection prefers currently available
+  dishes, but never restricts manual selection.
+- **Favorites** – recipes marked as a favorite are drawn more often than
+  others when rolling.
+- **Serving count & amount scaling** – every weekday has its own serving
+  count field, which scales that day's ingredient amounts up/down on the
+  shopping list.
+- **Weekly nutrition overview** – sum and average of calories and macros
+  across the whole week.
+- **Shopping list** – ingredients of all planned main and extra dishes are
+  automatically totaled and can be checked off while shopping.
 
-Eine laufende Liste weiterer Ideen (umgesetzt und geplant) steht in
+A running list of further ideas (implemented and planned) is in
 [IDEAS.md](IDEAS.md).
 
-## Tech-Stack
+## Tech Stack
 
 - [Flask](https://flask.palletsprojects.com/) + [Flask-SQLAlchemy](https://flask-sqlalchemy.palletsprojects.com/),
-  Routen als Blueprints organisiert (siehe Projektstruktur)
-- SQLite als Datenbank (liegt in `instance/speiseplan.db`)
-- [Bootstrap 5](https://getbootstrap.com/) (lokal eingebunden, kein CDN)
-- Vanilla JavaScript für Drag-and-Drop, Live-Suche und die dynamische
-  Plan-/Einkaufslisten-Aktualisierung; Server-Daten werden dem Frontend
-  über ein `window.PLAN_DATA`-JSON-Objekt (Jinja `tojson`) bereitgestellt
+  routes organized as blueprints (see project structure)
+- [Flask-Babel](https://python-babel.github.io/flask-babel/) for DE/EN
+  localization (English is the default language; the UI language is
+  changeable per account under ⚙️ → 👤 Account)
+- SQLite as the database (lives in `instance/speiseplan.db`)
+- [Bootstrap 5](https://getbootstrap.com/) (bundled locally, no CDN)
+- Vanilla JavaScript for drag-and-drop, live search, and dynamic
+  plan/shopping-list updates; server data is made available to the
+  frontend via a `window.PLAN_DATA` JSON object (Jinja `tojson`)
 
 ## Setup
 
@@ -104,31 +105,29 @@ pip install -r requirements.txt
 python3 app.py
 ```
 
-Die App läuft danach unter `http://127.0.0.1:5000` und leitet auf die
-Login-Seite weiter. `instance/speiseplan.db` ist im Repo mit
-Beispieldaten (rund 100 importierte Rezepte samt Zutaten-Gleichsetzung)
-sowie zwei generischen Demo-Konten versioniert, damit sich die App nach
-dem Setup direkt sinnvoll ausprobieren lässt, statt mit einer leeren
-Datenbank zu starten:
+The app then runs at `http://127.0.0.1:5000` and redirects to the login
+page. `instance/speiseplan.db` is version-controlled in the repo with
+sample data (around 100 imported recipes including ingredient aliasing)
+plus two generic demo accounts, so the app can be tried out meaningfully
+right after setup instead of starting with an empty database:
 
-| E-Mail                  | Passwort  |
-|--------------------------|-----------|
+| Email                     | Password  |
+|----------------------------|-----------|
 | `nutzer1@example.com`    | `Nutzer1` |
 | `nutzer2@example.com`    | `Nutzer2` |
 
-Über den "Konto erstellen"-Button auf der Login-Seite lässt sich
-jederzeit ein weiteres, eigenes Konto anlegen. Bei späteren Updates
-werden fehlende Tabellen/Spalten automatisch nachmigriert. Für das
-Docker-Deployment ist das Beispieldaten-Detail irrelevant - dort wird
-`instance/` als Volume auf ein Verzeichnis außerhalb des Containers
-gemountet (siehe unten), das immer Vorrang vor dem im Image enthaltenen
-Datenbankstand hat.
+The "Create account" button on the login page lets you create another,
+separate account at any time. On later updates, missing tables/columns
+are migrated automatically. This sample-data detail is irrelevant for
+the Docker deployment - there, `instance/` is mounted as a volume onto a
+directory outside the container (see below), which always takes
+precedence over the database state included in the image.
 
-Standardmäßig lauscht der Server auf allen Netzwerk-Schnittstellen
-(`0.0.0.0`) - für einen rein lokalen Testlauf, der nicht aus dem
-LAN erreichbar sein soll, `HOST=127.0.0.1 python3 app.py` verwenden.
+By default the server listens on all network interfaces (`0.0.0.0`) -
+for a purely local test run that shouldn't be reachable from the LAN,
+use `HOST=127.0.0.1 python3 app.py`.
 
-### Mit Docker
+### With Docker
 
 ```bash
 docker build -t speiseplan .
@@ -142,61 +141,71 @@ pip install -r requirements.txt -r requirements-dev.txt
 pytest
 ```
 
-Läuft komplett gegen eine eigene, temporäre SQLite-Datenbank (siehe
-`tests/conftest.py` und `DATABASE_URL` in `app.py`) - `instance/speiseplan.db`
-bleibt dabei unangetastet.
+Runs entirely against its own, temporary SQLite database (see
+`tests/conftest.py` and `DATABASE_URL` in `app.py`) - `instance/speiseplan.db`
+stays untouched.
 
-## Projektstruktur
+## Project Structure
 
 ```
-app.py                        App-Setup, Blueprint-Registrierung, DB-Migration
-models.py                     SQLAlchemy-Modelle (User, Plan, PlanMembership, PendingPlanInvite,
-                               Category, Recipe, RecipePlanLink, RecipeSeason, Ingredient,
-                               PlanDay, PlanDaySide, ExtraShoppingItem, AppSettings,
-                               IngredientAlias, IngredientNutrition)
+app.py                        App setup, blueprint registration, Babel/security wiring
+migrations.py                 Database migrations, one named function per step, run on startup
+models/                       SQLAlchemy models, split by domain:
+  user.py                       User
+  plan.py                       Plan, PlanMembership, PendingPlanInvite
+  recipe.py                     Category, Recipe, RecipePlanLink, RecipeSeason, Ingredient
+  calendar.py                   PlanDay, PlanDaySide, ExtraShoppingItem
+  settings.py                   AppSettings, IngredientAlias, IngredientNutrition
 routes/
-  auth.py                     Login, Registrierung, Logout, aktiven Plan wechseln (Blueprint "auth")
-  account.py                  Eigenes Profil/Passwort ändern, Konto löschen (Blueprint "account")
-  plans.py                    Plan anlegen/umbenennen/löschen (Blueprint "plans")
-  sharing.py                  Mitglieder/Einladungen/Stern eines Plans, Plan verlassen (Blueprint "sharing")
-  plan/                       Kalender-Wochenansicht, Plan erstellen, Würfeln/Tauschen/manuelle
-                               Auswahl, Beilagen, Einkaufsliste (Blueprint "plan", auf drei
-                               Dateien verteilt, die sich denselben Blueprint teilen):
-    pages.py                    Seiten-Routen (/, /plan/<start>, .../create, .../generate)
-    day_actions.py              AJAX: Hauptgericht/Beilagen würfeln/auswählen/verschieben, Tage tauschen
-    shopping.py                 AJAX: manuelle Einkaufslisten-Artikel
-  recipes.py                  Rezept-CRUD + Rezept-Import + Plan-Verknüpfung (Blueprint "recipes")
-  categories.py                Kategorie-CRUD (Blueprint "categories")
-  manage.py                    Verwaltungs-Startseite (Blueprint "manage")
-  settings.py                  Einheiten- + Zutaten-Gleichsetzung-Einstellungen (Blueprint "settings")
+  auth.py                     Login, registration, logout, switch active plan (blueprint "auth")
+  account.py                  Change own profile/password, delete account (blueprint "account")
+  plans.py                    Create/rename/delete a plan (blueprint "plans")
+  sharing.py                  Members/invites/star of a plan, leave a plan (blueprint "sharing")
+  plan/                       Calendar week view, create plan, roll/swap/manual selection,
+                               side dishes, shopping list (blueprint "plan", split across four
+                               files that share the same blueprint):
+    pages.py                    Page routes (/, /plan/<start>, .../create, .../generate)
+    day_actions.py              AJAX: main dish roll/select, whole-day swap/servings/cooked
+    day_actions_sides.py        AJAX: side dish add/roll/select/remove/move/cooked
+    shopping.py                 AJAX: manual shopping-list items
+  recipes/                    Recipe CRUD + recipe import + plan linking (blueprint "recipes",
+                               split across two files that share the same blueprint):
+    crud.py                     Create/edit/delete/list views + import-preview endpoint
+    links.py                    Link/unlink a recipe to/from another plan
+  categories.py                Category CRUD (blueprint "categories")
+  manage.py                    Management home page (blueprint "manage")
+  settings.py                  Unit + ingredient-aliasing settings (blueprint "settings")
 services/
-  auth.py                      Login/Session, aktiver Plan, Tab-Auswahl-Helfer (current_plan(),
+  auth.py                      Login/session, active plan, tab-selection helpers (current_plan(),
                                 selected_plan_id(), default_plan_id())
-  accounts.py                  Eigenes Profil/Passwort ändern, Konto löschen
-  plans.py                     Plan-Lebenszyklus (anlegen/löschen, Einladungen annehmen)
-  mail.py                      Einladungs-Mail-Versand (aktuell nur geloggt, kein SMTP angebunden)
-  recipe_visibility.py         Welche Rezepte für einen Plan sichtbar sind (Eigentümer + Verknüpfungen)
-  planning.py                  Wochen-/Datums-Helfer, Kategorie-Balance, Rezeptauswahl,
-                                Favoriten-/Wiederholungs-Gewichtung
-  seasons.py                   Saison-Zuordnung (Standard-Saisons + eigene Zeiträume)
-  shopping.py                  Feste Einkaufslisten-Kategorie-Reihenfolge
-  recipe_import.py             Rezept-Import von 9 Kochseiten (schema.org/Recipe-JSON-LD auslesen)
-  units.py                     Einheiten-Normalisierung/-Umrechnung (Masse -> g, Volumen -> ml)
-  settings.py                  Speicherung der Anzeige-Einheiten-Einstellung (AppSettings)
-  ingredient_aliases.py        Zutaten-Gleichsetzung für die Einkaufsliste (IngredientAlias)
-templates/                    Jinja2-Templates (Login/Registrierung, Plan-Kalender,
-                               Wochenplan erstellen, Verwaltung, Freigabe, Profil)
+  accounts.py                  Change own profile/password, delete account
+  plans.py                     Plan lifecycle (create/delete, accept invites)
+  mail.py                      Invite email sending (currently only logged, no SMTP wired up)
+  recipe_visibility.py         Which recipes are visible for a plan (owner + links)
+  planning.py                  Week/date helpers, category balance, recipe selection,
+                                favorite/repetition weighting
+  week_generation.py           Balanced-category-assignment + recipe-selection orchestration
+                                behind "(re-)create a whole week"
+  seasons.py                   Season assignment (standard seasons + custom date ranges)
+  shopping.py                  Fixed shopping-list category order
+  recipe_import.py             Recipe import from 9 cooking sites (reads schema.org/Recipe JSON-LD)
+  units.py                     Unit normalization/conversion (mass -> g, volume -> ml)
+  settings.py                  Storage of the display-unit setting (AppSettings)
+  ingredient_aliases.py        Ingredient aliasing for the shopping list (IngredientAlias)
+translations/                 Flask-Babel German catalog (translations/de/LC_MESSAGES/messages.po)
+templates/                    Jinja2 templates (login/registration, plan calendar,
+                               create weekly plan, account management, sharing, profile)
 static/
-  plan.js                       Plan-Seite: Zustand, Tageskarten, Hauptgericht, Tages-Tausch
-  plan-manual-select.js          Wiederverwendbare Rezeptsuche-Box (Hauptgericht + Beilagen)
-  plan-sides.js                  Beilagen: hinzufügen/würfeln/auswählen/entfernen/verschieben
-  plan-shopping.js               Wochen-Nährwertübersicht + Einkaufsliste
-  create_week.js                Live-Suche & Drag-and-Drop beim Wochenplan-Erstellen
-  ingredient_category_select.js Von den Rezept-Formularen gemeinsam genutztes Options-Markup
-  bootstrap.*, style.css        Lokales Bootstrap 5 + eigenes Stylesheet
-instance/speiseplan.db        SQLite-Datenbank
+  plan.js                       Plan page: state, day cards, main dish, day swap
+  plan-manual-select.js          Reusable recipe-search box (main dish + side dishes)
+  plan-sides.js                  Side dishes: add/roll/select/remove/move
+  plan-shopping.js               Weekly nutrition overview + shopping list
+  create_week.js                Live search & drag-and-drop when creating a weekly plan
+  ingredient_category_select.js Option markup shared by the recipe forms
+  bootstrap.*, style.css        Local Bootstrap 5 + custom stylesheet
+instance/speiseplan.db        SQLite database
 ```
 
-## Lizenz
+## License
 
-Veröffentlicht unter der [MIT-Lizenz](LICENSE).
+Published under the [MIT License](LICENSE).
