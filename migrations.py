@@ -526,6 +526,42 @@ def _seed_default_categories_for_all_plans():
     db.session.commit()
 
 
+def _migrate_ensure_starred_membership():
+    """Every user needs exactly one starred plan to fall back to
+    (services/auth.py: default_plan_id()/current_plan()) - without one,
+    default_plan_id() returns None, which e.g. showed up as an empty
+    category dropdown when such a user tried to create a recipe without
+    an explicit ?plan_id= in the URL. routes/sharing.py: invite_member()
+    used to unconditionally create a new membership as NOT starred, even
+    for an existing user with zero memberships of their own - fixed there
+    now (mirrors the is_first check in services/plans.py: create_plan()/
+    accept_pending_invites()), but this repairs any membership that
+    already ended up in that broken state before the fix. For each
+    affected user, stars the plan they themselves own if they have one,
+    otherwise their first (lowest id) membership. Naturally idempotent:
+    a user who already has a starred membership is left untouched."""
+    starred_user_ids = {
+        row[0] for row in db.session.execute(text("SELECT DISTINCT user_id FROM plan_membership WHERE is_starred = 1"))
+    }
+    all_user_ids = {row[0] for row in db.session.execute(text("SELECT DISTINCT user_id FROM plan_membership"))}
+    changed = False
+    for user_id in all_user_ids - starred_user_ids:
+        own_membership = (
+            db.session.query(PlanMembership)
+            .join(Plan, Plan.id == PlanMembership.plan_id)
+            .filter(PlanMembership.user_id == user_id, Plan.owner_user_id == user_id)
+            .first()
+        )
+        membership = own_membership or (
+            PlanMembership.query.filter_by(user_id=user_id).order_by(PlanMembership.id).first()
+        )
+        if membership:
+            membership.is_starred = True
+            changed = True
+    if changed:
+        db.session.commit()
+
+
 def init_db():
     """Creates missing tables on app startup (db.create_all() - covers
     e.g. a completely new, empty database or a newly added table like
@@ -553,6 +589,7 @@ def init_db():
     _migrate_category_alias_nutrition_plan_scoping(seeded_plans_by_username)
     _migrate_drop_ingredient_nutrition_calories()
     _seed_default_categories_for_all_plans()
+    _migrate_ensure_starred_membership()
 
     # Bring existing ingredient amounts/units (e.g. "Gramm", "kg", "gr" as
     # plain text from before unit unification) once into their canonical

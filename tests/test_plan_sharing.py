@@ -56,6 +56,67 @@ def test_invite_is_not_starred_for_invitee(app, client, make_user):
         assert own_membership.is_starred is True
 
 
+def test_invite_stars_first_membership_for_user_with_no_plan_yet(app, client):
+    """A user who registered without an invite and never created their
+    own plan (the "zero-plan" state, see routes/auth.py: register()) has
+    NO memberships at all yet. Inviting such a user into another plan
+    must star that membership - otherwise default_plan_id()/current_plan()
+    (services/auth.py) have nothing to fall back to for them at all,
+    which showed up as e.g. an empty category dropdown when they tried to
+    create a recipe without an explicit ?plan_id= in the URL (was: always
+    is_starred=False, mirrors the is_first check in services/plans.py:
+    create_plan()/accept_pending_invites() now)."""
+    from models import User, PlanMembership, db
+    from services.auth import hash_password
+
+    with app.app_context():
+        user = User(name="Ohne Plan", email="ohne-plan@example.com", password_hash=hash_password("test"))
+        db.session.add(user)
+        db.session.commit()
+        other_id = user.id
+        assert PlanMembership.query.filter_by(user_id=other_id).count() == 0
+
+    resp = client.post("/manage/sharing/invite", data={"email": "ohne-plan@example.com"})
+    assert resp.status_code == 302
+
+    with app.app_context():
+        membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=other_id).first()
+        assert membership is not None
+        assert membership.is_starred is True
+
+
+def test_migrate_ensure_starred_membership_repairs_existing_data(app, make_user):
+    """migrations.py: _migrate_ensure_starred_membership() repairs
+    memberships that already ended up unstarred-with-no-fallback before
+    the routes/sharing.py: invite_member() fix above existed - prefers
+    starring the plan the user themselves owns over an unrelated one
+    they were merely invited to."""
+    from migrations import _migrate_ensure_starred_membership
+    from models import Plan, PlanMembership, db
+
+    owner_id, own_plan_id = make_user("Besitzerin")
+    other_owner_id, other_plan_id = make_user("Andere Besitzerin")
+
+    with app.app_context():
+        # Simulate the pre-fix bug: both memberships of "Besitzerin" end
+        # up unstarred (their own plan included).
+        PlanMembership.query.filter_by(user_id=owner_id, plan_id=own_plan_id).update({"is_starred": False})
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=owner_id, is_starred=False))
+        db.session.commit()
+        assert PlanMembership.query.filter_by(user_id=owner_id, is_starred=True).count() == 0
+
+        _migrate_ensure_starred_membership()
+
+        starred = PlanMembership.query.filter_by(user_id=owner_id, is_starred=True).all()
+        assert len(starred) == 1
+        assert starred[0].plan_id == own_plan_id  # their OWN plan, not the other one
+
+        # A user who already has a starred membership stays untouched.
+        other_starred = PlanMembership.query.filter_by(user_id=other_owner_id, is_starred=True).first()
+        assert other_starred is not None
+        assert other_starred.plan_id == other_plan_id
+
+
 def test_remove_member_removes_access(app, client, make_user):
     other_id, _ = make_user("Mitbewohner")
     client.post("/manage/sharing/invite", data={"email": _email_for(app, other_id)})

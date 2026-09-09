@@ -52,10 +52,16 @@ def invite_member():
     created instead (see the models/plan.py docstring there) and an invite is
     "sent" (services/mail.py: send_invite_email() - currently only
     logged, the link additionally appears directly on this page, see
-    templates/sharing.html: "Pending invites"). Not starred, or only
-    possibly starred upon registration (services/plans.py:
-    accept_pending_invites()) - otherwise the invited user decides for
-    themselves whether to make this plan their default plan."""
+    templates/sharing.html: "Pending invites"). Starred only if this is
+    the existing user's very FIRST membership ever (same is_first
+    criterion as services/plans.py: create_plan()/accept_pending_invites())
+    - a user with zero memberships has no starred plan at all, and
+    default_plan_id()/current_plan() (services/auth.py) then can't fall
+    back to anything, which without this check showed up as e.g. an
+    empty category dropdown when such a user tried to create a recipe
+    without an explicit ?plan_id= in the URL. Otherwise (the invited user
+    already has at least one other plan) not starred - they decide for
+    themselves whether to make THIS plan their default one."""
     plan = current_plan()
     if plan is None:
         abort(404)
@@ -67,7 +73,8 @@ def invite_member():
     existing = User.query.filter_by(email=email).first()
     if existing:
         if not PlanMembership.query.filter_by(plan_id=plan.id, user_id=existing.id).first():
-            db.session.add(PlanMembership(plan_id=plan.id, user_id=existing.id, is_starred=False))
+            is_first_membership = PlanMembership.query.filter_by(user_id=existing.id).first() is None
+            db.session.add(PlanMembership(plan_id=plan.id, user_id=existing.id, is_starred=is_first_membership))
             db.session.commit()
     else:
         if not PendingPlanInvite.query.filter_by(plan_id=plan.id, email=email).first():
