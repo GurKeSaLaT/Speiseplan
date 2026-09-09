@@ -40,7 +40,7 @@ from services.nutrition import (
     compute_calories, get_all_nutrition_entries, infer_reference_unit, list_alias_canonical_names, set_nutrition,
 )
 from services.settings import get_settings, update_display_units
-from services.shopping import infer_category
+from services.shopping import infer_category, infer_is_pantry
 from services.units import DISPLAY_UNIT_CHOICES, MASS, VOLUME
 
 settings_bp = Blueprint('settings', __name__)
@@ -129,7 +129,10 @@ def api_set_ingredient_alias():
     category field of THIS ingredient row, so that all equated ingredients
     end up in the same category instead of being sorted differently
     depending on the recipe. None (no existing row categorized yet) leaves
-    the frontend field untouched."""
+    the frontend field untouched. is_pantry (services/shopping.py:
+    infer_is_pantry) is adopted the same way into the pantry checkbox,
+    but only ever to CHECK it, never to uncheck one the user already set -
+    see static/ingredient_alias_hint.js: fillPantryFromAlias()."""
     plan = current_plan()
     data = request.get_json() or {}
     raw_name = (data.get('raw_name') or '').strip()
@@ -144,6 +147,7 @@ def api_set_ingredient_alias():
         "raw_name": normalize_name(raw_name),
         "canonical_name": resolved_canonical,
         "category": infer_category(plan.id, resolved_canonical),
+        "is_pantry": infer_is_pantry(plan.id, resolved_canonical),
     }
 
 

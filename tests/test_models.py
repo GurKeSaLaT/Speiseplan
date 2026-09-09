@@ -20,6 +20,15 @@ def test_recipe_ingredient_cascade_delete(app, make_recipe):
         assert Ingredient.query.filter_by(recipe_id=recipe_id).count() == 0
 
 
+def test_ingredient_is_pantry_defaults_to_false(app, make_recipe):
+    from models import Ingredient
+
+    recipe_id = make_recipe("Ungewürzt", ingredients=[{"name": "Mehl", "amount": 200, "unit": "g"}])
+    with app.app_context():
+        ingredient = Ingredient.query.filter_by(recipe_id=recipe_id).first()
+        assert ingredient.is_pantry is False
+
+
 def test_recipe_season_cascade_delete(app, make_recipe):
     from models import Recipe, RecipeSeason, db
 

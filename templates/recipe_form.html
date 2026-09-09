@@ -172,7 +172,7 @@
                 <div class="rform-section-body">
                     <p class="text-muted small mb-2">{{ _('Units are automatically normalized (g/kg, ml/l/tbsp/tsp/cup) - which unit is displayed can be set under ⚙️ Settings → 📏 Units.') }}</p>
                     <div class="ing-col-labels">
-                        <span>{{ _('Ingredient') }}</span><span>{{ _('Amount') }}</span><span>{{ _('Unit') }}</span><span>{{ _('Category') }}</span><span></span>
+                        <span>{{ _('Ingredient') }}</span><span>{{ _('Amount') }}</span><span>{{ _('Unit') }}</span><span>{{ _('Category') }}</span><span title="{{ _('Pantry item (not on the weekly shopping list)') }}">{{ _('Pantry') }}</span><span></span>
                     </div>
                     <div id="ingredientsContainer">
                         {% if recipe %}
@@ -203,6 +203,15 @@
                                     <option value="{{ cat }}" {% if cat == ing.category %}selected{% endif %}>{{ cat }}</option>
                                     {% endfor %}
                                 </select>
+                                {# Hidden mirror input, not the checkbox itself, carries the
+                                   value to the server - see routes/recipes/crud.py: add_recipe()
+                                   docstring for why (an unchecked plain checkbox submits
+                                   nothing at all, which would shift the parallel-array
+                                   alignment of every row after it). #}
+                                <input type="hidden" name="ing_pantry[]" value="{{ '1' if ing.is_pantry else '0' }}">
+                                <input type="checkbox" class="ing-pantry-checkbox" title="{{ _('Pantry item (not on the weekly shopping list)') }}"
+                                       {% if ing.is_pantry %}checked{% endif %}
+                                       onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
                                 <button type="button" class="rform-ing-del" title="{{ _('Remove ingredient') }}" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
                             </div>
                             <div class="ingredient-alias-hint small mt-1"></div>
@@ -220,6 +229,9 @@
                                     <option value="{{ cat }}">{{ cat }}</option>
                                     {% endfor %}
                                 </select>
+                                <input type="hidden" name="ing_pantry[]" value="0">
+                                <input type="checkbox" class="ing-pantry-checkbox" title="{{ _('Pantry item (not on the weekly shopping list)') }}"
+                                       onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
                                 <button type="button" class="rform-ing-del" title="{{ _('Remove ingredient') }}" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
                             </div>
                             <div class="ingredient-alias-hint small mt-1"></div>

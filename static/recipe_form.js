@@ -103,6 +103,9 @@ function rformAddIngredientRow() {
             <input type="number" step="0.1" name="ing_amount[]" placeholder="Amount">
             <input type="text" name="ing_unit[]" placeholder="Unit">
             <select name="ing_category[]" title="Shopping list category">${categoryOptionsHtml()}</select>
+            <input type="hidden" name="ing_pantry[]" value="0">
+            <input type="checkbox" class="ing-pantry-checkbox" title="Pantry item (not on the weekly shopping list)"
+                   onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
             <button type="button" class="rform-ing-del" title="Remove ingredient" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
         </div>
         <div class="ingredient-alias-hint small mt-1"></div>

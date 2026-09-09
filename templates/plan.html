@@ -173,10 +173,10 @@
                 </ul>
             </div>
 
-            {# Spices/pantry staples/consumables from this week's planned
-               recipes - people usually already have these at home, so they
-               are NOT automatically added to the shopping list above (see
-               services/shopping.py: PANTRY_CATEGORIES,
+            {# Ingredients flagged as pantry items (models/recipe.py:
+               Ingredient.is_pantry) from this week's planned recipes -
+               people usually already have these at home, so they are NOT
+               automatically added to the shopping list above (see
                static/plan-shopping.js: rebuildShoppingList/renderPantryList). #}
             <div class="card shadow-sm border-0 mt-4 mb-4">
                 <div class="panel-head">

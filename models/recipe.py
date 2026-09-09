@@ -190,6 +190,16 @@ class Ingredient(db.Model):
     supermarket section this ingredient is sorted into on the shopping
     list. None (e.g. for ingredients from before this field was
     introduced) ends up in the catch-all "misc" group there.
+
+    is_pantry marks this line as something you'd typically already have
+    at home (spices, oils, canned goods, ...) - it therefore doesn't
+    automatically land on the weekly shopping list, but on a separate
+    "check pantry" list instead (see services/shopping.py module
+    docstring and static/plan-shopping.js: rebuildShoppingList). A plain
+    per-ingredient checkbox rather than something derived from category:
+    two recipes can use the same ingredient differently (a spice you buy
+    fresh each time vs. one that sits in the cupboard for months), and
+    category alone couldn't express that.
     """
     id = db.Column(db.Integer, primary_key=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
@@ -197,3 +207,4 @@ class Ingredient(db.Model):
     amount = db.Column(db.Float, nullable=False)
     unit = db.Column(db.String(20), nullable=False)
     category = db.Column(db.String(50), nullable=True)
+    is_pantry = db.Column(db.Boolean, nullable=False, default=False)

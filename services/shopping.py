@@ -15,9 +15,7 @@ SHOPPING_CATEGORIES = [
     "Backwaren",
     "Milchprodukte",
     "Gewürze",
-    "Vorratsschrank",
     "Hygieneartikel",
-    "Verbrauchsartikel",
     "Getränke",
     "Teigwaren",
     "Konserven",
@@ -29,21 +27,28 @@ SHOPPING_CATEGORIES = [
 # list, see categorySortIndex() in static/plan.js.
 UNCATEGORIZED = "Sonstiges"
 
-# Ingredients in these categories are, as a rule, already stocked at home
-# (spices, pantry baking ingredients/nuts/sauces, consumables like plastic
-# wrap/trash bags) - they therefore do NOT automatically end up on the
-# weekly shopping list, but on a separate "check pantry" list (see
-# static/plan-shopping.js: rebuildShoppingList/rebuildPantryList), from
-# which individual items can still be pulled onto the shopping list via a
-# dedicated button, e.g. if the salt happens to have run out. This applies
-# explicitly only to items derived from recipes - a manually added item
-# (even one that was just pulled from the pantry list via said button) has
-# thereby already declared its "I really need to buy this" intent and
-# always ends up directly on the shopping list, regardless of its category
-# (see the isExtra check in rebuildShoppingList()). Backwaren (baked goods)
-# is deliberately NOT included here: bread/rolls, in contrast, are
-# typically a fresh weekly purchase, not a pantry staple.
-PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}
+# Whether an ingredient is, as a rule, already stocked at home (spices,
+# pantry baking ingredients/nuts/sauces, consumables like plastic wrap/
+# trash bags) is now its own per-ingredient checkbox (models/recipe.py:
+# Ingredient.is_pantry) rather than being derived from its shopping
+# category - two recipes can use the same ingredient differently, which a
+# fixed set of "pantry categories" couldn't express. A pantry item does
+# NOT automatically end up on the weekly shopping list, but on a separate
+# "check pantry" list instead (see static/plan-shopping.js:
+# rebuildShoppingList/rebuildPantryList), from which individual items can
+# still be pulled onto the shopping list via a dedicated button, e.g. if
+# the salt happens to have run out. This applies explicitly only to items
+# derived from recipes - a manually added item (even one that was just
+# pulled from the pantry list via said button) has thereby already
+# declared its "I really need to buy this" intent and always ends up
+# directly on the shopping list, regardless of is_pantry (see the isExtra
+# check in rebuildShoppingList()).
+#
+# "Vorratsschrank" and "Verbrauchsartikel" used to be dedicated shopping
+# categories that implied "pantry item" - removed now that is_pantry
+# covers that directly; their former ingredients were folded into
+# "Konserven" (see migrations.py: _migrate_remove_pantry_shopping_
+# categories()) and still count as pantry items via is_pantry.
 
 
 def infer_category(plan_id, canonical_name):
@@ -73,3 +78,27 @@ def infer_category(plan_id, canonical_name):
     if not categories:
         return None
     return Counter(categories).most_common(1)[0][0]
+
+
+def infer_is_pantry(plan_id, canonical_name):
+    """Guesses whether a NEW ingredient row for canonical_name should
+    start out checked as a pantry item (models/recipe.py:
+    Ingredient.is_pantry): True if the majority of already existing rows
+    for this canonical ingredient (among the recipes VISIBLE for plan_id)
+    are marked as pantry items, otherwise False - analogous to
+    infer_category() above, and used the same way (set_alias(), see
+    routes/settings.py: api_set_ingredient_alias) so that equating an
+    ingredient to an already-known one also takes over its pantry status."""
+    from collections import Counter
+    from models import Ingredient
+    from services.ingredient_aliases import normalize_ingredient_name
+    from services.recipe_visibility import visible_recipe_ids_subquery
+
+    visible_ingredients = Ingredient.query.filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
+    flags = [
+        ing.is_pantry for ing in visible_ingredients
+        if normalize_ingredient_name(plan_id, ing.name) == canonical_name
+    ]
+    if not flags:
+        return False
+    return Counter(flags).most_common(1)[0][0]

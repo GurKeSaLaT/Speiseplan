@@ -502,7 +502,7 @@ body {
    oben), hier nur als CSS-Grid neu angeordnet statt der alten
    Bootstrap-.row/.col-Aufteilung. */
 .rform-section .ing-col-labels {
-    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto; gap: 0.55rem;
+    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto auto; gap: 0.55rem;
     font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--bs-secondary-color); padding-bottom: 0.5rem;
 }
@@ -510,7 +510,10 @@ body {
 .rform-section .ingredient-row { padding: 0.4rem 0; border-bottom: 1px dashed var(--border-subtle); }
 .rform-section .ingredient-row:last-of-type { border-bottom: none; }
 .rform-section .ingredient-row .ing-fields {
-    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto; gap: 0.55rem; align-items: center;
+    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto auto; gap: 0.55rem; align-items: center;
+}
+.rform-section .ingredient-row .ing-pantry-checkbox {
+    width: 1.2rem; height: 1.2rem; margin: 0 auto; accent-color: var(--primary-food);
 }
 .rform-section .ingredient-row input,
 .rform-section .ingredient-row select,

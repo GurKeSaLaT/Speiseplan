@@ -66,9 +66,12 @@ def test_api_set_ingredient_alias_creates_mapping(client, app):
     resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Olivenöl", "canonical_name": "Öl"})
     assert resp.status_code == 200
     data = resp.get_json()
-    # category is None because "Öl" isn't yet categorized on any existing
-    # ingredient row (see the dedicated infer_category tests below).
-    assert data == {"ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl", "category": None}
+    # category is None and is_pantry is False because "Öl" isn't yet
+    # categorized/flagged on any existing ingredient row (see the
+    # dedicated infer_category/infer_is_pantry tests below).
+    assert data == {
+        "ok": True, "raw_name": "Olivenöl", "canonical_name": "Öl", "category": None, "is_pantry": False,
+    }
 
     with app.app_context():
         assert normalize_ingredient_name(client.plan_id, "Olivenöl") == "Öl"
@@ -80,7 +83,9 @@ def test_api_set_ingredient_alias_normalizes_input(client, app):
     resp = client.post("/api/ingredient-alias/set", json={"raw_name": "  fusilli  ", "canonical_name": "nudeln"})
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data == {"ok": True, "raw_name": "Fusilli", "canonical_name": "Nudeln", "category": None}
+    assert data == {
+        "ok": True, "raw_name": "Fusilli", "canonical_name": "Nudeln", "category": None, "is_pantry": False,
+    }
     with app.app_context():
         assert normalize_ingredient_name(client.plan_id, "Fusilli") == "Nudeln"
 
@@ -100,6 +105,21 @@ def test_api_set_ingredient_alias_returns_inferred_category(client, app, make_re
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["category"] == "Teigwaren"
+
+
+def test_api_set_ingredient_alias_returns_inferred_pantry_flag(client, app, make_recipe):
+    """Mirrors test_api_set_ingredient_alias_returns_inferred_category
+    above, but for is_pantry (services/shopping.py: infer_is_pantry) -
+    static/ingredient_alias_hint.js: fillPantryFromAlias() applies it to
+    the pantry checkbox of the current ingredient row."""
+    make_recipe("Gewürztes Gericht", ingredients=[
+        {"name": "Salz", "amount": 5, "unit": "g", "is_pantry": True},
+    ])
+
+    resp = client.post("/api/ingredient-alias/set", json={"raw_name": "Meersalz", "canonical_name": "Salz"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["is_pantry"] is True
 
 
 def test_api_set_ingredient_alias_requires_both_fields(client):

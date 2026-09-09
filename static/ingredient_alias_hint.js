@@ -187,6 +187,7 @@
             canonicalNames = new Set(Object.values(ALIASES));
             fillUnitFromNutrition(hintEl, data.canonical_name);
             fillCategoryFromAlias(hintEl, data.category);
+            fillPantryFromAlias(hintEl, data.is_pantry);
             renderHint(hintEl, data.raw_name);
         })
         .catch(() => alert('Note: Could not set alias.'));
@@ -208,6 +209,25 @@
         const categorySelect = hintEl.closest('.ingredient-row')?.querySelector('[name="ing_category[]"]');
         if (categorySelect && !categorySelect.value) {
             categorySelect.value = category;
+        }
+    }
+
+    /** When setting an alias, automatically takes over the pantry status
+     * already in use for the canonical ingredient (guessed server-side,
+     * see routes/settings.py: api_set_ingredient_alias/services/
+     * shopping.py: infer_is_pantry) into the pantry checkbox of THIS
+     * ingredient row - only ever to CHECK it (never to uncheck a box the
+     * user already ticked themselves, mirroring fillCategoryFromAlias()
+     * only filling an empty category). The checkbox itself isn't the
+     * submitted field - its hidden mirror input is (see
+     * recipe_form.html) - so both are kept in sync here. */
+    function fillPantryFromAlias(hintEl, isPantry) {
+        if (!isPantry) return;
+        const checkbox = hintEl.closest('.ingredient-row')?.querySelector('.ing-pantry-checkbox');
+        if (checkbox && !checkbox.checked) {
+            checkbox.checked = true;
+            const hiddenInput = checkbox.previousElementSibling;
+            if (hiddenInput) hiddenInput.value = '1';
         }
     }
 

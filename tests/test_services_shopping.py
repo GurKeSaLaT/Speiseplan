@@ -1,5 +1,5 @@
 """Tests for services/shopping.py: the fixed shopping-list category list."""
-from services.shopping import PANTRY_CATEGORIES, SHOPPING_CATEGORIES, UNCATEGORIZED, infer_category
+from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED, infer_category, infer_is_pantry
 
 
 def test_shopping_categories_order():
@@ -8,9 +8,7 @@ def test_shopping_categories_order():
         "Backwaren",
         "Milchprodukte",
         "Gewürze",
-        "Vorratsschrank",
         "Hygieneartikel",
-        "Verbrauchsartikel",
         "Getränke",
         "Teigwaren",
         "Konserven",
@@ -25,14 +23,13 @@ def test_uncategorized_not_part_of_fixed_list():
     assert UNCATEGORIZED not in SHOPPING_CATEGORIES
 
 
-def test_pantry_categories_are_valid_shopping_categories():
-    # Every pantry category must also be a genuine shopping-list category
-    # (otherwise it wouldn't show up in the category dropdown, for example).
-    assert PANTRY_CATEGORIES == {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"}
-    assert PANTRY_CATEGORIES.issubset(set(SHOPPING_CATEGORIES))
-    # "Backwaren" is deliberately NOT part of the pantry categories - bread
-    # is typically a fresh weekly purchase.
-    assert "Backwaren" not in PANTRY_CATEGORIES
+def test_pantry_categories_removed_from_shopping_categories():
+    # "Vorratsschrank"/"Verbrauchsartikel" used to imply "pantry item" -
+    # removed now that models/recipe.py: Ingredient.is_pantry is its own
+    # checkbox instead (see migrations.py:
+    # _migrate_remove_pantry_shopping_categories()).
+    assert "Vorratsschrank" not in SHOPPING_CATEGORIES
+    assert "Verbrauchsartikel" not in SHOPPING_CATEGORIES
 
 
 def test_shopping_categories_injected_into_templates(client):
@@ -41,15 +38,7 @@ def test_shopping_categories_injected_into_templates(client):
     # tojson escapes umlauts as \uXXXX instead of raw UTF-8 bytes, see
     # templates/base.html: window.SHOPPING_CATEGORIES.
     assert b"Gew\\u00fcrze" in resp.data
-    assert b"Verbrauchsartikel" in resp.data
-
-
-def test_pantry_categories_injected_into_templates(client):
-    resp = client.get("/manage")
-    assert resp.status_code == 200
-    assert b"window.PANTRY_CATEGORIES" in resp.data
-    assert b"Gew\\u00fcrze" in resp.data
-    assert b"Verbrauchsartikel" in resp.data
+    assert b"Konserven" in resp.data
 
 
 def test_infer_category_returns_none_without_existing_rows(app, test_plan_id):
@@ -109,3 +98,41 @@ def test_infer_category_ignores_other_plans_recipes(app, test_plan_id, make_reci
     ])
     with app.app_context():
         assert infer_category(test_plan_id, "Nudeln") is None
+
+
+def test_infer_is_pantry_returns_false_without_existing_rows(app, test_plan_id):
+    with app.app_context():
+        assert infer_is_pantry(test_plan_id, "Salz") is False
+
+
+def test_infer_is_pantry_returns_true_when_flagged(app, test_plan_id, make_recipe):
+    make_recipe("Gewürztes Gericht", ingredients=[
+        {"name": "Salz", "amount": 5, "unit": "g", "is_pantry": True},
+    ])
+    with app.app_context():
+        assert infer_is_pantry(test_plan_id, "Salz") is True
+
+
+def test_infer_is_pantry_resolves_via_alias(app, test_plan_id, make_recipe):
+    from services.ingredient_aliases import set_alias
+
+    make_recipe("Gewürztes Gericht", ingredients=[
+        {"name": "Meersalz", "amount": 5, "unit": "g", "is_pantry": True},
+    ])
+    with app.app_context():
+        set_alias(test_plan_id, "Meersalz", "Salz")
+        assert infer_is_pantry(test_plan_id, "Salz") is True
+
+
+def test_infer_is_pantry_majority_wins(app, test_plan_id, make_recipe):
+    make_recipe("Erstes Gericht", ingredients=[
+        {"name": "Zwiebel", "amount": 1, "unit": "Stk", "is_pantry": False},
+    ])
+    make_recipe("Zweites Gericht", ingredients=[
+        {"name": "Zwiebel", "amount": 1, "unit": "Stk", "is_pantry": False},
+    ])
+    make_recipe("Drittes Gericht", ingredients=[
+        {"name": "Zwiebel", "amount": 1, "unit": "Stk", "is_pantry": True},
+    ])
+    with app.app_context():
+        assert infer_is_pantry(test_plan_id, "Zwiebel") is False

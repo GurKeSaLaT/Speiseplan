@@ -90,15 +90,16 @@ function categorySortIndex(category) {
  * with its own delete button, since they don't belong to any
  * recipe/day).
  *
- * Items originating from recipes whose category is in window.PANTRY_
- * CATEGORIES (spices/consumables, see services/shopping.py) are FILTERED
+ * Items originating from an ingredient row with is_pantry set (spices/
+ * consumables, see models/recipe.py: Ingredient.is_pantry) are FILTERED
  * OUT here and instead displayed separately by renderPantryList() - as a
  * rule you already have these at home, they shouldn't fill up the actual
  * shopping list anew every week. A manually added item (isExtra) is
- * ALWAYS exempt from this, even with a pantry category: manually adding
- * it (including via the "→ Shopping list" button from the pantry list,
- * see pushPantryItemToShoppingList) is already the explicit "I really do
- * need to buy this" decision, which shouldn't be filtered out again.
+ * ALWAYS exempt from this, even when consolidated from pantry-flagged
+ * ingredient rows: manually adding it (including via the "→ Shopping
+ * list" button from the pantry list, see pushPantryItemToShoppingList)
+ * is already the explicit "I really do need to buy this" decision, which
+ * shouldn't be filtered out again.
  */
 function rebuildShoppingList() {
     rebuildWeeklyNutritionSummary();
@@ -131,10 +132,17 @@ function rebuildShoppingList() {
                         // If the same ingredient was categorized slightly
                         // differently across multiple recipes, the
                         // last-seen non-empty category wins - not a hard
-                        // error case, barely occurs in practice.
+                        // error case, barely occurs in practice. Pantry
+                        // status is OR'd instead: if ANY recipe marks it
+                        // as something you'd already have at home, that's
+                        // enough to keep it off the shopping list.
                         if (ing.category) consolidated[key].category = ing.category;
+                        if (ing.is_pantry) consolidated[key].is_pantry = true;
                     } else {
-                        consolidated[key] = { name: ing.name, amount: scaledAmount, unit: ing.unit, category: ing.category || null };
+                        consolidated[key] = {
+                            name: ing.name, amount: scaledAmount, unit: ing.unit,
+                            category: ing.category || null, is_pantry: !!ing.is_pantry,
+                        };
                     }
                 });
             }
@@ -156,9 +164,8 @@ function rebuildShoppingList() {
         });
     });
 
-    const pantryCategories = window.PANTRY_CATEGORIES || [];
-    const pantryItems = allItems.filter(item => !item.isExtra && pantryCategories.includes(item.category));
-    const items = allItems.filter(item => item.isExtra || !pantryCategories.includes(item.category));
+    const pantryItems = allItems.filter(item => !item.isExtra && item.is_pantry);
+    const items = allItems.filter(item => item.isExtra || !item.is_pantry);
 
     if (counterBadge) counterBadge.textContent = items.length;
 

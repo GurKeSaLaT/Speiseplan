@@ -133,6 +133,46 @@ def _migrate_ingredient_category_column():
         db.session.commit()
 
 
+def _migrate_ingredient_pantry_flag():
+    """Adds Ingredient.is_pantry (see services/shopping.py module
+    docstring) - replaces the previous derivation of "is this a pantry
+    item" from the ingredient's shopping category (the now-removed
+    PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"})
+    with an explicit per-ingredient checkbox. Existing rows are backfilled
+    ONCE from exactly those three categories - this must run BEFORE
+    _migrate_remove_pantry_shopping_categories() below renames two of them
+    away, or the backfill would no longer find them. Only runs the
+    backfill the one time the column is actually created, so a user who
+    later unchecks the box for a specific spice doesn't get overridden
+    again on the next app start."""
+    existing_ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
+    if 'is_pantry' not in existing_ingredient_columns:
+        db.session.execute(text("ALTER TABLE ingredient ADD COLUMN is_pantry BOOLEAN NOT NULL DEFAULT 0"))
+        db.session.execute(text(
+            "UPDATE ingredient SET is_pantry = 1 "
+            "WHERE category IN ('Gewürze', 'Vorratsschrank', 'Verbrauchsartikel')"
+        ))
+        db.session.commit()
+
+
+def _migrate_remove_pantry_shopping_categories():
+    """"Vorratsschrank" and "Verbrauchsartikel" were removed from
+    services/shopping.py: SHOPPING_CATEGORIES once "pantry item" became
+    its own checkbox (see _migrate_ingredient_pantry_flag() above, which
+    must run first) instead of being implied by the category. Existing
+    ingredient rows still carrying either string in their free-text
+    category column are moved to "Konserven" - the closest remaining
+    shelf-stable-goods category - so they don't silently fall into the
+    "Sonstiges" catch-all; their is_pantry flag already preserves that
+    they're pantry items regardless of this reassignment. Naturally
+    idempotent (no rows left to match after the first run), so unlike the
+    ALTER TABLE steps above this doesn't need a one-time guard."""
+    db.session.execute(text(
+        "UPDATE ingredient SET category = 'Konserven' WHERE category IN ('Vorratsschrank', 'Verbrauchsartikel')"
+    ))
+    db.session.commit()
+
+
 def _migrate_recipe_season_table():
     """Column RESTRUCTURING rather than a mere addition: earlier versions
     had a single season text column directly on Recipe; that was later
@@ -498,6 +538,8 @@ def init_db():
     _migrate_user_language_column()
     _migrate_recipe_columns()
     _migrate_ingredient_category_column()
+    _migrate_ingredient_pantry_flag()
+    _migrate_remove_pantry_shopping_categories()
     _migrate_recipe_season_table()
     _migrate_plan_day_side_table()
     _migrate_plan_day_cooked_columns()

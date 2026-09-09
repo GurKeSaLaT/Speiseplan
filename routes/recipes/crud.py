@@ -189,15 +189,21 @@ def add_recipe():
     Only the final commit() makes everything durable together (if an
     error occurred in between, everything would be rolled back).
 
-    The ingredients come as four parallel lists from the form
-    (ing_name[], ing_amount[], ing_unit[], ing_category[] - an HTML form
-    with rows added dynamically via JavaScript, see recipe_form.html),
-    are merged pairwise via the shared index, and rows with an empty name
-    are skipped (e.g. an unused trailing empty row in the form).
-    ing_category[] is the only one of the four that is optional: an empty
-    string becomes None (see services/shopping.py: UNCATEGORIZED - None
-    ends up in the shopping list's miscellaneous catch-all group, with no
-    extra special case needed here).
+    The ingredients come as five parallel lists from the form
+    (ing_name[], ing_amount[], ing_unit[], ing_category[], ing_pantry[] -
+    an HTML form with rows added dynamically via JavaScript, see
+    recipe_form.html), are merged pairwise via the shared index, and rows
+    with an empty name are skipped (e.g. an unused trailing empty row in
+    the form). ing_category[]/ing_pantry[] are the only ones of the five
+    that are optional (also missing entirely in older/test form posts):
+    an empty category string becomes None (see services/shopping.py:
+    UNCATEGORIZED - None ends up in the shopping list's miscellaneous
+    catch-all group, with no extra special case needed here), a missing
+    pantry entry defaults to False. ing_pantry[] itself is always exactly
+    one entry per row regardless of checked state (see recipe_form.html:
+    the hidden mirror input next to the actual checkbox) - so, unlike a
+    plain HTML checkbox, an unchecked box doesn't shift the parallel-list
+    alignment of the rows after it.
 
     Nutrition: is by default calculated from the ingredients (see
     services/nutrition.py: compute_recipe_nutrition(), based on the
@@ -229,19 +235,24 @@ def add_recipe():
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
     ing_categories = request.form.getlist('ing_category[]')
+    ing_pantry_flags = request.form.getlist('ing_pantry[]')
 
     normalized_ingredients = []
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
             # Bring amount+unit into canonical form (always g/ml within
             # their family, see services/units.py) - regardless of
             # whether the user typed "1kg"/"1 kilo"/"2 tbsp" or left an
             # import/edit row already pre-filled in the display unit
             # unchanged.
             amount, unit = normalize_amount_unit(amount, ing_units[i])
-            normalized_ingredients.append({"name": ing_names[i], "amount": amount, "unit": unit, "category": category})
+            normalized_ingredients.append({
+                "name": ing_names[i], "amount": amount, "unit": unit,
+                "category": category, "is_pantry": is_pantry,
+            })
 
     if nutrition_override:
         protein = float(request.form.get('protein') or 0)
@@ -265,7 +276,8 @@ def add_recipe():
 
     for ing in normalized_ingredients:
         db.session.add(Ingredient(
-            recipe_id=new_recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"], category=ing["category"]
+            recipe_id=new_recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
+            category=ing["category"], is_pantry=ing["is_pantry"],
         ))
 
     db.session.commit()
@@ -325,23 +337,29 @@ def edit_recipe(id):
     ing_amounts = request.form.getlist('ing_amount[]')
     ing_units = request.form.getlist('ing_unit[]')
     ing_categories = request.form.getlist('ing_category[]')
+    ing_pantry_flags = request.form.getlist('ing_pantry[]')
 
     normalized_ingredients = []
     for i in range(len(ing_names)):
         if ing_names[i].strip():
             amount = float(ing_amounts[i] or 0)
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
             # See add_recipe() above - the same normalization to canonical
             # form. Since the form fields here were pre-filled with the
             # amount already converted to the display unit (see
             # recipe_edit_view: ingredient_display), saving without any
             # change again yields exactly the original canonical value.
             amount, unit = normalize_amount_unit(amount, ing_units[i])
-            normalized_ingredients.append({"name": ing_names[i], "amount": amount, "unit": unit, "category": category})
+            normalized_ingredients.append({
+                "name": ing_names[i], "amount": amount, "unit": unit,
+                "category": category, "is_pantry": is_pantry,
+            })
 
     for ing in normalized_ingredients:
         db.session.add(Ingredient(
-            recipe_id=recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"], category=ing["category"]
+            recipe_id=recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
+            category=ing["category"], is_pantry=ing["is_pantry"],
         ))
 
     if recipe.nutrition_override:

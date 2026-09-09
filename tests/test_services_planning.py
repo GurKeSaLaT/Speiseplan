@@ -292,7 +292,9 @@ def test_jsonify_recipe_normalizes_ingredient_names(app, test_plan_id, make_reci
         data = jsonify_recipe(recipe, test_plan_id)
         assert data["name"] == "Suppe"
         assert data["calories"] == 300
-        assert data["ingredients"] == [{"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren"}]
+        assert data["ingredients"] == [
+            {"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren", "is_pantry": False}
+        ]
 
 
 def test_jsonify_recipe_converts_ingredients_to_display_unit(app, test_plan_id, make_recipe):
@@ -325,6 +327,20 @@ def test_jsonify_recipe_applies_ingredient_alias(app, test_plan_id, make_recipe)
         recipe = db.session.get(Recipe, recipe_id)
         data = jsonify_recipe(recipe, test_plan_id)
         assert data["ingredients"][0]["name"] == "Nudeln"
+
+
+def test_jsonify_recipe_includes_ingredient_pantry_flag(app, test_plan_id, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Gewürztes Gericht", ingredients=[
+        {"name": "Salz", "amount": 5, "unit": "g", "is_pantry": True},
+        {"name": "Zwiebel", "amount": 1, "unit": "Stk", "is_pantry": False},
+    ])
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        data = jsonify_recipe(recipe, test_plan_id)
+        by_name = {ing["name"]: ing["is_pantry"] for ing in data["ingredients"]}
+        assert by_name == {"Salz": True, "Zwiebel": False}
 
 
 def test_jsonify_recipe_ingredient_without_alias_keeps_own_name(app, test_plan_id, make_recipe):

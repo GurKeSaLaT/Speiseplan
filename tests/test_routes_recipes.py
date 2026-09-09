@@ -348,6 +348,45 @@ def test_add_recipe_normalizes_ingredient_units(client, app, make_category):
         assert by_name["Öl"] == (30, "ml")
 
 
+def test_add_recipe_sets_ingredient_pantry_flags(client, app, make_category):
+    """ing_pantry[] always carries exactly one "0"/"1" entry per row (the
+    hidden mirror input, see recipe_form.html/routes/recipes/crud.py:
+    add_recipe() docstring) - not the raw unchecked-checkbox-submits-
+    nothing behavior."""
+    from models import Recipe
+
+    cat_id = make_category("Pantry-Test")
+    form = _base_recipe_form(cat_id, **{
+        "ing_name[]": ["Salz", "Zwiebel", ""],
+        "ing_amount[]": ["5", "1", ""],
+        "ing_unit[]": ["g", "Stk", ""],
+        "ing_category[]": ["Gewürze", "", ""],
+        "ing_pantry[]": ["1", "0", "0"],
+    })
+
+    client.post("/add-recipe", data=form, follow_redirects=True)
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        by_name = {i.name: i.is_pantry for i in recipe.ingredients}
+        assert by_name["Salz"] is True
+        assert by_name["Zwiebel"] is False
+
+
+def test_add_recipe_without_ing_pantry_field_defaults_to_false(client, app, make_category):
+    """Older/simpler form posts (and every other pre-existing test in
+    this file) don't send ing_pantry[] at all - must not error, and every
+    row defaults to not-pantry."""
+    from models import Recipe
+
+    cat_id = make_category("Ohne Pantry-Feld")
+    form = _base_recipe_form(cat_id)
+
+    client.post("/add-recipe", data=form, follow_redirects=True)
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+        assert recipe.ingredients[0].is_pantry is False
+
+
 def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
     from models import Recipe, db
 
@@ -366,6 +405,24 @@ def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
         recipe = db.session.get(Recipe, recipe_id)
         assert recipe.name == "Geändertes Gericht"
         assert [i.name for i in recipe.ingredients] == ["Neu"]
+
+
+def test_edit_recipe_sets_ingredient_pantry_flag(client, app, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Altes Gericht", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
+    with app.app_context():
+        cat_id = db.session.get(Recipe, recipe_id).category_id
+
+    form = _base_recipe_form(cat_id, name="Geändertes Gericht", **{
+        "ing_name[]": ["Pfeffer"], "ing_amount[]": ["1"], "ing_unit[]": ["g"],
+        "ing_category[]": ["Gewürze"], "ing_pantry[]": ["1"],
+    })
+
+    client.post(f"/edit-recipe/{recipe_id}", data=form, follow_redirects=True)
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        assert recipe.ingredients[0].is_pantry is True
 
 
 def test_edit_recipe_bumps_updated_at(client, app, make_recipe):

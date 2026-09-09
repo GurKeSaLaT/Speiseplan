@@ -25,7 +25,7 @@ from migrations import init_db
 from services.auth import current_plan, current_user, user_plan_memberships
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
-from services.shopping import PANTRY_CATEGORIES, SHOPPING_CATEGORIES, UNCATEGORIZED
+from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
 from routes.auth import auth_bp, SESSION_LIFETIME
 from routes.plan import plan_bp
 from routes.manage import manage_bp
@@ -280,17 +280,15 @@ def inject_current_user_and_plans():
 def inject_shopping_categories():
     """Makes the fixed shopping-list category order available to all
     templates (see services/shopping.py) - needed both by the category
-    dropdowns when entering ingredients (recipe_form.html,
-    recipe_edit_list.html) and, via window.SHOPPING_CATEGORIES in
-    base.html, by the client-side sorting/grouping of the shopping list
-    (static/plan.js). pantry_categories (window.PANTRY_CATEGORIES)
-    additionally marks which of these categories should NOT automatically
-    go onto the shopping list, but onto the separate pantry list (see
-    static/plan-shopping.js: rebuildShoppingList)."""
+    dropdown when entering ingredients (recipe_form.html) and, via
+    window.SHOPPING_CATEGORIES in base.html, by the client-side sorting/
+    grouping of the shopping list (static/plan.js). Which of an
+    ingredient's rows count as pantry items (not automatically on the
+    shopping list) is now Ingredient.is_pantry itself, not derived from
+    the category here."""
     return {
         'shopping_categories': SHOPPING_CATEGORIES,
         'shopping_uncategorized': UNCATEGORIZED,
-        'pantry_categories': sorted(PANTRY_CATEGORIES),
     }
 
 

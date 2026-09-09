@@ -409,8 +409,10 @@ def jsonify_recipe(recipe, plan_id):
     concrete ingredients that amount to the same thing for shopping are
     combined into one item. The recipe itself (add/edit form) still shows
     the originally entered name unchanged. Each ingredient's shopping-list
-    category (see services/shopping.py) is passed through unchanged - it
-    determines the group/order the ingredient is sorted into there.
+    category and is_pantry flag (see services/shopping.py/models/
+    recipe.py: Ingredient) are passed through unchanged - they determine
+    the group/order an ingredient is sorted into resp. whether it ends up
+    on the shopping list or the separate pantry list there.
 
     Amounts/units are converted here from the canonical storage form
     (always g/ml, see services/units.py) to the display unit chosen by
@@ -446,6 +448,7 @@ def jsonify_recipe(recipe, plan_id):
                 "name": normalize_ingredient_name(plan_id, ing.name),
                 **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
                 "category": ing.category,
+                "is_pantry": ing.is_pantry,
             }
             for ing in recipe.ingredients
         ]

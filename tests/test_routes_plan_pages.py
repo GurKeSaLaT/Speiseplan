@@ -222,8 +222,8 @@ def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
 
 
 def test_week_view_has_pantry_list_panel(client, app, make_recipe):
-    """Spices/consumables (see services/shopping.py:
-    PANTRY_CATEGORIES) don't end up directly on the shopping list, but
+    """Ingredients flagged as pantry items (see models/recipe.py:
+    Ingredient.is_pantry) don't end up directly on the shopping list, but
     on a separate "check pantry" list (see
     static/plan-shopping.js: renderPantryList) - its empty shell must
     always be present regardless of plan state, JS fills it in."""
