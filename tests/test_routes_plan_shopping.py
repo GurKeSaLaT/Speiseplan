@@ -18,7 +18,7 @@ def test_add_shopping_item_success_normalizes_week_start(client, app):
     from models import ExtraShoppingItem
 
     # 2026-06-17 is a Wednesday - the item must still be assigned to the
-    # Monday of the same week.
+    # Friday that starts the same (Friday-Thursday) week.
     resp = client.post("/plan/2026-06-17/shopping-item/add", json={
         "name": "Klopapier", "amount": 2, "unit": "Pack", "category": "Hygieneartikel",
     })
@@ -29,7 +29,7 @@ def test_add_shopping_item_success_normalizes_week_start(client, app):
 
     with app.app_context():
         item = ExtraShoppingItem.query.first()
-        assert item.week_start == date(2026, 6, 15)
+        assert item.week_start == date(2026, 6, 12)
 
 
 def test_add_shopping_item_normalizes_convertible_unit(client, app):

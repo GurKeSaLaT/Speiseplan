@@ -9,7 +9,7 @@ from flask_babel import gettext as _
 
 from models import db, ExtraShoppingItem
 from services.auth import current_plan
-from services.planning import monday_of, parse_iso_date
+from services.planning import friday_of, parse_iso_date
 from services.settings import get_display_units
 from services.units import convert_for_display, normalize_amount_unit
 from routes.plan import plan_bp
@@ -20,7 +20,7 @@ def add_shopping_item(start_date):
     """AJAX endpoint behind the "add item" mini-form on the plan page
     (see static/plan-shopping.js: addExtraShoppingItem): creates a
     manual shopping-list item that doesn't belong to any recipe (e.g.
-    toiletries). start_date is normalized to the week's Monday like
+    toiletries). start_date is normalized to the week's Friday like
     everywhere else, so an item is consistently assigned to THE ONE week
     regardless of which date within the week the page was accessed
     through.
@@ -33,7 +33,7 @@ def add_shopping_item(start_date):
     start = parse_iso_date(start_date)
     if start is None:
         return {"error": _("Invalid date")}, 400
-    start = monday_of(start)
+    start = friday_of(start)
 
     data = request.get_json() or {}
     name = (data.get('name') or '').strip()

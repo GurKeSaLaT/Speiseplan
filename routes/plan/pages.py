@@ -1,5 +1,5 @@
 """Page routes of the weekly plan calendar: deliver whole HTML pages or
-redirect. Work with a "week-start date" (always a Monday) and a day
+redirect. Work with a "week-start date" (always a Friday) and a day
 index 0-6 within that week - unlike the day actions in day_actions.py,
 which work directly with concrete calendar days.
 """
@@ -11,7 +11,7 @@ from flask_babel import gettext as _
 
 from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem
 from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
-from services.planning import DAY_NAMES, monday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
+from services.planning import DAY_NAMES, friday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
 from services.plan_summary import build_week_summary
 from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
@@ -41,7 +41,7 @@ def index():
     if current_plan() is None:
         return week_view(date.today().isoformat())
 
-    start = monday_of(date.today())
+    start = friday_of(date.today())
     summary = build_week_summary(current_user(), start)
     return render_template(
         'plan_summary.html', summary=summary, week_dates=week_dates_for(start), today=date.today(), days=DAY_NAMES
@@ -65,7 +65,7 @@ def summary_open_recipe():
         abort(400)
 
     session['active_plan_id'] = plan_id
-    start = monday_of(day)
+    start = friday_of(day)
     return redirect(url_for(
         'plan.week_view', start_date=start.isoformat(), plan_id=plan_id, open_day=day.isoformat()
     ))
@@ -104,17 +104,17 @@ def week_view(start_date):
 
     start_date arrives as an arbitrary ISO date string from the URL
     (e.g. from a link to a specific day or the date-jump field) and
-    doesn't necessarily have to be a Monday: normalized = monday_of(start)
+    doesn't necessarily have to be a Friday: normalized = friday_of(start)
     converts it to the start of the week, and if the original date
     doesn't already fall on it, a redirect is made to the normalized,
-    "canonical" URL (e.g. /plan/2026-06-17 (Wednesday) -> /plan/2026-06-15
-    (Monday of the same week)) - so every week always has exactly one
+    "canonical" URL (e.g. /plan/2026-06-17 (Wednesday) -> /plan/2026-06-12
+    (Friday of the same week)) - so every week always has exactly one
     valid URL, no matter which date it's reached through.
 
     Then loads the associated PlanDay rows for all 7 days of this week
     (if present - ordered contains None at the respective position if
     nothing has been planned for this day yet) and derives from that four
-    parallel lists sorted by day index (0=Monday...6=Sunday): plan (main
+    parallel lists sorted by day index (0=Friday...6=Thursday): plan (main
     dishes), side_plan (a LIST of side dishes per day, see models/calendar.py:
     PlanDay.sides - a day can have any number of them), excluded_days
     (which day indices are marked "excluded") and servings_list (number
@@ -143,7 +143,7 @@ def week_view(start_date):
     start = parse_iso_date(start_date)
     if start is None:
         abort(404)
-    normalized = monday_of(start)
+    normalized = friday_of(start)
     if normalized != start:
         return redirect(url_for(
             'plan.week_view', start_date=normalized.isoformat(), plan_id=request.args.get('plan_id')
@@ -179,7 +179,7 @@ def week_view(start_date):
     cooked_main = [pd.cooked if pd else False for pd in ordered]
 
     today = date.today()
-    # Fully formatted weekday+date labels ("Monday, 15.09. (Today)"),
+    # Fully formatted weekday+date labels ("Friday, 12.06. (Today)"),
     # which static/plan.js needs when re-rendering a day card after a day
     # swap, without needing to know weekday names itself.
     day_labels = [
@@ -281,7 +281,7 @@ def week_create_view(start_date):
     Only reached via the "Create new weekly plan" button (or "Recreate
     week" for an already planned week) from the week view - unlike
     before, this is no longer a standalone main page. start_date is
-    normalized to the week's Monday just like in week_view(), but
+    normalized to the week's Friday just like in week_view(), but
     (unlike there) without a redirect on mismatch - this page is always
     reached via an already-correct link, a redirect here would only cost
     an unnecessary additional request.
@@ -295,7 +295,7 @@ def week_create_view(start_date):
     start = parse_iso_date(start_date)
     if start is None:
         abort(404)
-    start = monday_of(start)
+    start = friday_of(start)
     plan = _resolve_and_activate_plan(current_user(), request.args)
     if plan is None:
         abort(404)
@@ -318,7 +318,7 @@ def week_generate(start_date):
 
     Flow in three steps (numbered in the code):
 
-    1. Read the form: for each of the 7 days (index 0=Monday...6=Sunday,
+    1. Read the form: for each of the 7 days (index 0=Friday...6=Thursday,
        NOT the same as a calendar date - the form only knows the position
        within the week), it is checked whether it's marked "excluded"
        (day_excluded_i), otherwise whether a recipe ID has been fixed for
@@ -352,7 +352,7 @@ def week_generate(start_date):
     start = parse_iso_date(start_date)
     if start is None:
         abort(404)
-    start = monday_of(start)
+    start = friday_of(start)
     dates = week_dates_for(start)
     # The form's own action URL (templates/create_week.html) carries
     # ?plan_id= as a query-string parameter even though this is a POST,

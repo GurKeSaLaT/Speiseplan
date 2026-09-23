@@ -195,18 +195,18 @@ def test_switch_plan_always_lands_on_interactive_week_view(app, client, make_use
         db.session.commit()
 
     from datetime import date
-    from services.planning import monday_of
-    monday = monday_of(date.today()).isoformat()
+    from services.planning import friday_of
+    friday = friday_of(date.today()).isoformat()
 
     referrer = f"http://localhost/manage/recipe/edit-list?plan_id={client.plan_id}"
     resp = client.post(f"/plan/switch/{other_plan_id}", headers={"Referer": referrer})
     assert resp.status_code == 302
-    assert resp.headers["Location"] == f"/plan/{monday}?plan_id={other_plan_id}"
+    assert resp.headers["Location"] == f"/plan/{friday}?plan_id={other_plan_id}"
 
     # Also true with no referrer at all (e.g. triggered outside the app).
     resp2 = client.post(f"/plan/switch/{client.plan_id}")
     assert resp2.status_code == 302
-    assert resp2.headers["Location"] == f"/plan/{monday}?plan_id={client.plan_id}"
+    assert resp2.headers["Location"] == f"/plan/{friday}?plan_id={client.plan_id}"
 
 
 # --- Plan isolation: data from one plan must not show up in another ---
@@ -230,7 +230,7 @@ def test_week_view_does_not_show_other_plans_data(app, client, make_recipe, make
         db.session.add(PlanDay(plan_id=other_plan_id, date=date(2026, 6, 15), main_recipe_id=recipe_id, servings=2))
         db.session.commit()
 
-    resp = client.get("/plan/2026-06-15")
+    resp = client.get("/plan/2026-06-12")
     assert resp.status_code == 200
     assert b"no plan for this week" in resp.data
 

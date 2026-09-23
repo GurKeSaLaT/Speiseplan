@@ -53,7 +53,7 @@ def reroll_day(day_date):
       category sorting, so a reroll doesn't put two consecutive days in
       the same category. Because this works with real calendar dates
       instead of a week-internal index, this even works across week
-      boundaries (e.g. when rerolling a Sunday, the Monday of the
+      boundaries (e.g. when rerolling a Thursday, the Friday of the
       FOLLOWING, already existing week is also considered a neighbor).
 
     First tries to hit one of the categories (sorted by

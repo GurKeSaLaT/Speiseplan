@@ -14,7 +14,7 @@ from services.planning import week_dates_for
 
 
 def build_week_summary(user, start):
-    """Builds the data for one week (start = the Monday of that week,
+    """Builds the data for one week (start = the Friday of that week,
     see services/planning.py: week_dates_for()), across EVERY plan the
     user has access to - deliberately ALL of them, unlike the
     show_in_week_overview-gated "other plans" row on the single-plan page
@@ -28,7 +28,7 @@ def build_week_summary(user, start):
     per dish instead of a nested per-day list.
 
     Returns {"days": [7 lists of {plan_id, plan_name, recipe_id,
-    recipe_name, date} dicts, one list per weekday, Monday first],
+    recipe_name, date} dicts, one list per weekday, Friday first],
     "nutrition": None if nothing at all is planned this week, otherwise
     {"week": {...totals}, "daily_avg": {...}} - both unscaled per-serving
     sums (see static/plan-shopping.js: rebuildWeeklyNutritionSummary()

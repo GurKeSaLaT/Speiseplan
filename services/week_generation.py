@@ -17,7 +17,7 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
     week_generate(), from the week_create_view() form) unchanged, rolls
     the remaining main dishes in a balanced way to fill the rest, and
     returns the result as (final_plan, final_side_plan) - two lists with
-    one entry per weekday (index 0=Monday...6=Sunday), NOT yet persisted
+    one entry per weekday (index 0=Friday...6=Thursday), NOT yet persisted
     to PlanDay/PlanDaySide rows (that's the caller's job, see there).
 
     Parameters:

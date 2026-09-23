@@ -383,7 +383,7 @@ function pushPantryItemToShoppingList(item) {
 /**
  * Reads out the "add item" mini form (see plan.html), creates the item
  * server-side for the currently displayed week (dayDates[0] is this
- * week's Monday) and, on success, appends it to weeklyExtraItems before
+ * week's Friday) and, on success, appends it to weeklyExtraItems before
  * the shopping list is rebuilt. name is the only required field - if the
  * field is empty, nothing happens (no error needed, the button/Enter
  * press simply has no effect).

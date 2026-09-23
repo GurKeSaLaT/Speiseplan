@@ -19,9 +19,10 @@ every step that needs it.
 
 from sqlalchemy import text
 
-from models import db, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
+from models import db, ExtraShoppingItem, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
 from services.auth import hash_password
 from services.plans import seed_default_categories
+from services.planning import friday_of
 from services.seasons import SEASON_PRESETS
 from services.units import renormalize_existing_ingredients
 
@@ -526,6 +527,33 @@ def _seed_default_categories_for_all_plans():
     db.session.commit()
 
 
+def _migrate_extra_shopping_item_week_start_to_friday():
+    """The calendar week now runs Friday-Thursday instead of Monday-
+    Sunday (see services/planning.py: friday_of()) - ExtraShoppingItem.
+    week_start (the only place a "week start" is actually STORED, see
+    the model docstring) needs re-anchoring to match, or an item added
+    under the old convention would silently stop showing up on the week
+    it was meant for (routes/plan/pages.py: week_view() looks it up by
+    exact week_start match against the now-Friday-based normalized date).
+
+    friday_of() applied to an OLD week_start (always a Monday under the
+    previous convention) lands on the Friday 3 days earlier - the new
+    week that shares the most days (Mon-Thu, 4 of 7) with the old
+    Monday-Sunday week, the most reasonable single choice given
+    ExtraShoppingItem has no specific day of its own to disambiguate by.
+    Naturally idempotent: friday_of() applied to an already-Friday
+    week_start returns it unchanged, so this is safe to run on every
+    startup, not just once."""
+    changed = False
+    for item in ExtraShoppingItem.query.all():
+        new_week_start = friday_of(item.week_start)
+        if new_week_start != item.week_start:
+            item.week_start = new_week_start
+            changed = True
+    if changed:
+        db.session.commit()
+
+
 def _migrate_ensure_starred_membership():
     """Every user needs exactly one starred plan to fall back to
     (services/auth.py: default_plan_id()/current_plan()) - without one,
@@ -590,6 +618,7 @@ def init_db():
     _migrate_drop_ingredient_nutrition_calories()
     _seed_default_categories_for_all_plans()
     _migrate_ensure_starred_membership()
+    _migrate_extra_shopping_item_week_start_to_friday()
 
     # Bring existing ingredient amounts/units (e.g. "Gramm", "kg", "gr" as
     # plain text from before unit unification) once into their canonical

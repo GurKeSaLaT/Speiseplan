@@ -95,7 +95,7 @@ class ExtraShoppingItem(db.Model):
     to any recipe (e.g. toiletries or drinks that aren't entered as an
     ingredient of any dish).
 
-    week_start is deliberately JUST a date (the Monday of the calendar week
+    week_start is deliberately JUST a date (the Friday of the calendar week
     in question, like start_date everywhere else in the project) instead of
     a foreign key to PlanDay/a dedicated "Week" table - there is no
     dedicated week model, weeks only exist implicitly via the 7 PlanDay

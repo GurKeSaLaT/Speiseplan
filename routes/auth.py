@@ -10,7 +10,7 @@ from flask_babel import gettext as _
 from models import PlanMembership, User, db
 from services.auth import EMAIL_PATTERN, current_user, hash_password, verify_password
 from services.plans import accept_pending_invites
-from services.planning import monday_of
+from services.planning import friday_of
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -135,5 +135,5 @@ def switch_plan(plan_id):
     user = current_user()
     if user is not None and PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first():
         session['active_plan_id'] = plan_id
-    start = monday_of(date.today())
+    start = friday_of(date.today())
     return redirect(url_for('plan.week_view', start_date=start.isoformat(), plan_id=plan_id))

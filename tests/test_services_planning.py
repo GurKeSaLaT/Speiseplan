@@ -8,9 +8,9 @@ from services.planning import (
     FAVORITE_WEIGHT,
     assign_balanced_categories,
     choose_recipe,
+    friday_of,
     jsonify_recipe,
     jsonify_side,
-    monday_of,
     parse_iso_date,
     recent_usage_counts,
     week_dates_for,
@@ -20,18 +20,28 @@ from services.planning import (
 
 # --- Date helpers ---
 
-def test_monday_of_returns_same_date_for_a_monday():
-    monday = date(2026, 6, 15)  # is a Monday
-    assert monday_of(monday) == monday
+def test_friday_of_returns_same_date_for_a_friday():
+    friday = date(2026, 6, 12)  # is a Friday
+    assert friday_of(friday) == friday
 
 
-def test_monday_of_rewinds_to_previous_monday():
+def test_friday_of_rewinds_to_previous_friday():
     wednesday = date(2026, 6, 17)
-    assert monday_of(wednesday) == date(2026, 6, 15)
+    assert friday_of(wednesday) == date(2026, 6, 12)
+
+
+def test_friday_of_handles_the_weekend_correctly():
+    """Saturday/Sunday belong to the week that started the day/two days
+    before, not the upcoming Friday - a common off-by-one risk for a
+    non-Monday week start."""
+    saturday = date(2026, 6, 13)
+    sunday = date(2026, 6, 14)
+    assert friday_of(saturday) == date(2026, 6, 12)
+    assert friday_of(sunday) == date(2026, 6, 12)
 
 
 def test_week_dates_for_returns_seven_consecutive_days():
-    start = date(2026, 6, 15)
+    start = date(2026, 6, 12)
     dates = week_dates_for(start)
     assert len(dates) == 7
     assert dates[0] == start

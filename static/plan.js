@@ -36,7 +36,7 @@
  * this script.
  */
 
-// Weekday labels ("Monday", "Tuesday", ...) and the corresponding ISO
+// Weekday labels ("Friday", "Saturday", ...) and the corresponding ISO
 // date strings (e.g. "2026-08-31") - both arrays are linked to each
 // other and to the other arrays below via their index (0 = first day of
 // the week) and no longer change after the initial load (only their

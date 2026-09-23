@@ -3,7 +3,7 @@ weekday has WHICH date and WHICH recipe ends up on a given day.
 
 Three related areas of responsibility in this file:
 
-1. Week/date helpers (monday_of, week_dates_for, parse_iso_date,
+1. Week/date helpers (friday_of, week_dates_for, parse_iso_date,
    week_neighbor_exclude_ids, week_side_recipe_ids): convert between a
    "week-start date" and its seven associated calendar days, and
    determine which recipes are already planned in the same calendar
@@ -42,12 +42,14 @@ from services.ingredient_aliases import normalize_ingredient_name
 from services.settings import get_display_units
 from services.units import convert_for_display
 
-# Weekday names in ISO order (Monday = index 0), matching date.weekday().
-# Passed through both for computing the week start and as the "days"
-# context variable to the plan.html/create_week.html templates, so the
-# name isn't maintained twice. lazy_gettext (not gettext): this is a
-# module-level constant evaluated at import time, outside any request.
-DAY_NAMES = [_l('Monday'), _l('Tuesday'), _l('Wednesday'), _l('Thursday'), _l('Friday'), _l('Saturday'), _l('Sunday')]
+# Weekday names in the order the app's week starts (Friday = index 0,
+# through Thursday = index 6) - the household's week always runs
+# Friday-Thursday, not the ISO Monday-Sunday convention. Passed through
+# both for computing the week start and as the "days" context variable to
+# the plan.html/create_week.html templates, so the name isn't maintained
+# twice. lazy_gettext (not gettext): this is a module-level constant
+# evaluated at import time, outside any request.
+DAY_NAMES = [_l('Friday'), _l('Saturday'), _l('Sunday'), _l('Monday'), _l('Tuesday'), _l('Wednesday'), _l('Thursday')]
 
 # How much more likely a recipe marked as a favorite is to be picked
 # during automatic/random selection, compared to a non-favorite recipe
@@ -146,19 +148,25 @@ def weighted_recipe_choice(recipes, usage_counts=None):
 # The week plan works throughout with real calendar days (date objects),
 # not an abstract "day 0-6" concept without a date reference. These four
 # small functions are the only place where conversion happens between
-# "some date" and "Monday start of a calendar week".
+# "some date" and "Friday start of a calendar week" - the household's
+# week deliberately runs Friday through Thursday, not the ISO Monday-
+# Sunday convention.
 
-def monday_of(d):
-    """Returns the Monday of the calendar week that date d falls in.
-    date.weekday() returns 0 for Monday through 6 for Sunday, so exactly
-    that many days are subtracted from d's distance from its week start."""
-    return d - timedelta(days=d.weekday())
+def friday_of(d):
+    """Returns the Friday that starts the (Friday-Thursday) calendar week
+    that date d falls in. date.weekday() returns 0 for Monday through 6
+    for Sunday (Friday = 4) - (d.weekday() - 4) % 7 is therefore d's
+    distance from that Friday, correctly wrapping for Fri/Sat/Sun (where
+    weekday() < 4 would otherwise give a negative offset): 0 for Friday
+    itself, 1 for Saturday, 2 for Sunday, 3 for Monday, ... 6 for
+    Thursday."""
+    return d - timedelta(days=(d.weekday() - 4) % 7)
 
 
 def week_dates_for(start):
     """Builds the list of the 7 calendar days of the week from a start
-    date (assumed to be a Monday), Monday first. It is NOT checked
-    whether start is actually a Monday - monday_of() takes care of that
+    date (assumed to be a Friday), Friday first. It is NOT checked
+    whether start is actually a Friday - friday_of() takes care of that
     beforehand at the call sites (see routes/plan/)."""
     return [start + timedelta(days=i) for i in range(7)]
 
@@ -190,7 +198,7 @@ def week_neighbor_exclude_ids(day_date, plan_id):
     current recipe when needed, to prevent a reroll from drawing the same
     recipe again.
     """
-    start = monday_of(day_date)
+    start = friday_of(day_date)
     dates = week_dates_for(start)
     rows = PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates)).all()
     ids = set()
@@ -218,7 +226,7 @@ def week_side_recipe_ids(day_date, plan_id):
     prevents a reroll from returning the same recipe again, without any
     special case of its own.
     """
-    start = monday_of(day_date)
+    start = friday_of(day_date)
     dates = week_dates_for(start)
     rows = (
         db.session.query(PlanDaySide.recipe_id)
