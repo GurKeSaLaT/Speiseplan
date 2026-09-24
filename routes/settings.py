@@ -1,7 +1,7 @@
-"""Settings pages of the app: currently three thematically separate
-areas that share this one blueprint (analogous to the routes/plan/
-package - but here in a single, manageable file instead of its own
-package, since all three areas are small):
+"""Settings pages of the app: currently two thematically separate areas
+that share this one blueprint (analogous to the routes/plan/ package -
+but here in a single, manageable file instead of its own package, since
+both areas are small):
 
 1. Units (units_view/update_units): in which unit ingredient amounts
    should be displayed (mass: grams/kilograms, volume: milliliters/
@@ -10,18 +10,21 @@ package, since all three areas are small):
    are stored internally (always canonical g/ml), only how they are
    displayed in forms/the shopping list.
 
-2. Equating ingredients (ingredient_aliases_view/update_ingredient_aliases):
-   which concrete ingredient names (e.g. "spaghetti", "fusilli") should
-   count as the same item for the shopping list (e.g. "pasta") - see
-   services/ingredient_aliases.py. Does NOT change the ingredient names
-   shown in a recipe, only the grouping on the shopping list.
+2. Ingredients & nutrition (ingredient_aliases_view/update_ingredients):
+   ONE page covering both which concrete ingredient names (e.g.
+   "spaghetti", "fusilli") should count as the same item for the
+   shopping list (e.g. "pasta", see services/ingredient_aliases.py) AND
+   the nutrition reference per resulting canonical ingredient (see
+   services/nutrition.py), from which recipe nutrition values are
+   automatically calculated (see routes/recipes/crud.py:
+   add_recipe()/edit_recipe()). Used to be two separate pages/routes
+   (ingredient_nutrition_view/update_ingredient_nutrition) - merged
+   because a main ingredient's nutrition reference and the individual
+   spellings merged into it are really one editing task, not two (see
+   IDEAS.md). Equating an ingredient does NOT change the ingredient
+   names shown in a recipe, only the grouping on the shopping list.
 
-3. Nutrition (ingredient_nutrition_view/update_ingredient_nutrition): the
-   nutrition reference per canonical ingredient (see services/nutrition.py),
-   from which recipe nutrition values are automatically calculated (see
-   routes/recipes/crud.py: add_recipe()/edit_recipe()).
-
-All three areas are separated PER PLAN (see models/settings.py: AppSettings.
+Both areas are separated PER PLAN (see models/settings.py: AppSettings.
 plan_id/IngredientAlias.plan_id/IngredientNutrition.plan_id) - each page
 shows a tab switcher when a user has access to more than one plan (see
 services/auth.py: selected_plan_id/user_plan_memberships) and acts on
@@ -73,44 +76,132 @@ def update_units():
     return redirect(url_for('settings.units_view', plan_id=plan_id))
 
 
+def _nutrition_row(plan_id, entries, name):
+    """Builds the nutrition-editing fields shared by both a "main
+    ingredient" card and a standalone "other ingredient" card (see
+    ingredient_aliases_view() below) - pre-filled with the maintained
+    entry or, without one yet, sensible defaults (see
+    ingredient_nutrition_view() formerly here, now folded into this one
+    view)."""
+    entry = entries.get(name)
+    protein = entry["protein"] if entry else 0
+    carbs = entry["carbs"] if entry else 0
+    fat = entry["fat"] if entry else 0
+    return {
+        "reference_unit": entry["reference_unit"] if entry else infer_reference_unit(plan_id, name),
+        "calories": compute_calories(protein, carbs, fat),
+        "protein": protein,
+        "carbs": carbs,
+        "fat": fat,
+        "has_entry": entry is not None,
+    }
+
+
 @settings_bp.route('/manage/ingredient-aliases')
 def ingredient_aliases_view():
-    """Shows EVERY ingredient name currently used in any recipe visible
-    for the selected plan as its own row with an editable "counts as"
-    field, pre-filled with the maintained canonical name or (without an
-    existing alias) the name itself - this makes it easy to see at a
-    glance which names are already assigned to a group."""
+    """Shows two groups of ingredient names known for the selected plan
+    (formerly two separate pages - see IDEAS.md):
+
+    - "Main ingredients" (main_groups): every canonical name that at
+      least one other ingredient is aliased to (services/nutrition.py:
+      list_alias_canonical_names()) - each with its own nutrition
+      reference (see _nutrition_row above) and, nested under it, every
+      raw ingredient name currently aliased to it.
+    - "Everything else" (other_rows): every other known ingredient name
+      (services/ingredient_aliases.py: list_known_ingredient_names()) -
+      neither a main ingredient nor aliased to one - with its OWN
+      nutrition reference (an ingredient with no alias is its own
+      canonical name, see services/nutrition.py: get_nutrition_entry())
+      and an editable "counts as" field to promote it into a main
+      ingredient's group.
+
+    A name can never appear in both groups at once: list_alias_canonical_names()
+    already only returns names that are actual alias TARGETS, and
+    other_rows explicitly excludes those plus every name that is itself
+    an alias SOURCE (aliased_raw_names) - it would otherwise show up
+    twice, once as its own row and once nested under its target."""
     user = current_user()
     plan_id = selected_plan_id(request.args, user)
+
     aliases = get_all_aliases(plan_id)
-    rows = [
-        {"raw_name": name, "canonical_name": aliases.get(name, name)}
-        for name in list_known_ingredient_names(plan_id)
+    entries = get_all_nutrition_entries(plan_id)
+    main_names = list_alias_canonical_names(plan_id)
+
+    aliased_raw_names_by_target = {}
+    for raw_name, canonical_name in aliases.items():
+        aliased_raw_names_by_target.setdefault(canonical_name, []).append(raw_name)
+
+    main_groups = [
+        {
+            "canonical_name": name,
+            "aliases": sorted(aliased_raw_names_by_target.get(name, [])),
+            **_nutrition_row(plan_id, entries, name),
+        }
+        for name in main_names
     ]
+
+    main_name_set = set(main_names)
+    aliased_raw_names = set(aliases.keys())
+    other_rows = [
+        {"raw_name": name, **_nutrition_row(plan_id, entries, name)}
+        for name in list_known_ingredient_names(plan_id)
+        if name not in main_name_set and name not in aliased_raw_names
+    ]
+
     return render_template(
-        'ingredient_aliases_manage.html', rows=rows, plan_id=plan_id, user_plans=user_plan_memberships(user),
+        'ingredient_aliases_manage.html',
+        main_groups=main_groups, other_rows=other_rows,
+        plan_id=plan_id, user_plans=user_plan_memberships(user),
     )
 
 
-@settings_bp.route('/update-ingredient-aliases', methods=['POST'])
-def update_ingredient_aliases():
-    """Saves ALL rows of the form at once (raw_name[]/canonical_name[],
-    parallel lists like the ingredient rows of the recipe forms) instead
-    of one button per row - with potentially hundreds of ingredient names,
-    a separate round trip per row would be impractical. set_alias()
-    automatically deletes an alias again if the entered name matches the
-    original (see there)."""
+@settings_bp.route('/update-ingredients', methods=['POST'])
+def update_ingredients():
+    """Saves EVERY editable field of ingredient_aliases_view() at once
+    (parallel lists, like the ingredient rows of the recipe forms) -
+    replaces the two formerly separate update_ingredient_aliases()/
+    update_ingredient_nutrition() endpoints (see IDEAS.md).
+
+    Alias pairs (raw_name[]/canonical_name[]) are saved FIRST, before any
+    nutrition value - both a nested alias's "×" removal (see
+    templates/ingredient_aliases_manage.html: the hidden inputs behind
+    it) and an "other ingredient" row's "counts as" field arrive this
+    way. Nutrition rows are identified by nutrition_name[] (a main
+    group's canonical name, or an "other" row's own name) rather than
+    reusing canonical_name[], since the two lists differ in length/order
+    and would otherwise collide. Saving nutrition AFTER the alias pairs
+    means set_nutrition()'s own alias resolution (via
+    normalize_ingredient_name()) already sees this same submission's
+    fresh mapping - so re-pointing an ingredient's "counts as" AND
+    editing its nutrition in the same submit lands the nutrition under
+    the new canonical name, not the old one."""
     plan_id = selected_plan_id(request.form, current_user())
+
     raw_names = request.form.getlist('raw_name[]')
     canonical_names = request.form.getlist('canonical_name[]')
     for raw_name, canonical_name in zip(raw_names, canonical_names):
         set_alias(plan_id, raw_name, canonical_name)
+
+    nutrition_names = request.form.getlist('nutrition_name[]')
+    reference_units = request.form.getlist('reference_unit[]')
+    protein_list = request.form.getlist('protein[]')
+    carbs_list = request.form.getlist('carbs[]')
+    fat_list = request.form.getlist('fat[]')
+    for i, name in enumerate(nutrition_names):
+        values = _parse_nutrition_form_values({
+            "reference_unit": reference_units[i] if i < len(reference_units) else None,
+            "protein": protein_list[i] if i < len(protein_list) else None,
+            "carbs": carbs_list[i] if i < len(carbs_list) else None,
+            "fat": fat_list[i] if i < len(fat_list) else None,
+        })
+        set_nutrition(plan_id, name, **values)
+
     return redirect(url_for('settings.ingredient_aliases_view', plan_id=plan_id))
 
 
 @settings_bp.route('/api/ingredient-alias/set', methods=['POST'])
 def api_set_ingredient_alias():
-    """AJAX counterpart to update_ingredient_aliases() above: sets EXACTLY
+    """AJAX counterpart to update_ingredients() above: sets EXACTLY
     ONE alias immediately while entering an ingredient in recipe_form.html/
     recipe_edit_list.html, without leaving the page (see
     static/ingredient_alias_hint.js - the "Set alias" button there, which
@@ -209,60 +300,3 @@ def api_set_ingredient_nutrition():
     }
 
 
-@settings_bp.route('/manage/ingredient-nutrition')
-def ingredient_nutrition_view():
-    """Shows ONLY the actual alias target names of the selected plan
-    (services/nutrition.py: list_alias_canonical_names() - e.g. "pasta",
-    "oil", NOT every unaliased individual ingredient) with editable
-    nutrition fields, pre-filled with the maintained entry or (without an
-    existing entry) with sensible default values (reference amount 100,
-    reference unit guessed from the actually used ingredient rows, see
-    infer_reference_unit()) - unaliased individual ingredients instead
-    get their nutrition values added directly while entering the
-    ingredient (see api_set_ingredient_nutrition above)."""
-    user = current_user()
-    plan_id = selected_plan_id(request.args, user)
-    entries = get_all_nutrition_entries(plan_id)
-    rows = []
-    for name in list_alias_canonical_names(plan_id):
-        entry = entries.get(name)
-        protein = entry["protein"] if entry else 0
-        carbs = entry["carbs"] if entry else 0
-        fat = entry["fat"] if entry else 0
-        rows.append({
-            "canonical_name": name,
-            "reference_unit": entry["reference_unit"] if entry else infer_reference_unit(plan_id, name),
-            # Display only (see ingredient_nutrition_manage.html) - not an
-            # editable/stored field, always follows from protein/carbs/fat.
-            "calories": compute_calories(protein, carbs, fat),
-            "protein": protein,
-            "carbs": carbs,
-            "fat": fat,
-            "has_entry": entry is not None,
-        })
-    return render_template(
-        'ingredient_nutrition_manage.html', rows=rows, plan_id=plan_id, user_plans=user_plan_memberships(user),
-    )
-
-
-@settings_bp.route('/update-ingredient-nutrition', methods=['POST'])
-def update_ingredient_nutrition():
-    """Saves ALL rows of the form at once (parallel lists, analogous to
-    update_ingredient_aliases() above) instead of one button per row."""
-    plan_id = selected_plan_id(request.form, current_user())
-    names = request.form.getlist('canonical_name[]')
-    reference_units = request.form.getlist('reference_unit[]')
-    protein_list = request.form.getlist('protein[]')
-    carbs_list = request.form.getlist('carbs[]')
-    fat_list = request.form.getlist('fat[]')
-
-    for i, name in enumerate(names):
-        values = _parse_nutrition_form_values({
-            "reference_unit": reference_units[i] if i < len(reference_units) else None,
-            "protein": protein_list[i] if i < len(protein_list) else None,
-            "carbs": carbs_list[i] if i < len(carbs_list) else None,
-            "fat": fat_list[i] if i < len(fat_list) else None,
-        })
-        set_nutrition(plan_id, name, **values)
-
-    return redirect(url_for('settings.ingredient_nutrition_view', plan_id=plan_id))

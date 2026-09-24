@@ -4,6 +4,22 @@ Backlog for future features - not yet implemented, just collected.
 
 ## Implemented
 
+- **Merged "Merge Ingredients" and "Nutrition" into one page.**
+  `/manage/ingredient-aliases` (routes/settings.py: ingredient_aliases_view())
+  now covers both what used to be two separate pages: two sub-tabs,
+  "Main Ingredients" (every canonical name at least one other ingredient
+  is aliased to, each with its own nutrition editor and, nested
+  underneath, every merged spelling - removable via "×") and "Everything
+  Else" (every other known ingredient, ALSO with its own nutrition
+  editor - previously only settable via the recipe form's inline hint -
+  plus a "Counts as" field to promote it into a main ingredient). One
+  combined save endpoint (update_ingredients(), replacing the former
+  update_ingredient_aliases()/update_ingredient_nutrition()) applies
+  alias changes before nutrition changes, so re-pointing an ingredient's
+  "Counts as" and editing its nutrition in the same submit lands the
+  nutrition under the new canonical name. The former
+  `/manage/ingredient-nutrition` page/route is gone; its sidebar tile
+  and rail link were merged into one "🔗 Ingredients & Nutrition" entry.
 - **Swap days on the finished plan.** Day cards on `plan.html` are now
   fully swappable via drag-and-drop (main dish, side dish, and exclusion
   status), purely client-side.

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-24 14:46+0200\n"
+"POT-Creation-Date: 2026-09-24 23:51+0200\n"
 "PO-Revision-Date: 2026-08-31 13:34+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: de <LL@li.org>\n"
@@ -35,11 +35,11 @@ msgstr "Gestern"
 msgid "%(days)s days ago"
 msgstr "Vor %(days)s Tagen"
 
-#: routes/settings.py:141
+#: routes/settings.py:232
 msgid "Name and alias must not be empty."
 msgstr "Name und Alias dürfen nicht leer sein."
 
-#: routes/settings.py:196
+#: routes/settings.py:287
 msgid "Ingredient name must not be empty."
 msgstr "Zutatenname darf nicht leer sein."
 
@@ -98,76 +98,18 @@ msgstr "Name darf nicht leer sein."
 msgid "Please enter a link."
 msgstr "Bitte einen Link eingeben."
 
-#: services/accounts.py:35
-msgid "Please choose a valid language."
-msgstr "Bitte eine gültige Sprache wählen."
-
-#: services/planning.py:52
-msgid "Friday"
-msgstr "Freitag"
-
-#: services/planning.py:52
-msgid "Saturday"
-msgstr "Samstag"
-
-#: services/planning.py:52
-msgid "Sunday"
-msgstr "Sonntag"
-
-#: services/planning.py:52
-msgid "Monday"
-msgstr "Montag"
-
-#: services/planning.py:52
-msgid "Tuesday"
-msgstr "Dienstag"
-
-#: services/planning.py:52
-msgid "Wednesday"
-msgstr "Mittwoch"
-
-#: services/planning.py:52
-msgid "Thursday"
-msgstr "Donnerstag"
-
-#: services/recipe_import.py:97
-msgid ""
-"This site is not supported by the import (see ALLOWED_HOSTS in "
-"services/recipe_import.py)."
-msgstr ""
-"Diese Seite wird vom Import nicht unterstützt (siehe ALLOWED_HOSTS in "
-"services/recipe_import.py)."
-
-#: services/recipe_import.py:103
-msgid "The page could not be loaded."
-msgstr "Die Seite konnte nicht geladen werden."
-
-#: services/recipe_import.py:110
-msgid "The link does not lead to a supported site."
-msgstr "Der Link führt nicht zu einer unterstützten Seite."
-
-#: services/recipe_import.py:112
-#, python-format
-msgid "The page could not be loaded (status %(status)d)."
-msgstr "Die Seite konnte nicht geladen werden (Status %(status)d)."
-
-#: services/recipe_import.py:130
-msgid "No recipe was found on this page."
-msgstr "Auf dieser Seite wurde kein Rezept gefunden."
-
 #: templates/account.html:14
 msgid "My Account"
 msgstr "Mein Konto"
 
 #: templates/account.html:15 templates/category_manage.html:14
-#: templates/ingredient_aliases_manage.html:16
-#: templates/ingredient_nutrition_manage.html:35
+#: templates/ingredient_aliases_manage.html:28
 #: templates/recipe_edit_list.html:17 templates/sharing.html:12
 #: templates/units_manage.html:14
 msgid "Back"
 msgstr "Zurück"
 
-#: templates/account.html:18 templates/base.html:283
+#: templates/account.html:18 templates/base.html:282
 msgid "Profile"
 msgstr "Profil"
 
@@ -195,9 +137,8 @@ msgstr "Profil aktualisiert."
 msgid "Language"
 msgstr "Sprache"
 
-#: templates/account.html:45 templates/ingredient_aliases_manage.html:57
-#: templates/ingredient_nutrition_manage.html:90 templates/sharing.html:159
-#: templates/units_manage.html:60
+#: templates/account.html:45 templates/ingredient_aliases_manage.html:147
+#: templates/sharing.html:159 templates/units_manage.html:60
 msgid "Save"
 msgstr "Speichern"
 
@@ -238,7 +179,7 @@ msgstr ""
 "Diese Aktion kann nicht rückgängig gemacht werden. Bist du sicher, dass du "
 "alle deine Speiseplan-Daten löschen möchtest?"
 
-#: templates/account.html:79 templates/base.html:154 templates/base.html:349
+#: templates/account.html:79 templates/base.html:154 templates/base.html:348
 #: templates/recipe_form.html:355 templates/sharing.html:133
 #: templates/sharing.html:158
 msgid "Cancel"
@@ -404,11 +345,11 @@ msgstr "Kein passendes Rezept verfügbar"
 msgid "Ingredients"
 msgstr "Zutaten"
 
-#: templates/base.html:150
+#: templates/base.html:150 templates/ingredient_aliases_manage.html:72
 msgid "ingredient"
 msgstr "Zutat"
 
-#: templates/base.html:151
+#: templates/base.html:151 templates/ingredient_aliases_manage.html:72
 msgid "ingredients"
 msgstr "Zutaten"
 
@@ -506,34 +447,34 @@ msgstr "Festlegen"
 msgid "⚠️ No nutrition data on file for"
 msgstr "⚠️ Keine Nährwerte hinterlegt für"
 
-#: templates/base.html:175 templates/ingredient_nutrition_manage.html:61
+#: templates/base.html:175
 msgid "Reference"
 msgstr "Referenz"
 
-#: templates/base.html:176 templates/ingredient_nutrition_manage.html:76
+#: templates/base.html:176 templates/ingredient_aliases_manage.html:79
+#: templates/ingredient_aliases_manage.html:121
 msgid "per 100 g"
 msgstr "pro 100 g"
 
-#: templates/base.html:177 templates/ingredient_nutrition_manage.html:77
+#: templates/base.html:177 templates/ingredient_aliases_manage.html:80
+#: templates/ingredient_aliases_manage.html:122
 msgid "per 100 ml"
 msgstr "pro 100 ml"
 
-#: templates/base.html:178 templates/ingredient_nutrition_manage.html:78
+#: templates/base.html:178 templates/ingredient_aliases_manage.html:81
+#: templates/ingredient_aliases_manage.html:123
 msgid "per 1 pc"
 msgstr "pro 1 Stk"
 
-#: templates/base.html:179 templates/ingredient_nutrition_manage.html:62
-#: templates/recipe_form.html:303
+#: templates/base.html:179 templates/recipe_form.html:303
 msgid "Protein (g)"
 msgstr "Protein (g)"
 
-#: templates/base.html:180 templates/ingredient_nutrition_manage.html:63
-#: templates/recipe_form.html:307
+#: templates/base.html:180 templates/recipe_form.html:307
 msgid "Carbs (g)"
 msgstr "Kohlenhydrate (g)"
 
-#: templates/base.html:181 templates/ingredient_nutrition_manage.html:64
-#: templates/recipe_form.html:311
+#: templates/base.html:181 templates/recipe_form.html:311
 msgid "Fat (g)"
 msgstr "Fett (g)"
 
@@ -553,7 +494,7 @@ msgstr "Übersicht"
 msgid "My Plans"
 msgstr "Meine Pläne"
 
-#: templates/base.html:263 templates/base.html:341
+#: templates/base.html:263 templates/base.html:340
 msgid "New Plan"
 msgstr "Neuer Plan"
 
@@ -561,7 +502,7 @@ msgstr "Neuer Plan"
 msgid "Recipes"
 msgstr "Rezepte"
 
-#: templates/base.html:269 templates/base.html:350
+#: templates/base.html:269 templates/base.html:349
 msgid "Create"
 msgstr "Erstellen"
 
@@ -582,45 +523,40 @@ msgstr "Kategorien"
 msgid "Units"
 msgstr "Einheiten"
 
-#: templates/base.html:277 templates/ingredient_aliases_manage.html:15
+#: templates/base.html:277 templates/ingredient_aliases_manage.html:27
 #: templates/manage.html:44
-msgid "Merge Ingredients"
-msgstr "Zutaten zusammenführen"
+msgid "Ingredients & Nutrition"
+msgstr "Zutaten & Nährwerte"
 
-#: templates/base.html:278 templates/ingredient_nutrition_manage.html:34
-#: templates/manage.html:48 templates/recipe_form.html:277
-msgid "Nutrition"
-msgstr "Nährwerte"
-
-#: templates/base.html:282
+#: templates/base.html:281
 msgid "Account"
 msgstr "Konto"
 
-#: templates/base.html:284 templates/manage.html:52
+#: templates/base.html:283 templates/manage.html:48
 msgid "Sharing"
 msgstr "Teilen"
 
-#: templates/base.html:298
+#: templates/base.html:297
 msgid "Log Out"
 msgstr "Abmelden"
 
-#: templates/base.html:302
+#: templates/base.html:301
 msgid "Appearance"
 msgstr "Erscheinungsbild"
 
-#: templates/base.html:304
+#: templates/base.html:303
 msgid "System"
 msgstr "System"
 
-#: templates/base.html:305
+#: templates/base.html:304
 msgid "Light"
 msgstr "Hell"
 
-#: templates/base.html:306
+#: templates/base.html:305
 msgid "Dark"
 msgstr "Dunkel"
 
-#: templates/base.html:345
+#: templates/base.html:344
 msgid "Plan Name"
 msgstr "Planname"
 
@@ -713,97 +649,80 @@ msgstr "Wird automatisch aufgefüllt"
 msgid "Excluded – no main course"
 msgstr "Ausgeschlossen – kein Hauptgericht"
 
-#: templates/ingredient_aliases_manage.html:31
+#: templates/ingredient_aliases_manage.html:44
 msgid ""
-"Enter a common name under \"Counts as\" to merge several ingredients on the "
-"shopping list into one line item (e.g. \"Spaghetti\" and \"Fusilli\" → "
-"\"Noodles\", \"Olive Oil\" and \"Sunflower Oil\" → \"Oil\"). Without a "
-"change, an ingredient still only counts as itself. This only affects the "
-"shopping list - recipes still show the ingredient name as originally "
-"entered."
+"A main ingredient merges several spellings into one line item on the "
+"shopping list (e.g. \"Spaghetti\" and \"Fusilli\" → \"Noodles\") and carries"
+" the nutrition reference for all of them together. Everything under "
+"\"Everything else\" only counts for itself so far - set \"Counts as\" there "
+"to merge it into a main ingredient."
 msgstr ""
-"Unter \"Zählt als\" einen gemeinsamen Namen eingeben, um mehrere Zutaten auf"
-" der Einkaufsliste zu einem Eintrag zusammenzuführen (z. B. \"Spaghetti\" "
-"und \"Fusilli\" → \"Nudeln\", \"Olivenöl\" und \"Sonnenblumenöl\" → \"Öl\")."
-" Ohne Änderung zählt eine Zutat weiterhin nur als sie selbst. Dies wirkt "
-"sich nur auf die Einkaufsliste aus - Rezepte zeigen den Zutatennamen "
-"weiterhin so, wie er ursprünglich eingegeben wurde."
+"Eine Hauptzutat fasst mehrere Schreibweisen zu einem Eintrag auf der "
+"Einkaufsliste zusammen (z. B. „Spaghetti\" und „Fusilli\" → „Nudeln\") und "
+"trägt die Nährwerte für alle gemeinsam. Alles unter „Alle anderen\" zählt "
+"bisher nur für sich selbst - trage dort bei „Zählt als\" eine Hauptzutat "
+"ein, um es zusammenzuführen."
 
-#: templates/ingredient_aliases_manage.html:35
-#: templates/ingredient_nutrition_manage.html:54
-msgid "Search ingredient..."
-msgstr "Zutat suchen..."
+#: templates/ingredient_aliases_manage.html:49
+msgid "Main Ingredients"
+msgstr "Hauptzutaten"
 
-#: templates/ingredient_aliases_manage.html:41
-#: templates/ingredient_nutrition_manage.html:60
-#: templates/recipe_form.html:175 templates/recipe_form.html:223
-msgid "Ingredient"
-msgstr "Zutat"
+#: templates/ingredient_aliases_manage.html:52
+msgid "Everything Else"
+msgstr "Alle anderen"
 
-#: templates/ingredient_aliases_manage.html:42
-msgid "Counts As"
-msgstr "Zählt als"
-
-#: templates/ingredient_aliases_manage.html:60
+#: templates/ingredient_aliases_manage.html:57
 msgid "No ingredients yet."
 msgstr "Noch keine Zutaten."
 
-#: templates/ingredient_nutrition_manage.html:50
-msgid ""
-"Nutrition values per base ingredient (e.g. \"Noodles\", \"Oil\") - "
-"automatically applies to all merged spellings (e.g. \"Spaghetti\", "
-"\"Fusilli\"). Recipe nutrition values are computed from this automatically, "
-"as long as a recipe is not set to \"override manually\". Rows in"
-msgstr ""
-"Nährwerte pro Basiszutat (z. B. \"Nudeln\", \"Öl\") - gilt automatisch für "
-"alle zusammengeführten Schreibweisen (z. B. \"Spaghetti\", \"Fusilli\"). Die"
-" Nährwerte eines Rezepts werden daraus automatisch berechnet, solange ein "
-"Rezept nicht auf \"manuell überschreiben\" gestellt ist. Zeilen in"
+#: templates/ingredient_aliases_manage.html:59
+msgid "Search ingredient..."
+msgstr "Zutat suchen..."
 
-#: templates/ingredient_nutrition_manage.html:50
-msgid "gray"
-msgstr "grauem"
+#: templates/ingredient_aliases_manage.html:77
+#: templates/ingredient_aliases_manage.html:119 templates/recipe_form.html:277
+msgid "Nutrition"
+msgstr "Nährwerte"
 
-#: templates/ingredient_nutrition_manage.html:50
-msgid ""
-"text don't have their own entry yet - the reference unit was guessed from "
-"the ingredient amounts actually used, but can be adjusted at any time."
-msgstr ""
-"Text haben noch keinen eigenen Eintrag - die Referenzeinheit wurde anhand "
-"der tatsächlich verwendeten Zutatenmengen geraten, kann aber jederzeit "
-"angepasst werden."
-
-#: templates/ingredient_nutrition_manage.html:65
-#: templates/recipe_form.html:286 templates/recipe_form.html:299
-msgid "Kcal"
-msgstr "kcal"
-
-#: templates/ingredient_nutrition_manage.html:75
+#: templates/ingredient_aliases_manage.html:78
+#: templates/ingredient_aliases_manage.html:120
 msgid "Reference basis"
 msgstr "Bezugsgröße"
 
-#: templates/ingredient_nutrition_manage.html:81
-#: templates/recipe_form.html:287
+#: templates/ingredient_aliases_manage.html:83
+#: templates/ingredient_aliases_manage.html:125 templates/recipe_form.html:287
 msgid "Protein"
 msgstr "Eiweiß"
 
-#: templates/ingredient_nutrition_manage.html:82
-#: templates/recipe_form.html:288
+#: templates/ingredient_aliases_manage.html:84
+#: templates/ingredient_aliases_manage.html:126 templates/recipe_form.html:288
 msgid "Carbs"
 msgstr "Kohlenhydrate"
 
-#: templates/ingredient_nutrition_manage.html:83
-#: templates/recipe_form.html:289
+#: templates/ingredient_aliases_manage.html:85
+#: templates/ingredient_aliases_manage.html:127 templates/recipe_form.html:289
 msgid "Fat"
 msgstr "Fett"
 
-#: templates/ingredient_nutrition_manage.html:85
-msgid "Computed from protein/carbs/fat"
-msgstr "Berechnet aus Eiweiß/Kohlenhydraten/Fett"
+#: templates/ingredient_aliases_manage.html:98
+msgid "Remove this ingredient from the group"
+msgstr "Diese Zutat aus der Gruppe entfernen"
 
-#: templates/ingredient_nutrition_manage.html:93
-msgid "No merged ingredients yet."
-msgstr "Noch keine zusammengeführten Zutaten."
+#: templates/ingredient_aliases_manage.html:106
+msgid ""
+"No main ingredients yet - set \"Counts as\" under \"Everything else\" to "
+"create one."
+msgstr ""
+"Noch keine Hauptzutaten - trage bei „Alle anderen\" ein „Zählt als\" ein, um"
+" eine anzulegen."
+
+#: templates/ingredient_aliases_manage.html:136
+msgid "Counts As"
+msgstr "Zählt als"
+
+#: templates/ingredient_aliases_manage.html:143
+msgid "No further ingredients."
+msgstr "Keine weiteren Zutaten."
 
 #: templates/manage.html:13
 msgid "Good Day"
@@ -854,18 +773,17 @@ msgid "Choose grams/kilograms, milliliters/liters for display."
 msgstr "Gramm/Kilogramm, Milliliter/Liter für die Anzeige wählen."
 
 #: templates/manage.html:44
-msgid "Merge spellings for the shopping list."
-msgstr "Schreibweisen für die Einkaufsliste zusammenführen."
+msgid ""
+"Merge spellings for the shopping list and maintain their nutrition values."
+msgstr ""
+"Schreibweisen für die Einkaufsliste zusammenführen und ihre Nährwerte "
+"pflegen."
 
 #: templates/manage.html:48
-msgid "Maintain reference values per base ingredient."
-msgstr "Referenzwerte pro Basiszutat pflegen."
-
-#: templates/manage.html:52
 msgid "Invite other users, choose default plan."
 msgstr "Andere Nutzer einladen, Standardplan wählen."
 
-#: templates/manage.html:57
+#: templates/manage.html:53
 msgid "Recently Edited"
 msgstr "Zuletzt bearbeitet"
 
@@ -1141,6 +1059,10 @@ msgstr ""
 "Einheit angezeigt wird, lässt sich unter ⚙️ Einstellungen → 📏 Einheiten "
 "festlegen."
 
+#: templates/recipe_form.html:175 templates/recipe_form.html:223
+msgid "Ingredient"
+msgstr "Zutat"
+
 #: templates/recipe_form.html:175
 msgid "Pantry"
 msgstr "Vorrat"
@@ -1181,6 +1103,10 @@ msgstr ""
 #: templates/recipe_form.html:279
 msgid "calculated on save"
 msgstr "wird beim Speichern berechnet"
+
+#: templates/recipe_form.html:286 templates/recipe_form.html:299
+msgid "Kcal"
+msgstr "kcal"
 
 #: templates/recipe_form.html:293
 msgid "Enter manually instead"
@@ -1434,3 +1360,92 @@ msgstr ""
 
 #~ msgid "Already have an account? Sign in"
 #~ msgstr "Schon ein Konto? Anmelden"
+
+#~ msgid "Please choose a valid language."
+#~ msgstr "Bitte eine gültige Sprache wählen."
+
+#~ msgid "Friday"
+#~ msgstr "Freitag"
+
+#~ msgid "Saturday"
+#~ msgstr "Samstag"
+
+#~ msgid "Sunday"
+#~ msgstr "Sonntag"
+
+#~ msgid "Monday"
+#~ msgstr "Montag"
+
+#~ msgid "Tuesday"
+#~ msgstr "Dienstag"
+
+#~ msgid "Wednesday"
+#~ msgstr "Mittwoch"
+
+#~ msgid "Thursday"
+#~ msgstr "Donnerstag"
+
+#~ msgid ""
+#~ "This site is not supported by the import (see ALLOWED_HOSTS in "
+#~ "services/recipe_import.py)."
+#~ msgstr ""
+#~ "Diese Seite wird vom Import nicht unterstützt (siehe ALLOWED_HOSTS in "
+#~ "services/recipe_import.py)."
+
+#~ msgid "The page could not be loaded."
+#~ msgstr "Die Seite konnte nicht geladen werden."
+
+#~ msgid "The link does not lead to a supported site."
+#~ msgstr "Der Link führt nicht zu einer unterstützten Seite."
+
+#~ msgid "The page could not be loaded (status %(status)d)."
+#~ msgstr "Die Seite konnte nicht geladen werden (Status %(status)d)."
+
+#~ msgid "No recipe was found on this page."
+#~ msgstr "Auf dieser Seite wurde kein Rezept gefunden."
+
+#~ msgid "Merge Ingredients"
+#~ msgstr "Zutaten zusammenführen"
+
+#~ msgid ""
+#~ "Enter a common name under \"Counts as\" to merge several ingredients on the "
+#~ "shopping list into one line item (e.g. \"Spaghetti\" and \"Fusilli\" → "
+#~ "\"Noodles\", \"Olive Oil\" and \"Sunflower Oil\" → \"Oil\"). Without a "
+#~ "change, an ingredient still only counts as itself. This only affects the "
+#~ "shopping list - recipes still show the ingredient name as originally "
+#~ "entered."
+#~ msgstr ""
+#~ "Unter \"Zählt als\" einen gemeinsamen Namen eingeben, um mehrere Zutaten auf"
+#~ " der Einkaufsliste zu einem Eintrag zusammenzuführen (z. B. \"Spaghetti\" "
+#~ "und \"Fusilli\" → \"Nudeln\", \"Olivenöl\" und \"Sonnenblumenöl\" → \"Öl\")."
+#~ " Ohne Änderung zählt eine Zutat weiterhin nur als sie selbst. Dies wirkt "
+#~ "sich nur auf die Einkaufsliste aus - Rezepte zeigen den Zutatennamen "
+#~ "weiterhin so, wie er ursprünglich eingegeben wurde."
+
+#~ msgid ""
+#~ "Nutrition values per base ingredient (e.g. \"Noodles\", \"Oil\") - "
+#~ "automatically applies to all merged spellings (e.g. \"Spaghetti\", "
+#~ "\"Fusilli\"). Recipe nutrition values are computed from this automatically, "
+#~ "as long as a recipe is not set to \"override manually\". Rows in"
+#~ msgstr ""
+#~ "Nährwerte pro Basiszutat (z. B. \"Nudeln\", \"Öl\") - gilt automatisch für "
+#~ "alle zusammengeführten Schreibweisen (z. B. \"Spaghetti\", \"Fusilli\"). Die"
+#~ " Nährwerte eines Rezepts werden daraus automatisch berechnet, solange ein "
+#~ "Rezept nicht auf \"manuell überschreiben\" gestellt ist. Zeilen in"
+
+#~ msgid "gray"
+#~ msgstr "grauem"
+
+#~ msgid ""
+#~ "text don't have their own entry yet - the reference unit was guessed from "
+#~ "the ingredient amounts actually used, but can be adjusted at any time."
+#~ msgstr ""
+#~ "Text haben noch keinen eigenen Eintrag - die Referenzeinheit wurde anhand "
+#~ "der tatsächlich verwendeten Zutatenmengen geraten, kann aber jederzeit "
+#~ "angepasst werden."
+
+#~ msgid "Computed from protein/carbs/fat"
+#~ msgstr "Berechnet aus Eiweiß/Kohlenhydraten/Fett"
+
+#~ msgid "Maintain reference values per base ingredient."
+#~ msgstr "Referenzwerte pro Basiszutat pflegen."

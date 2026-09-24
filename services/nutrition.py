@@ -12,11 +12,14 @@ The nutrition references themselves (IngredientNutrition, see models/settings.py
 are stored per CANONICAL ingredient (services/ingredient_aliases.py:
 normalize_ingredient_name()) - for an alias-grouped ingredient like
 "Pasta", that means ONE shared entry instead of one per spelling such as
-"Spaghetti"/"Fusilli". The management page (/manage/ingredient-nutrition,
-see routes/settings.py) deliberately shows ONLY the actual alias target
-names (list_alias_canonical_names()) - unaliased individual ingredients
-instead get their nutrition value added later directly while entering the
-ingredient, via the inline hint (see static/ingredient_alias_hint.js).
+"Spaghetti"/"Fusilli". The management page (/manage/ingredient-aliases,
+see routes/settings.py: ingredient_aliases_view()) shows the actual alias
+target names (list_alias_canonical_names()) as "main ingredients", each
+with its own nutrition editor, plus every other, unaliased ingredient
+underneath as its own row with the SAME kind of editor (an ingredient
+with no alias is its own canonical name) - either can also get its
+nutrition value added directly while entering the ingredient elsewhere,
+via the inline hint (see static/ingredient_alias_hint.js).
 
 Reference basis is ALWAYS 100 g / 100 ml / 1 pc (REFERENCE_BASES below) -
 freely chosen reference amounts (e.g. "1 cup", "1 can", "1 pinch") were

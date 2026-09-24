@@ -1,18 +1,30 @@
-{# Ingredient aliasing (/manage/ingredient-aliases): one row per
-   ingredient name currently used in any recipe, with an editable
-   "counts as" field - see routes/settings.py:
-   ingredient_aliases_view()/update_ingredient_aliases() and
-   services/ingredient_aliases.py. If a user enters, say, "Noodles" for
-   "Fusilli", "Fusilli" and any other ingredient with "Noodles"
-   as its counts-as value are merged into ONE line item on the shopping
-   list - the ingredient list of an individual recipe still shows "Fusilli". #}
+{# Ingredients & nutrition (/manage/ingredient-aliases): combines what
+   used to be two separate pages (see IDEAS.md) - merging spellings for
+   the shopping list ("counts as") and maintaining the nutrition
+   reference per resulting canonical ingredient really is one editing
+   task, not two.
+
+   Two sub-tabs, both always rendered (only one shown at a time via CSS,
+   see the script below) so switching between them never drops unsaved
+   input, and BOTH share the one <form> further down so a single Save
+   covers whatever was changed in either:
+
+   - "Main ingredients" (main_groups, routes/settings.py:
+     ingredient_aliases_view()): every canonical name that at least one
+     other ingredient is aliased to, with its own nutrition reference and,
+     nested under it, every ingredient name currently merged into it -
+     each removable via "×" (see removeAliasRow() below).
+   - "Everything else" (other_rows): every other known ingredient name,
+     with its OWN nutrition reference (an ingredient with no alias is its
+     own canonical name) and a "counts as" field to merge it into a main
+     ingredient. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-12 col-md-8">
+    <div class="col-12 col-md-9">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">🔗 {{ _('Merge Ingredients') }}</h4>
+                <h4 class="card-title mb-0 fw-bold">🔗 {{ _('Ingredients & Nutrition') }}</h4>
                 <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
@@ -27,37 +39,113 @@
                     {% endfor %}
                 </ul>
                 {% endif %}
+
                 <p class="text-muted">
-                    {{ _('Enter a common name under "Counts as" to merge several ingredients on the shopping list into one line item (e.g. "Spaghetti" and "Fusilli" → "Noodles", "Olive Oil" and "Sunflower Oil" → "Oil"). Without a change, an ingredient still only counts as itself. This only affects the shopping list - recipes still show the ingredient name as originally entered.') }}
+                    {{ _('A main ingredient merges several spellings into one line item on the shopping list (e.g. "Spaghetti" and "Fusilli" → "Noodles") and carries the nutrition reference for all of them together. Everything under "Everything else" only counts for itself so far - set "Counts as" there to merge it into a main ingredient.') }}
                 </p>
 
-                {% if rows %}
+                <div class="d-flex gap-2 mb-3 border-bottom" id="ingredientSubtabs">
+                    <button type="button" class="ingredient-subtab-btn active" data-subtab="main">
+                        {{ _('Main Ingredients') }} <span class="badge">{{ main_groups|length }}</span>
+                    </button>
+                    <button type="button" class="ingredient-subtab-btn" data-subtab="other">
+                        {{ _('Everything Else') }} <span class="badge">{{ other_rows|length }}</span>
+                    </button>
+                </div>
+
+                {% if not main_groups and not other_rows %}
+                <div class="text-center p-5 text-muted">{{ _('No ingredients yet.') }}</div>
+                {% else %}
                 <input type="text" id="ingredientFilter" class="form-control mb-3" placeholder="🔍 {{ _('Search ingredient...') }}" autocomplete="off">
 
-                <form action="/update-ingredient-aliases" method="POST">
+                <form action="{{ url_for('settings.update_ingredients') }}" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="plan_id" value="{{ plan_id }}">
-                    <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2">
-                        <div class="col-6">{{ _('Ingredient') }}</div>
-                        <div class="col-6">{{ _('Counts As') }}</div>
-                    </div>
-                    <div id="ingredientRows">
-                        {% for row in rows %}
-                        <div class="row g-2 mb-1 ingredient-alias-row">
-                            <div class="col-6">
-                                <input type="hidden" name="raw_name[]" value="{{ row.raw_name }}">
-                                <input type="text" class="form-control form-control-sm" value="{{ row.raw_name }}" disabled>
+
+                    <div id="mainSubtabContent" class="ingredient-subtab-content">
+                        {% if main_groups %}
+                        <div class="d-flex flex-column gap-3">
+                            {% for group in main_groups %}
+                            <div class="ingredient-card main-ingredient-row" data-search="{{ group.canonical_name }} {{ group.aliases|join(' ') }}">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <div class="fw-bold fs-5">{{ group.canonical_name }}</div>
+                                    <span class="badge-count">{{ group.aliases|length }} {{ _('ingredient') if group.aliases|length == 1 else _('ingredients') }}</span>
+                                </div>
+
+                                <input type="hidden" name="nutrition_name[]" value="{{ group.canonical_name }}">
+                                <div class="nutrition-block{% if not group.has_entry %} text-muted{% endif %}">
+                                    <span class="nutrition-label">🍎 {{ _('Nutrition') }}</span>
+                                    <select name="reference_unit[]" class="form-select form-select-sm" style="width: auto;" title="{{ _('Reference basis') }}">
+                                        <option value="g" {% if group.reference_unit == 'g' %}selected{% endif %}>{{ _('per 100 g') }}</option>
+                                        <option value="ml" {% if group.reference_unit == 'ml' %}selected{% endif %}>{{ _('per 100 ml') }}</option>
+                                        <option value="Stk" {% if group.reference_unit == 'Stk' %}selected{% endif %}>{{ _('per 1 pc') }}</option>
+                                    </select>
+                                    <label class="nutrition-field">{{ _('Protein') }} <input type="number" step="0.1" name="protein[]" class="form-control form-control-sm nutrition-protein" value="{{ group.protein }}"> g</label>
+                                    <label class="nutrition-field">{{ _('Carbs') }} <input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm nutrition-carbs" value="{{ group.carbs }}"> g</label>
+                                    <label class="nutrition-field">{{ _('Fat') }} <input type="number" step="0.1" name="fat[]" class="form-control form-control-sm nutrition-fat" value="{{ group.fat }}"> g</label>
+                                    <span class="nutrition-kcal">
+                                        <span class="nutrition-calories-display">{{ group.calories }}</span> kcal
+                                    </span>
+                                </div>
+
+                                <div class="d-flex flex-column gap-1">
+                                    {% for alias in group.aliases %}
+                                    <div class="alias-item" data-raw="{{ alias }}">
+                                        <input type="hidden" name="raw_name[]" value="{{ alias }}">
+                                        <input type="hidden" class="alias-canonical-input" name="canonical_name[]" value="{{ group.canonical_name }}">
+                                        <span class="alias-arrow">↳</span>
+                                        <span class="alias-name">{{ alias }}</span>
+                                        <button type="button" class="alias-remove-btn" onclick="removeAliasRow(this)" aria-label="{{ _('Remove this ingredient from the group') }}">×</button>
+                                    </div>
+                                    {% endfor %}
+                                </div>
                             </div>
-                            <div class="col-6">
-                                <input type="text" name="canonical_name[]" class="form-control form-control-sm{% if row.canonical_name != row.raw_name %} border-success{% endif %}" value="{{ row.canonical_name }}">
-                            </div>
+                            {% endfor %}
                         </div>
-                        {% endfor %}
+                        {% else %}
+                        <div class="text-center p-4 text-muted">{{ _('No main ingredients yet - set "Counts as" under "Everything else" to create one.') }}</div>
+                        {% endif %}
                     </div>
-                    <button type="submit" class="btn btn-dark fw-bold mt-3">{{ _('Save') }}</button>
+
+                    <div id="otherSubtabContent" class="ingredient-subtab-content d-none">
+                        {% if other_rows %}
+                        <div class="d-flex flex-column gap-3">
+                            {% for row in other_rows %}
+                            <div class="ingredient-card other-ingredient-row" data-search="{{ row.raw_name }}">
+                                <div class="fw-bold fs-5 mb-2">{{ row.raw_name }}</div>
+
+                                <input type="hidden" name="nutrition_name[]" value="{{ row.raw_name }}">
+                                <div class="nutrition-block{% if not row.has_entry %} text-muted{% endif %}">
+                                    <span class="nutrition-label">🍎 {{ _('Nutrition') }}</span>
+                                    <select name="reference_unit[]" class="form-select form-select-sm" style="width: auto;" title="{{ _('Reference basis') }}">
+                                        <option value="g" {% if row.reference_unit == 'g' %}selected{% endif %}>{{ _('per 100 g') }}</option>
+                                        <option value="ml" {% if row.reference_unit == 'ml' %}selected{% endif %}>{{ _('per 100 ml') }}</option>
+                                        <option value="Stk" {% if row.reference_unit == 'Stk' %}selected{% endif %}>{{ _('per 1 pc') }}</option>
+                                    </select>
+                                    <label class="nutrition-field">{{ _('Protein') }} <input type="number" step="0.1" name="protein[]" class="form-control form-control-sm nutrition-protein" value="{{ row.protein }}"> g</label>
+                                    <label class="nutrition-field">{{ _('Carbs') }} <input type="number" step="0.1" name="carbs[]" class="form-control form-control-sm nutrition-carbs" value="{{ row.carbs }}"> g</label>
+                                    <label class="nutrition-field">{{ _('Fat') }} <input type="number" step="0.1" name="fat[]" class="form-control form-control-sm nutrition-fat" value="{{ row.fat }}"> g</label>
+                                    <span class="nutrition-kcal">
+                                        <span class="nutrition-calories-display">{{ row.calories }}</span> kcal
+                                    </span>
+                                </div>
+
+                                <div class="alias-item">
+                                    <input type="hidden" name="raw_name[]" value="{{ row.raw_name }}">
+                                    <span class="alias-arrow">↳</span>
+                                    <span class="text-muted small">{{ _('Counts As') }}</span>
+                                    <input type="text" name="canonical_name[]" class="form-control form-control-sm" style="max-width: 260px;" value="{{ row.raw_name }}">
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="text-center p-4 text-muted">{{ _('No further ingredients.') }}</div>
+                        {% endif %}
+                    </div>
+
+                    <button type="submit" class="btn btn-dark fw-bold mt-4">{{ _('Save') }}</button>
                 </form>
-                {% else %}
-                <div class="text-center p-5 text-muted">{{ _('No ingredients yet.') }}</div>
                 {% endif %}
             </div>
         </div>
@@ -66,12 +154,62 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Purely client-side fuzzy filter (see static/fuzzy_search.js) - no
-// server round-trip needed. With potentially hundreds of ingredients it
-// would otherwise be impractical to see them all at once.
+// Sub-tab switching: both contents stay in the DOM (and inside the same
+// <form>) the whole time, only .d-none toggles which one is visible -
+// this way typing in one tab never loses data if the user switches to
+// the other before hitting Save.
+document.querySelectorAll('.ingredient-subtab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.ingredient-subtab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const isMain = btn.dataset.subtab === 'main';
+        document.getElementById('mainSubtabContent').classList.toggle('d-none', !isMain);
+        document.getElementById('otherSubtabContent').classList.toggle('d-none', isMain);
+    });
+});
+
+// Removes a single ingredient from a main ingredient's group (the "×"
+// button): rather than deleting the row (which would also drop its
+// hidden raw_name[]/canonical_name[] pair and silently leave the alias
+// UNCHANGED server-side, see routes/settings.py: update_ingredients()),
+// this sets the hidden canonical_name back to the ingredient's own raw
+// name - set_alias() then deletes the mapping on Save, exactly as if the
+// "Counts as" field had been retyped back to itself - and greys out the
+// row so the pending removal is visible immediately.
+function removeAliasRow(button) {
+    const item = button.closest('.alias-item');
+    const canonicalInput = item.querySelector('.alias-canonical-input');
+    canonicalInput.value = item.dataset.raw;
+    item.classList.add('alias-item-removed');
+    button.disabled = true;
+}
+
+// Search filters whichever sub-tab is currently visible, across the
+// ingredient's own name AND (for main ingredients) its merged spellings
+// (see data-search on .ingredient-card).
 wireFuzzyFilter(
-    document.getElementById('ingredientFilter'), '.ingredient-alias-row',
-    row => row.querySelector('input[name="raw_name[]"]').value
+    document.getElementById('ingredientFilter'), '.ingredient-card',
+    row => row.dataset.search
 );
+
+// Live kcal display from protein/carbs/fat (Atwater rule of thumb 4/4/9
+// kcal per g, same formula as services/nutrition.py: compute_calories())
+// - purely informational, the server recomputes it from the saved values
+// anyway.
+document.querySelectorAll('.ingredient-card').forEach(card => {
+    const proteinInput = card.querySelector('.nutrition-protein');
+    const carbsInput = card.querySelector('.nutrition-carbs');
+    const fatInput = card.querySelector('.nutrition-fat');
+    const caloriesDisplay = card.querySelector('.nutrition-calories-display');
+
+    function recalcCalories() {
+        const protein = parseFloat(proteinInput.value) || 0;
+        const carbs = parseFloat(carbsInput.value) || 0;
+        const fat = parseFloat(fatInput.value) || 0;
+        caloriesDisplay.textContent = Math.round(protein * 4 + carbs * 4 + fat * 9);
+    }
+
+    [proteinInput, carbsInput, fatInput].forEach(input => input.addEventListener('input', recalcCalories));
+});
 </script>
 {% endblock %}
