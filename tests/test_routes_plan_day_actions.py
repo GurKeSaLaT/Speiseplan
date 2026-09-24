@@ -134,6 +134,77 @@ def test_set_main_day_resets_cooked(client, app, make_recipe):
         assert row.cooked is False
 
 
+# --- toggle-exclude (see BUGS.md: no way to exclude a day AFTER the week
+# already exists - routes/plan/day_actions.py: toggle_day_exclusion()) ---
+
+def test_toggle_exclude_invalid_date_returns_400(client):
+    resp = client.post("/day/garbage/toggle-exclude")
+    assert resp.status_code == 400
+
+
+def test_toggle_exclude_creates_plan_day_and_excludes_it(client, app):
+    from models import PlanDay
+
+    resp = client.post("/day/2026-06-20/toggle-exclude")
+    assert resp.status_code == 200
+    assert resp.get_json()["excluded"] is True
+
+    with app.app_context():
+        row = PlanDay.query.filter_by(date=date(2026, 6, 20)).first()
+        assert row is not None
+        assert row.excluded is True
+
+
+def test_toggle_exclude_clears_main_dish_and_cooked(client, app, make_recipe):
+    from models import PlanDay
+
+    recipe_id = make_recipe("Wird ausgeschlossen")
+    _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=recipe_id, cooked=True)
+
+    resp = client.post("/day/2026-06-15/toggle-exclude")
+    assert resp.status_code == 200
+    assert resp.get_json()["excluded"] is True
+
+    with app.app_context():
+        row = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()
+        assert row.main_recipe_id is None
+        assert row.cooked is False
+
+
+def test_toggle_exclude_twice_re_includes_without_a_main_dish(client, app, make_recipe):
+    from models import PlanDay
+
+    recipe_id = make_recipe("Ausgeschlossen und zurück")
+    _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=recipe_id)
+
+    client.post("/day/2026-06-15/toggle-exclude")
+    resp = client.post("/day/2026-06-15/toggle-exclude")
+    assert resp.status_code == 200
+    assert resp.get_json()["excluded"] is False
+
+    with app.app_context():
+        row = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()
+        assert row.excluded is False
+        assert row.main_recipe_id is None
+
+
+def test_toggle_exclude_leaves_side_dishes_untouched(client, app, make_recipe):
+    from models import PlanDay, PlanDaySide, db
+
+    main_id = make_recipe("Hauptgericht")
+    side_id = make_recipe("Beilage", is_side_dish=True)
+    plan_day_id = _plan_day(app, client.plan_id, date(2026, 6, 15), main_recipe_id=main_id)
+    with app.app_context():
+        db.session.add(PlanDaySide(plan_day_id=plan_day_id, recipe_id=side_id))
+        db.session.commit()
+
+    resp = client.post("/day/2026-06-15/toggle-exclude")
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert PlanDaySide.query.filter_by(plan_day_id=plan_day_id).count() == 1
+
+
 # --- side/add ---
 
 def test_add_side_invalid_date_returns_400(client):

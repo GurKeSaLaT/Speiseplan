@@ -221,14 +221,31 @@ Backlog for future features - not yet implemented, just collected.
   matching stored values (`Category.name`, `Ingredient.category`,
   `ExtraShoppingItem.category`, season labels) alongside the constant
   itself.
-- **JS strings aren't localized.** Flask-Babel only extracts from
-  `.py`/`.html` files - user-facing strings in `static/*.js` (mostly
-  `alert()`/`confirm()` calls and a handful of status messages) are
-  therefore plain, hardcoded English regardless of the account's chosen
-  language. Small, low-traffic surface; building a second i18n path for
-  JS wasn't judged worth it yet.
-
 ## Implemented (continued)
+
+- **Exclude/re-include a day AFTER the week already exists.** Previously
+  `PlanDay.excluded` could only be set while first creating a week
+  (`static/create_week.js`, `templates/create_week.html`) - there was no
+  way back once the week was already created (see the plan page,
+  `templates/plan.html`). New endpoint `routes/plan/day_actions.py:
+  toggle_day_exclusion()` (`POST /day/<date>/toggle-exclude`) toggles it
+  for a single calendar day, clearing the main dish when excluding (side
+  dishes are untouched, matching the existing "excluded only applies to
+  the main dish" rule) - a new 🚫 button next to the 🎲/✏️ actions on
+  each day card calls it.
+- **JS strings localized.** Closed the previous "JS strings aren't
+  localized" gap: Flask-Babel only extracts from `.py`/`.html` files, so
+  user-facing strings in `static/*.js` (status labels, button titles,
+  `alert()` messages) are now routed through `window.I18N` - a single
+  JSON blob rendered server-side in `templates/base.html` via `_(...)`,
+  keyed by a short stable name rather than the English text itself. JS
+  call sites reference `window.I18N.<key>` instead of hardcoded English;
+  the German catalog (`translations/de/LC_MESSAGES/messages.po`) covers
+  every one of them. While auditing this, found and fixed two more spots
+  (`static/plan.js`: `renderMainDisplay()`, `static/plan-sides.js`:
+  `renderSidesSection()`) that interpolated a recipe/category name
+  straight into `innerHTML` without the app's own `escapeHtml()` -
+  the same stored-XSS pattern already fixed once in `create_week.js`.
 
 - **Authelia-based authentication.** This app no longer has its own login/
   registration/password (see `services/auth.py` module docstring) - it

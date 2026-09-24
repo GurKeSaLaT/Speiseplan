@@ -185,7 +185,7 @@ function rerollSingleDay(dayIndex) {
 
     postWithCsrf(`/day/${dayDates[dayIndex]}/reroll-main`)
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'No alternative recipe available.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.no_alternative_recipe_available); });
         return response.json();
     })
     .then(newRecipe => {
@@ -195,7 +195,7 @@ function rerollSingleDay(dayIndex) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Note: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -221,20 +221,21 @@ function renderMainDisplay(dayIndex) {
         const cookedClass = dayCooked[dayIndex] ? ' dish-cooked' : '';
         return `
             <div class="d-flex justify-content-between align-items-start mb-2">
-                <div class="dish-clickable${cookedClass}" role="button" title="Show details" onclick="openRecipeDetail(${dayIndex}, null)">
+                <div class="dish-clickable${cookedClass}" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, null)">
                     <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayLabels[dayIndex]}</h5>
-                    <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${recipe.name}</span>
+                    <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${escapeHtml(recipe.name)}</span>
                 </div>
                 <div class="text-end">
                     ${servingsHtml}
                     <div class="d-flex align-items-center gap-1 justify-content-end mt-1">
-                        <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${recipe.category_name}</span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Re-roll this day" onclick="rerollSingleDay(${dayIndex})">🎲</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="Select a different recipe" onclick="openMainManualSelect(${dayIndex})">✏️</button>
+                        <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.reroll_this_day_title)}" onclick="rerollSingleDay(${dayIndex})">🎲</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.select_different_recipe_title)}" onclick="openMainManualSelect(${dayIndex})">✏️</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.exclude_day_title)}" onclick="toggleDayExclusion(${dayIndex})">🚫</button>
                     </div>
                 </div>
             </div>
-            <div class="text-muted small font-monospace bg-light p-2 rounded dish-clickable${cookedClass}" role="button" title="Show details" onclick="openRecipeDetail(${dayIndex}, null)">
+            <div class="text-muted small font-monospace bg-light p-2 rounded dish-clickable${cookedClass}" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, null)">
                 📊 <span class="recipe-kcal">${recipe.calories}</span> kcal |
                 P: <span class="recipe-protein">${recipe.protein}</span>g |
                 C: <span class="recipe-carbs">${recipe.carbs}</span>g |
@@ -247,17 +248,57 @@ function renderMainDisplay(dayIndex) {
     // found no matching recipe (e.g. category exhausted) - both cases
     // get their own, distinguishable hint text instead of an
     // uninformatively empty card.
-    const placeholderText = dayExcluded[dayIndex] ? '🚫 Excluded from planning' : 'No matching recipe available';
+    const placeholderText = dayExcluded[dayIndex] ? window.I18N.excluded_from_planning : window.I18N.no_matching_recipe_available;
+    // The exclude/include toggle stays reachable here too (not just when
+    // a main dish is already assigned, see above) - previously the only
+    // way to exclude/re-include a day at all was while first creating the
+    // week (static/create_week.js), with no way back once the week
+    // already existed (see routes/plan/day_actions.py:
+    // toggle_day_exclusion()).
+    const excludeBtnClass = dayExcluded[dayIndex] ? 'btn-danger' : 'btn-outline-secondary';
+    const excludeBtnTitle = dayExcluded[dayIndex] ? window.I18N.include_day_title : window.I18N.exclude_day_title;
     return `
         <div class="d-flex justify-content-end mb-1">${servingsHtml}</div>
         <div class="text-center text-muted">
             <h5 class="fw-bold mb-1">${dayLabels[dayIndex]}</h5>
-            <span>${placeholderText}</span>
-            <div class="mt-1">
-                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openMainManualSelect(${dayIndex})">✏️ Select recipe</button>
+            <span>${escapeHtml(placeholderText)}</span>
+            <div class="mt-1 d-flex gap-1 justify-content-center">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openMainManualSelect(${dayIndex})">${escapeHtml(window.I18N.select_recipe_label)}</button>
+                <button type="button" class="btn btn-sm ${excludeBtnClass}" title="${escapeHtml(excludeBtnTitle)}" onclick="toggleDayExclusion(${dayIndex})">🚫</button>
             </div>
         </div>
     `;
+}
+
+/**
+ * Toggles PlanDay.excluded for a single, ALREADY-CREATED day (calls
+ * routes/plan/day_actions.py: toggle_day_exclusion() server-side) -
+ * previously only settable while first creating the week
+ * (static/create_week.js), with no way to exclude or re-include a day
+ * afterward. Excluding clears the main dish (mirrored here from the
+ * server's response instead of assumed client-side, in case the day
+ * didn't have one to begin with); re-including simply leaves the day
+ * without one, ready to be rolled/manually picked via the now-visible
+ * buttons.
+ */
+function toggleDayExclusion(dayIndex) {
+    postWithCsrf(`/day/${dayDates[dayIndex]}/toggle-exclude`)
+    .then(response => {
+        if (!response.ok) throw new Error(window.I18N.could_not_be_saved);
+        return response.json();
+    })
+    .then(data => {
+        dayExcluded[dayIndex] = data.excluded;
+        if (data.excluded) {
+            weeklyPlanRecipes[dayIndex] = null;
+            dayCooked[dayIndex] = false;
+        }
+        refreshDayCard(dayIndex);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert(window.I18N.note_prefix + ' ' + err.message);
+    });
 }
 
 /** Servings input field for a day card - its own function instead of a
@@ -267,7 +308,7 @@ function renderMainDisplay(dayIndex) {
 function renderServingsHtml(dayIndex) {
     return `
         <div class="d-flex align-items-center justify-content-end gap-1">
-            <label class="small text-muted mb-0" for="servings-${dayIndex}">👥 Servings</label>
+            <label class="small text-muted mb-0" for="servings-${dayIndex}">${escapeHtml(window.I18N.servings_label)}</label>
             <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
         </div>
     `;
@@ -305,7 +346,7 @@ function setMainRecipe(dayIndex, recipeId) {
         body: JSON.stringify({ recipe_id: recipeId }),
     })
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Selection failed.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.selection_failed); });
         return response.json();
     })
     .then(newRecipe => {
@@ -316,7 +357,7 @@ function setMainRecipe(dayIndex, recipeId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Note: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -387,7 +428,7 @@ function updateDayServings(dayIndex, value) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ servings: servings })
     }).catch(() => {
-        alert('Note: Could not save number of servings.');
+        alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_save_servings);
     });
 }
 
@@ -489,7 +530,7 @@ function daySwap(i, j) {
 
     postWithCsrf(`/day/${dayDates[i]}/swap/${dayDates[j]}`)
     .then(response => {
-        if (!response.ok) throw new Error('Swap failed.');
+        if (!response.ok) throw new Error(window.I18N.swap_failed);
         return response.json();
     })
     .then(() => {
@@ -503,7 +544,7 @@ function daySwap(i, j) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Note: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -563,10 +604,12 @@ let detailDayIndex = null;
 let detailSideId = null;
 
 /** Escapes text for safe embedding in innerHTML (prevents, e.g., a
- * recipe name containing "<"/"&" from breaking the detail window's
- * markup or - since unlike renderMainDisplay/renderSidesSection this
- * also displays longer free text like the instructions - executing
- * referenced HTML). */
+ * recipe name containing "<"/"&" from breaking a card's markup or
+ * executing injected HTML) - used everywhere a recipe/category/side-dish
+ * name from window.PLAN_DATA or an AJAX response ends up in a template
+ * literal assigned to innerHTML (renderMainDisplay/
+ * static/plan-sides.js: renderSidesSection, and this detail window,
+ * which additionally displays longer free text like the instructions). */
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text ?? '';
@@ -621,25 +664,25 @@ function renderRecipeDetailBody(recipe, targetServings) {
         ? `<ul class="mb-0 ps-3">${recipe.ingredients.map(ing =>
             `<li>${escapeHtml(roundedAmount({ amount: ing.amount * factor }))} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}</li>`
           ).join('')}</ul>`
-        : '<span class="text-muted">No ingredients on file.</span>';
+        : `<span class="text-muted">${escapeHtml(window.I18N.no_ingredients_on_file)}</span>`;
 
     const instructionsHtml = recipe.instructions
-        ? `<h6 class="fw-bold text-dark mt-3 mb-1">📝 Instructions</h6><p class="mb-0" style="white-space: pre-line;">${escapeHtml(recipe.instructions)}</p>`
+        ? `<h6 class="fw-bold text-dark mt-3 mb-1">${escapeHtml(window.I18N.instructions_heading)}</h6><p class="mb-0" style="white-space: pre-line;">${escapeHtml(recipe.instructions)}</p>`
         : '';
 
     const sourceHtml = recipe.source_url
-        ? `<a href="${escapeHtml(recipe.source_url)}" target="_blank" rel="noopener noreferrer" class="badge bg-light text-dark border px-2 py-1 text-decoration-none mt-2 d-inline-block">🔗 Open source</a>`
+        ? `<a href="${escapeHtml(recipe.source_url)}" target="_blank" rel="noopener noreferrer" class="badge bg-light text-dark border px-2 py-1 text-decoration-none mt-2 d-inline-block">${escapeHtml(window.I18N.open_source_link)}</a>`
         : '';
 
     return `
         <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
             <span class="badge badge-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
-            <span class="text-muted small">👥 ${targetServings} servings</span>
+            <span class="text-muted small">👥 ${targetServings} ${escapeHtml(window.I18N.servings_word)}</span>
         </div>
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-3">
-            📊 ${recipe.calories} kcal | P: ${recipe.protein}g | C: ${recipe.carbs}g | F: ${recipe.fat}g <span class="text-muted">(per serving)</span>
+            📊 ${recipe.calories} kcal | P: ${recipe.protein}g | C: ${recipe.carbs}g | F: ${recipe.fat}g <span class="text-muted">${escapeHtml(window.I18N.per_serving)}</span>
         </div>
-        <h6 class="fw-bold text-dark mb-1">🛒 Ingredients</h6>
+        <h6 class="fw-bold text-dark mb-1">🛒 ${escapeHtml(window.I18N.ingredients_word)}</h6>
         ${ingredientsHtml}
         ${instructionsHtml}
         ${sourceHtml}
@@ -666,7 +709,7 @@ function toggleDetailCooked(cooked) {
         body: JSON.stringify({ cooked: cooked }),
     })
     .then(response => {
-        if (!response.ok) throw new Error('Could not be saved.');
+        if (!response.ok) throw new Error(window.I18N.could_not_be_saved);
         return response.json();
     })
     .then(data => {
@@ -680,7 +723,7 @@ function toggleDetailCooked(cooked) {
         }
     })
     .catch(err => {
-        alert('Note: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
         // Reset the checkbox to its last known state, since the change
         // was not applied server-side.
         document.getElementById('recipeDetailCookedCheckbox').checked = !cooked;

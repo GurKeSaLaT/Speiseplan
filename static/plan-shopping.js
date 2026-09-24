@@ -44,7 +44,7 @@ function rebuildWeeklyNutritionSummary() {
     }
 
     if (plannedDays === 0) {
-        container.innerHTML = '<span class="text-muted small">No dishes in the plan yet.</span>';
+        container.innerHTML = `<span class="text-muted small">${escapeHtml(window.I18N.no_dishes_planned)}</span>`;
         return;
     }
 
@@ -170,7 +170,7 @@ function rebuildShoppingList() {
     if (counterBadge) counterBadge.textContent = items.length;
 
     if (items.length === 0) {
-        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">No ingredients needed for this week.</li>';
+        container.innerHTML = `<li class="list-group-item text-center text-muted my-3">${escapeHtml(window.I18N.no_ingredients_needed)}</li>`;
     } else {
         renderGroupedList(container, items, buildShoppingRow);
     }
@@ -270,7 +270,7 @@ function buildShoppingRow(item) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn btn-sm text-danger border-0 p-1 ms-1';
-        deleteBtn.title = 'Remove item';
+        deleteBtn.title = window.I18N.remove_item_title;
         deleteBtn.textContent = '❌';
         deleteBtn.onclick = () => removeExtraShoppingItem(item.id);
         right.appendChild(deleteBtn);
@@ -312,7 +312,7 @@ function renderPantryList(pantryItems) {
     if (counterBadge) counterBadge.textContent = pantryItems.length;
 
     if (pantryItems.length === 0) {
-        container.innerHTML = '<li class="list-group-item text-center text-muted my-3">No spices/consumables planned this week.</li>';
+        container.innerHTML = `<li class="list-group-item text-center text-muted my-3">${escapeHtml(window.I18N.no_spices_planned)}</li>`;
         return;
     }
 
@@ -336,7 +336,7 @@ function buildPantryRow(item) {
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'btn btn-sm btn-outline-secondary ms-1';
-    addBtn.title = 'Add to shopping list';
+    addBtn.title = window.I18N.add_to_shopping_list_title;
     addBtn.textContent = '→ 🛒';
     addBtn.onclick = () => pushPantryItemToShoppingList(item);
     right.appendChild(addBtn);
@@ -368,7 +368,7 @@ function pushPantryItemToShoppingList(item) {
         }),
     })
     .then(response => {
-        if (!response.ok) throw new Error('Adding failed.');
+        if (!response.ok) throw new Error(window.I18N.adding_failed);
         return response.json();
     })
     .then(newItem => {
@@ -376,7 +376,7 @@ function pushPantryItemToShoppingList(item) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -408,7 +408,7 @@ function addExtraShoppingItem() {
         }),
     })
     .then(response => {
-        if (!response.ok) throw new Error('Adding failed.');
+        if (!response.ok) throw new Error(window.I18N.adding_failed);
         return response.json();
     })
     .then(newItem => {
@@ -424,7 +424,7 @@ function addExtraShoppingItem() {
         nameInput.focus();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -435,11 +435,11 @@ function addExtraShoppingItem() {
 function removeExtraShoppingItem(itemId) {
     postWithCsrf(`/shopping-item/${itemId}/delete`)
     .then(response => {
-        if (!response.ok) throw new Error('Removing failed.');
+        if (!response.ok) throw new Error(window.I18N.removing_failed);
         weeklyExtraItems = weeklyExtraItems.filter(item => item.id !== itemId);
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }

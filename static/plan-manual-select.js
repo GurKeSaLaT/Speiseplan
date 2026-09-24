@@ -26,11 +26,12 @@
  * happens in wireManualSelectBox().
  */
 function buildManualSelectHtml(isSide) {
+    const placeholder = isSide ? window.I18N.search_placeholder_side : window.I18N.search_placeholder_recipe;
     return `
         <div class="manual-select-box">
-            <input type="text" class="form-control form-control-sm manual-select-input mb-1" placeholder="Search ${isSide ? 'side dish' : 'recipe'}..." autocomplete="off">
+            <input type="text" class="form-control form-control-sm manual-select-input mb-1" placeholder="${placeholder}" autocomplete="off">
             <div class="list-group manual-select-results shadow-sm" style="max-height: 180px; overflow-y: auto; display: none;"></div>
-            <button type="button" class="btn btn-sm btn-link p-0 mt-1 manual-select-cancel">Cancel</button>
+            <button type="button" class="btn btn-sm btn-link p-0 mt-1 manual-select-cancel">${window.I18N.cancel_label}</button>
         </div>
     `;
 }

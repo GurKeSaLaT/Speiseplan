@@ -8,7 +8,7 @@
  * inline, ever since create and edit share the same template.
  */
 function categoryOptionsHtml() {
-    let html = '<option value="" selected>Other</option>';
+    let html = `<option value="" selected>${window.I18N.category_other_label}</option>`;
     (window.SHOPPING_CATEGORIES || []).forEach(cat => {
         html += `<option value="${cat}">${cat}</option>`;
     });

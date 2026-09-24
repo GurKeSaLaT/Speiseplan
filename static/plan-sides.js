@@ -36,23 +36,23 @@ function renderSidesSection(dayIndex) {
                  id="side-item-${dayIndex}-${side.side_id}"
                  draggable="true"
                  ondragstart="sideDragStart(event, ${dayIndex}, ${side.side_id})">
-                <div class="dish-clickable${cookedClass}" role="button" title="Show details" onclick="openRecipeDetail(${dayIndex}, ${side.side_id})">
-                    <span class="fw-bold text-dark side-dish-name">🥗 ${side.name}</span>
-                    <span class="badge badge-category side-dish-category ms-1">${side.category_name}</span>
+                <div class="dish-clickable${cookedClass}" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, ${side.side_id})">
+                    <span class="fw-bold text-dark side-dish-name">🥗 ${escapeHtml(side.name)}</span>
+                    <span class="badge badge-category side-dish-category ms-1">${escapeHtml(side.category_name)}</span>
                     <span class="text-muted small side-dish-kcal">(${side.calories} kcal)</span>
                 </div>
                 <div class="d-flex align-items-center gap-1">
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Reroll this side dish" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="Choose a different side dish" onclick="openSideManualSelect(${dayIndex}, ${side.side_id})">✏️</button>
-                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="Remove side dish" onclick="removeOneSide(${dayIndex}, ${side.side_id})">❌</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="${escapeHtml(window.I18N.reroll_side_title)}" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="${escapeHtml(window.I18N.choose_different_side_title)}" onclick="openSideManualSelect(${dayIndex}, ${side.side_id})">✏️</button>
+                    <button type="button" class="btn btn-sm text-danger border-0 p-1" title="${escapeHtml(window.I18N.remove_side_title)}" onclick="removeOneSide(${dayIndex}, ${side.side_id})">❌</button>
                 </div>
             </div>
         `;
     });
     html += `
         <div id="side-add-row-${dayIndex}" class="d-flex gap-1">
-            <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" onclick="addRandomSide(${dayIndex})">🎲 Roll a side dish</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" title="Choose a side dish" onclick="openSideManualSelect(${dayIndex}, null)">✏️</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" onclick="addRandomSide(${dayIndex})">🎲 ${escapeHtml(window.I18N.roll_side_dish_label)}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="${escapeHtml(window.I18N.choose_side_title)}" onclick="openSideManualSelect(${dayIndex}, null)">✏️</button>
         </div>
     `;
     return html;
@@ -110,7 +110,7 @@ function addSide(dayIndex, recipeId) {
         body: JSON.stringify({ recipe_id: recipeId || null }),
     })
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'No side dish available.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.no_side_dish_available); });
         return response.json();
     })
     .then(newSide => {
@@ -119,7 +119,7 @@ function addSide(dayIndex, recipeId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -136,7 +136,7 @@ function addRandomSide(dayIndex) {
 function rerollOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/reroll`)
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'No alternative available.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.no_alternative_available); });
         return response.json();
     })
     .then(newSide => {
@@ -146,7 +146,7 @@ function rerollOneSide(dayIndex, sideId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -157,7 +157,7 @@ function setOneSide(dayIndex, sideId, recipeId) {
         body: JSON.stringify({ recipe_id: recipeId }),
     })
     .then(response => {
-        if (!response.ok) return response.json().then(data => { throw new Error(data.error || 'Selection failed.'); });
+        if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.selection_failed); });
         return response.json();
     })
     .then(newSide => {
@@ -167,7 +167,7 @@ function setOneSide(dayIndex, sideId, recipeId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -175,7 +175,7 @@ function setOneSide(dayIndex, sideId, recipeId) {
 function removeOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/remove`)
     .then(response => {
-        if (!response.ok) throw new Error('Removing failed.');
+        if (!response.ok) throw new Error(window.I18N.removing_failed);
     })
     .then(() => {
         weeklySideRecipes[dayIndex] = weeklySideRecipes[dayIndex].filter(s => s.side_id !== sideId);
@@ -183,7 +183,7 @@ function removeOneSide(dayIndex, sideId) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }
 
@@ -211,7 +211,7 @@ function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
 
     postWithCsrf(`/day/${dayDates[sourceDayIndex]}/side/${sideId}/move/${dayDates[targetDayIndex]}`)
     .then(response => {
-        if (!response.ok) throw new Error('Moving failed.');
+        if (!response.ok) throw new Error(window.I18N.moving_failed);
         return response.json();
     })
     .then(movedSide => {
@@ -222,6 +222,6 @@ function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
         rebuildShoppingList();
     })
     .catch(err => {
-        alert('Notice: ' + err.message);
+        alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }

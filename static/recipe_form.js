@@ -99,14 +99,14 @@ function rformAddIngredientRow() {
     div.className = 'ingredient-row';
     div.innerHTML = `
         <div class="ing-fields">
-            <input type="text" name="ing_name[]" placeholder="New ingredient..." list="ingredients-datalist" autocomplete="off">
-            <input type="number" step="0.1" name="ing_amount[]" placeholder="Amount">
-            <input type="text" name="ing_unit[]" placeholder="Unit">
-            <select name="ing_category[]" title="Shopping list category">${categoryOptionsHtml()}</select>
+            <input type="text" name="ing_name[]" placeholder="${window.I18N.new_ingredient_placeholder}" list="ingredients-datalist" autocomplete="off">
+            <input type="number" step="0.1" name="ing_amount[]" placeholder="${window.I18N.amount_placeholder}">
+            <input type="text" name="ing_unit[]" placeholder="${window.I18N.unit_placeholder}">
+            <select name="ing_category[]" title="${window.I18N.shopping_list_category_title}">${categoryOptionsHtml()}</select>
             <input type="hidden" name="ing_pantry[]" value="0">
-            <input type="checkbox" class="ing-pantry-checkbox" title="Pantry item (not on the weekly shopping list)"
+            <input type="checkbox" class="ing-pantry-checkbox" title="${window.I18N.pantry_item_title}"
                    onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
-            <button type="button" class="rform-ing-del" title="Remove ingredient" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
+            <button type="button" class="rform-ing-del" title="${window.I18N.remove_ingredient_title}" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
         </div>
         <div class="ingredient-alias-hint small mt-1"></div>
     `;
@@ -117,7 +117,7 @@ function rformAddIngredientRow() {
 function rformUpdateIngredientCount() {
     const n = document.querySelectorAll('#ingredientsContainer .ingredient-row').length;
     const countEl = document.getElementById('ingCount');
-    if (countEl) countEl.textContent = n + (n === 1 ? ' ingredient' : ' ingredients');
+    if (countEl) countEl.textContent = n + ' ' + (n === 1 ? window.I18N.ingredient_singular : window.I18N.ingredient_plural);
     const pvIngCount = document.getElementById('pvIngCount');
     if (pvIngCount) pvIngCount.textContent = n;
     rformUpdateChecklist();
@@ -137,7 +137,7 @@ function rformImportRecipe() {
 
     const status = document.getElementById('importStatus');
     const button = document.getElementById('importButton');
-    status.textContent = 'Importing...';
+    status.textContent = window.I18N.importing;
     status.className = 'form-text text-muted';
     button.disabled = true;
 
@@ -148,9 +148,9 @@ function rformImportRecipe() {
     })
     .then(response => response.json().then(data => ({ ok: response.ok, data: data })))
     .then(({ ok, data }) => {
-        if (!ok) throw new Error(data.error || 'Import failed.');
+        if (!ok) throw new Error(data.error || window.I18N.import_failed);
         rformApplyImportedRecipe(data);
-        status.textContent = '✓ Imported - please choose a category and check all details.';
+        status.textContent = window.I18N.imported_success;
         status.className = 'form-text text-success fw-bold';
     })
     .catch(err => {
@@ -192,7 +192,7 @@ function rformApplyImportedRecipe(data) {
 function rformUpdatePreview() {
     const name = document.getElementById('nameInput')?.value.trim();
     const pvName = document.getElementById('pvName');
-    if (pvName) pvName.textContent = name || 'Untitled recipe';
+    if (pvName) pvName.textContent = name || window.I18N.untitled_recipe;
 
     const catSelect = document.getElementById('categoryInput');
     const pvCat = document.getElementById('pvCat');
@@ -200,7 +200,7 @@ function rformUpdatePreview() {
 
     const servings = document.getElementById('servingsInput')?.value || '2';
     const pvServ = document.getElementById('pvServ');
-    if (pvServ) pvServ.textContent = `👥 ${servings} servings`;
+    if (pvServ) pvServ.textContent = `👥 ${servings} ${window.I18N.servings_word}`;
 
     rformUpdateChecklist();
 }
@@ -215,7 +215,7 @@ function rformUpdateChecklist() {
     const ciIng = document.getElementById('ciIng');
     ciIng?.classList.toggle('done', ingCount > 0);
     const ciIngLabel = document.getElementById('ciIngLabel');
-    if (ciIngLabel) ciIngLabel.textContent = `Ingredients (${ingCount})`;
+    if (ciIngLabel) ciIngLabel.textContent = `${window.I18N.ingredients_word} (${ingCount})`;
     const ciInstr = document.getElementById('ciInstr');
     ciInstr?.classList.toggle('done', !!instructions);
 }

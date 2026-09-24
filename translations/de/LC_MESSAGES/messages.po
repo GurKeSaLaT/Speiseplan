@@ -7,41 +7,16 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-31 20:13+0200\n"
+"POT-Creation-Date: 2026-09-24 14:46+0200\n"
 "PO-Revision-Date: 2026-08-31 13:34+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: de\n"
 "Language-Team: de <LL@li.org>\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "Generated-By: Babel 2.18.0\n"
-
-#: routes/account.py:43 routes/auth.py:88 templates/account.html:81
-#: templates/register.html:87
-msgid "Passwords do not match."
-msgstr "Passwörter stimmen nicht überein."
-
-#: routes/account.py:58
-msgid "Password is incorrect."
-msgstr "Passwort ist falsch."
-
-#: routes/auth.py:54
-msgid "Email address or password is incorrect."
-msgstr "E-Mail-Adresse oder Passwort falsch."
-
-#: routes/auth.py:86
-msgid "Please provide name, email address, and password."
-msgstr "Bitte Name, E-Mail-Adresse und Passwort angeben."
-
-#: routes/auth.py:90
-msgid "Please provide a valid email address."
-msgstr "Bitte eine gültige E-Mail-Adresse angeben."
-
-#: routes/auth.py:92
-msgid "An account already exists for this email address."
-msgstr "Für diese E-Mail-Adresse existiert bereits ein Konto."
 
 #: routes/categories.py:74
 msgid "Error: This category still contains recipes!"
@@ -60,20 +35,21 @@ msgstr "Gestern"
 msgid "%(days)s days ago"
 msgstr "Vor %(days)s Tagen"
 
-#: routes/settings.py:138
+#: routes/settings.py:141
 msgid "Name and alias must not be empty."
 msgstr "Name und Alias dürfen nicht leer sein."
 
-#: routes/settings.py:192
+#: routes/settings.py:196
 msgid "Ingredient name must not be empty."
 msgstr "Zutatenname darf nicht leer sein."
 
 #: routes/plan/day_actions.py:73 routes/plan/day_actions.py:150
-#: routes/plan/day_actions.py:196 routes/plan/day_actions.py:245
-#: routes/plan/day_actions.py:291 routes/plan/day_actions_sides.py:56
-#: routes/plan/day_actions_sides.py:98 routes/plan/day_actions_sides.py:129
-#: routes/plan/day_actions_sides.py:167 routes/plan/day_actions_sides.py:196
-#: routes/plan/day_actions_sides.py:220 routes/plan/shopping.py:35
+#: routes/plan/day_actions.py:201 routes/plan/day_actions.py:236
+#: routes/plan/day_actions.py:285 routes/plan/day_actions.py:331
+#: routes/plan/day_actions_sides.py:56 routes/plan/day_actions_sides.py:98
+#: routes/plan/day_actions_sides.py:129 routes/plan/day_actions_sides.py:167
+#: routes/plan/day_actions_sides.py:196 routes/plan/day_actions_sides.py:220
+#: routes/plan/shopping.py:35
 msgid "Invalid date"
 msgstr "Ungültiges Datum"
 
@@ -97,7 +73,7 @@ msgstr "Ungültiges Rezept"
 msgid "Recipe not found."
 msgstr "Rezept nicht gefunden."
 
-#: routes/plan/day_actions.py:296
+#: routes/plan/day_actions.py:336
 msgid "No main dish is assigned for this day."
 msgstr "Für diesen Tag ist kein Hauptgericht zugewiesen."
 
@@ -118,15 +94,72 @@ msgstr "(Heute)"
 msgid "Name must not be empty."
 msgstr "Name darf nicht leer sein."
 
-#: routes/recipes/crud.py:418
+#: routes/recipes/crud.py:464
 msgid "Please enter a link."
 msgstr "Bitte einen Link eingeben."
 
-#: templates/account.html:12
+#: services/accounts.py:35
+msgid "Please choose a valid language."
+msgstr "Bitte eine gültige Sprache wählen."
+
+#: services/planning.py:52
+msgid "Friday"
+msgstr "Freitag"
+
+#: services/planning.py:52
+msgid "Saturday"
+msgstr "Samstag"
+
+#: services/planning.py:52
+msgid "Sunday"
+msgstr "Sonntag"
+
+#: services/planning.py:52
+msgid "Monday"
+msgstr "Montag"
+
+#: services/planning.py:52
+msgid "Tuesday"
+msgstr "Dienstag"
+
+#: services/planning.py:52
+msgid "Wednesday"
+msgstr "Mittwoch"
+
+#: services/planning.py:52
+msgid "Thursday"
+msgstr "Donnerstag"
+
+#: services/recipe_import.py:97
+msgid ""
+"This site is not supported by the import (see ALLOWED_HOSTS in "
+"services/recipe_import.py)."
+msgstr ""
+"Diese Seite wird vom Import nicht unterstützt (siehe ALLOWED_HOSTS in "
+"services/recipe_import.py)."
+
+#: services/recipe_import.py:103
+msgid "The page could not be loaded."
+msgstr "Die Seite konnte nicht geladen werden."
+
+#: services/recipe_import.py:110
+msgid "The link does not lead to a supported site."
+msgstr "Der Link führt nicht zu einer unterstützten Seite."
+
+#: services/recipe_import.py:112
+#, python-format
+msgid "The page could not be loaded (status %(status)d)."
+msgstr "Die Seite konnte nicht geladen werden (Status %(status)d)."
+
+#: services/recipe_import.py:130
+msgid "No recipe was found on this page."
+msgstr "Auf dieser Seite wurde kein Rezept gefunden."
+
+#: templates/account.html:14
 msgid "My Account"
 msgstr "Mein Konto"
 
-#: templates/account.html:13 templates/category_manage.html:14
+#: templates/account.html:15 templates/category_manage.html:14
 #: templates/ingredient_aliases_manage.html:16
 #: templates/ingredient_nutrition_manage.html:35
 #: templates/recipe_edit_list.html:17 templates/sharing.html:12
@@ -134,174 +167,460 @@ msgstr "Mein Konto"
 msgid "Back"
 msgstr "Zurück"
 
-#: templates/account.html:16 templates/base.html:198
+#: templates/account.html:18 templates/base.html:283
 msgid "Profile"
 msgstr "Profil"
 
-#: templates/account.html:20
-msgid "Profile updated."
-msgstr "Profil aktualisiert."
+#: templates/account.html:19
+msgid ""
+"Name and email come from your Authelia login and are kept in sync "
+"automatically - they cannot be changed here."
+msgstr ""
+"Name und E-Mail-Adresse stammen aus deinem Authelia-Login und werden "
+"automatisch synchron gehalten - sie können hier nicht geändert werden."
 
-#: templates/account.html:25 templates/register.html:61
+#: templates/account.html:21
 msgid "Name"
 msgstr "Name"
 
-#: templates/account.html:29 templates/login.html:66 templates/register.html:65
+#: templates/account.html:25
 msgid "Email"
 msgstr "E-Mail"
 
-#: templates/account.html:33
+#: templates/account.html:32
+msgid "Profile updated."
+msgstr "Profil aktualisiert."
+
+#: templates/account.html:37
 msgid "Language"
 msgstr "Sprache"
 
-#: templates/account.html:41 templates/ingredient_aliases_manage.html:57
+#: templates/account.html:45 templates/ingredient_aliases_manage.html:57
 #: templates/ingredient_nutrition_manage.html:90 templates/sharing.html:159
 #: templates/units_manage.html:60
 msgid "Save"
 msgstr "Speichern"
 
-#: templates/account.html:48 templates/account.html:68
-msgid "Change Password"
-msgstr "Passwort ändern"
-
 #: templates/account.html:52
-msgid "Password changed."
-msgstr "Passwort geändert."
-
-#: templates/account.html:57
-msgid "Current Password"
-msgstr "Aktuelles Passwort"
-
-#: templates/account.html:61
-msgid "New Password"
-msgstr "Neues Passwort"
-
-#: templates/account.html:65
-msgid "Confirm New Password"
-msgstr "Neues Passwort bestätigen"
-
-#: templates/account.html:90
 msgid "Danger Zone"
 msgstr "Gefahrenzone"
 
-#: templates/account.html:97
+#: templates/account.html:56
 msgid ""
-"Deletes your account irrevocably. Plans in which you are the only member "
-"will be deleted entirely (including all recipes/categories/settings that "
-"belong only to them). For shared plans, only you are removed - the plan "
-"remains for the other members."
+"Deletes all your Speiseplan data irrevocably: plans in which you are the "
+"only member are deleted entirely (including all recipes/categories/settings "
+"that belong only to them); for shared plans, only you are removed - the plan"
+" remains for the other members. This does not close your Authelia login - "
+"since you stay signed in there, opening the app again immediately starts you"
+" over with a brand new, empty account."
 msgstr ""
-"Löscht dein Konto unwiderruflich. Pläne, in denen du das einzige Mitglied"
-" bist, werden vollständig gelöscht (inklusive aller "
-"Rezepte/Kategorien/Einstellungen, die nur zu ihnen gehören). Bei "
-"geteilten Plänen wirst du nur entfernt - der Plan bleibt für die anderen "
-"Mitglieder bestehen."
+"Löscht alle deine Speiseplan-Daten unwiderruflich: Pläne, in denen du das "
+"einzige Mitglied bist, werden vollständig gelöscht (inklusive aller "
+"Rezepte/Kategorien/Einstellungen, die nur zu ihnen gehören); bei geteilten "
+"Plänen wirst du nur entfernt - der Plan bleibt für die anderen Mitglieder "
+"bestehen. Das schließt deinen Authelia-Login nicht - da du dort weiterhin "
+"angemeldet bleibst, startest du beim erneuten Öffnen der App sofort wieder "
+"mit einem neuen, leeren Konto."
 
-#: templates/account.html:100
+#: templates/account.html:59
 msgid "Delete Account"
 msgstr "Konto löschen"
 
-#: templates/account.html:113 templates/account.html:122
+#: templates/account.html:72 templates/account.html:80
 msgid "Delete Account Permanently"
 msgstr "Konto endgültig löschen"
 
-#: templates/account.html:117
-msgid "This action cannot be undone. To confirm, please enter your password:"
+#: templates/account.html:76
+msgid ""
+"This action cannot be undone. Are you sure you want to delete all your "
+"Speiseplan data?"
 msgstr ""
-"Diese Aktion kann nicht rückgängig gemacht werden. Bitte gib zur "
-"Bestätigung dein Passwort ein:"
+"Diese Aktion kann nicht rückgängig gemacht werden. Bist du sicher, dass du "
+"alle deine Speiseplan-Daten löschen möchtest?"
 
-#: templates/account.html:118 templates/login.html:70
-#: templates/register.html:69
-msgid "Password"
-msgstr "Passwort"
-
-#: templates/account.html:121 templates/base.html:259
-#: templates/recipe_form.html:343 templates/sharing.html:133
+#: templates/account.html:79 templates/base.html:154 templates/base.html:349
+#: templates/recipe_form.html:355 templates/sharing.html:133
 #: templates/sharing.html:158
 msgid "Cancel"
 msgstr "Abbrechen"
 
+#: templates/base.html:110
+msgid "Note:"
+msgstr "Hinweis:"
+
+#: templates/base.html:111
+msgid "Planned"
+msgstr "Geplant"
+
+#: templates/base.html:112
+msgid "Fill automatically"
+msgstr "Automatisch füllen"
+
+#: templates/base.html:113
+msgid "Excluded"
+msgstr "Ausgeschlossen"
+
+#: templates/base.html:114 templates/create_week.html:89
+msgid "No side dish"
+msgstr "Keine Beilage"
+
+#: templates/base.html:115 templates/create_week.html:77
+msgid "Exclude this day from planning"
+msgstr "Diesen Tag von der Planung ausschließen"
+
+#: templates/base.html:116
+msgid "Include this day in planning again"
+msgstr "Diesen Tag wieder in die Planung aufnehmen"
+
+#: templates/base.html:117
+msgid "No free day left!"
+msgstr "Kein freier Tag mehr übrig!"
+
+#: templates/base.html:118
+msgid "Could not set alias."
+msgstr "Zuordnung konnte nicht gespeichert werden."
+
+#: templates/base.html:119
+msgid "Could not save nutrition data."
+msgstr "Nährwerte konnten nicht gespeichert werden."
+
+#: templates/base.html:120
+msgid "Could not save number of servings."
+msgstr "Portionenanzahl konnte nicht gespeichert werden."
+
+#: templates/base.html:121
+msgid "Remove item"
+msgstr "Eintrag entfernen"
+
+#: templates/base.html:122 templates/plan.html:169
+msgid "Add to shopping list"
+msgstr "Zur Einkaufsliste hinzufügen"
+
+#: templates/base.html:123
+msgid "Importing..."
+msgstr "Importiere..."
+
+#: templates/base.html:124
+msgid "✓ Imported - please choose a category and check all details."
+msgstr "✓ Importiert - bitte Kategorie wählen und alle Angaben prüfen."
+
+#: templates/base.html:125
+msgid "No dishes in the plan yet."
+msgstr "Noch keine Gerichte im Plan."
+
+#: templates/base.html:126
+msgid "No ingredients needed for this week."
+msgstr "Für diese Woche werden keine Zutaten benötigt."
+
+#: templates/base.html:127
+msgid "No spices/consumables planned this week."
+msgstr "Diese Woche sind keine Gewürze/Verbrauchsartikel geplant."
+
+#: templates/base.html:128
+msgid "No ingredients on file."
+msgstr "Keine Zutaten hinterlegt."
+
+#: templates/base.html:129
+msgid "📝 Instructions"
+msgstr "📝 Zubereitung"
+
+#: templates/base.html:130
+msgid "🔗 Open source"
+msgstr "🔗 Quelle öffnen"
+
+#: templates/base.html:131
+msgid "(per serving)"
+msgstr "(pro Portion)"
+
+#: templates/base.html:132
+msgid "Adding failed."
+msgstr "Hinzufügen fehlgeschlagen."
+
+#: templates/base.html:133
+msgid "Removing failed."
+msgstr "Entfernen fehlgeschlagen."
+
+#: templates/base.html:134
+msgid "Moving failed."
+msgstr "Verschieben fehlgeschlagen."
+
+#: templates/base.html:135
+msgid "Swap failed."
+msgstr "Tauschen fehlgeschlagen."
+
+#: templates/base.html:136
+msgid "Could not be saved."
+msgstr "Konnte nicht gespeichert werden."
+
+#: templates/base.html:137
+msgid "Selection failed."
+msgstr "Auswahl fehlgeschlagen."
+
+#: templates/base.html:138
+msgid "Import failed."
+msgstr "Import fehlgeschlagen."
+
+#: templates/base.html:139
+msgid "No alternative recipe available."
+msgstr "Kein alternatives Rezept verfügbar."
+
+#: templates/base.html:140
+msgid "No side dish available."
+msgstr "Keine Beilage verfügbar."
+
+#: templates/base.html:141
+msgid "No alternative available."
+msgstr "Keine Alternative verfügbar."
+
+#: templates/base.html:142
+msgid "Show details"
+msgstr "Details anzeigen"
+
+#: templates/base.html:143
+msgid "Re-roll this day"
+msgstr "Diesen Tag neu würfeln"
+
+#: templates/base.html:144
+msgid "Select a different recipe"
+msgstr "Anderes Rezept wählen"
+
+#: templates/base.html:145
+msgid "✏️ Select recipe"
+msgstr "✏️ Rezept wählen"
+
+#: templates/base.html:146
+msgid "👥 Servings"
+msgstr "👥 Portionen"
+
+#: templates/base.html:147
+msgid "🚫 Excluded from planning"
+msgstr "🚫 Von der Planung ausgeschlossen"
+
+#: templates/base.html:148
+msgid "No matching recipe available"
+msgstr "Kein passendes Rezept verfügbar"
+
+#: templates/base.html:149 templates/recipe_form.html:169
+msgid "Ingredients"
+msgstr "Zutaten"
+
+#: templates/base.html:150
+msgid "ingredient"
+msgstr "Zutat"
+
 #: templates/base.html:151
+msgid "ingredients"
+msgstr "Zutaten"
+
+#: templates/base.html:152
+msgid "servings"
+msgstr "Portionen"
+
+#: templates/base.html:153 templates/recipe_form.html:333
+msgid "Untitled recipe"
+msgstr "Unbenanntes Rezept"
+
+#: templates/base.html:155
+msgid "Search side dish..."
+msgstr "Beilage suchen..."
+
+#: templates/base.html:156
+msgid "Search recipe..."
+msgstr "Rezept suchen..."
+
+#: templates/base.html:157
+msgid "Reroll this side dish"
+msgstr "Diese Beilage neu würfeln"
+
+#: templates/base.html:158
+msgid "Choose a different side dish"
+msgstr "Andere Beilage wählen"
+
+#: templates/base.html:159
+msgid "Remove side dish"
+msgstr "Beilage entfernen"
+
+#: templates/base.html:160
+msgid "Choose a side dish"
+msgstr "Beilage wählen"
+
+#: templates/base.html:161
+msgid "Roll a side dish"
+msgstr "Beilage würfeln"
+
+#: templates/base.html:162 templates/recipe_form.html:223
+msgid "New ingredient..."
+msgstr "Neue Zutat..."
+
+#: templates/base.html:163 templates/plan.html:155
+#: templates/recipe_form.html:175 templates/recipe_form.html:224
+msgid "Amount"
+msgstr "Menge"
+
+#: templates/base.html:164 templates/plan.html:158
+#: templates/recipe_form.html:175 templates/recipe_form.html:225
+msgid "Unit"
+msgstr "Einheit"
+
+#: templates/base.html:165 templates/plan.html:161
+#: templates/recipe_form.html:200 templates/recipe_form.html:226
+msgid "Shopping list category"
+msgstr "Einkaufslisten-Kategorie"
+
+#: templates/base.html:166 templates/recipe_form.html:175
+#: templates/recipe_form.html:212 templates/recipe_form.html:233
+msgid "Pantry item (not on the weekly shopping list)"
+msgstr "Vorratsartikel (nicht auf der wöchentlichen Einkaufsliste)"
+
+#: templates/base.html:167 templates/recipe_form.html:215
+#: templates/recipe_form.html:235
+msgid "Remove ingredient"
+msgstr "Zutat entfernen"
+
+#: templates/base.html:168 templates/plan.html:162
+#: templates/recipe_form.html:201 templates/recipe_form.html:227
+msgid "Other"
+msgstr "Sonstiges"
+
+#: templates/base.html:169
+msgid "grouped as"
+msgstr "zusammengefasst als"
+
+#: templates/base.html:170
+msgid "🧺 Base ingredient"
+msgstr "🧺 Basiszutat"
+
+#: templates/base.html:171
+msgid "e.g. for"
+msgstr "z. B. für"
+
+#: templates/base.html:172
+msgid "Set alias, e.g. Pasta"
+msgstr "Zuordnung festlegen, z. B. Nudeln"
+
+#: templates/base.html:173
+msgid "Set"
+msgstr "Festlegen"
+
+#: templates/base.html:174
+msgid "⚠️ No nutrition data on file for"
+msgstr "⚠️ Keine Nährwerte hinterlegt für"
+
+#: templates/base.html:175 templates/ingredient_nutrition_manage.html:61
+msgid "Reference"
+msgstr "Referenz"
+
+#: templates/base.html:176 templates/ingredient_nutrition_manage.html:76
+msgid "per 100 g"
+msgstr "pro 100 g"
+
+#: templates/base.html:177 templates/ingredient_nutrition_manage.html:77
+msgid "per 100 ml"
+msgstr "pro 100 ml"
+
+#: templates/base.html:178 templates/ingredient_nutrition_manage.html:78
+msgid "per 1 pc"
+msgstr "pro 1 Stk"
+
+#: templates/base.html:179 templates/ingredient_nutrition_manage.html:62
+#: templates/recipe_form.html:303
+msgid "Protein (g)"
+msgstr "Protein (g)"
+
+#: templates/base.html:180 templates/ingredient_nutrition_manage.html:63
+#: templates/recipe_form.html:307
+msgid "Carbs (g)"
+msgstr "Kohlenhydrate (g)"
+
+#: templates/base.html:181 templates/ingredient_nutrition_manage.html:64
+#: templates/recipe_form.html:311
+msgid "Fat (g)"
+msgstr "Fett (g)"
+
+#: templates/base.html:182
+msgid "Save nutrition data"
+msgstr "Nährwerte speichern"
+
+#: templates/base.html:236
 msgid "Weekly Plan"
 msgstr "Wochenplan"
 
-#: templates/base.html:152 templates/manage.html:12
+#: templates/base.html:237 templates/manage.html:12
 msgid "Overview"
 msgstr "Übersicht"
 
-#: templates/base.html:168 templates/sharing.html:61
+#: templates/base.html:253 templates/sharing.html:61
 msgid "My Plans"
 msgstr "Meine Pläne"
 
-#: templates/base.html:178 templates/base.html:251
+#: templates/base.html:263 templates/base.html:341
 msgid "New Plan"
 msgstr "Neuer Plan"
 
-#: templates/base.html:183 templates/manage.html:18
+#: templates/base.html:268 templates/manage.html:18
 msgid "Recipes"
 msgstr "Rezepte"
 
-#: templates/base.html:184 templates/base.html:260
+#: templates/base.html:269 templates/base.html:350
 msgid "Create"
 msgstr "Erstellen"
 
-#: templates/base.html:185 templates/recipe_edit_list.html:68
+#: templates/base.html:270 templates/recipe_edit_list.html:68
 msgid "Edit"
 msgstr "Bearbeiten"
 
-#: templates/base.html:189
+#: templates/base.html:274
 msgid "Data"
 msgstr "Daten"
 
-#: templates/base.html:190 templates/manage.html:19
+#: templates/base.html:275 templates/manage.html:19
 msgid "Categories"
 msgstr "Kategorien"
 
-#: templates/base.html:191 templates/manage.html:40
+#: templates/base.html:276 templates/manage.html:40
 #: templates/units_manage.html:13
 msgid "Units"
 msgstr "Einheiten"
 
-#: templates/base.html:192 templates/ingredient_aliases_manage.html:15
+#: templates/base.html:277 templates/ingredient_aliases_manage.html:15
 #: templates/manage.html:44
 msgid "Merge Ingredients"
 msgstr "Zutaten zusammenführen"
 
-#: templates/base.html:193 templates/ingredient_nutrition_manage.html:34
-#: templates/manage.html:48 templates/recipe_form.html:265
+#: templates/base.html:278 templates/ingredient_nutrition_manage.html:34
+#: templates/manage.html:48 templates/recipe_form.html:277
 msgid "Nutrition"
 msgstr "Nährwerte"
 
-#: templates/base.html:197
+#: templates/base.html:282
 msgid "Account"
 msgstr "Konto"
 
-#: templates/base.html:199 templates/manage.html:52
+#: templates/base.html:284 templates/manage.html:52
 msgid "Sharing"
 msgstr "Teilen"
 
-#: templates/base.html:208
+#: templates/base.html:298
 msgid "Log Out"
 msgstr "Abmelden"
 
-#: templates/base.html:212
+#: templates/base.html:302
 msgid "Appearance"
 msgstr "Erscheinungsbild"
 
-#: templates/base.html:214
+#: templates/base.html:304
 msgid "System"
 msgstr "System"
 
-#: templates/base.html:215
+#: templates/base.html:305
 msgid "Light"
 msgstr "Hell"
 
-#: templates/base.html:216
+#: templates/base.html:306
 msgid "Dark"
 msgstr "Dunkel"
 
-#: templates/base.html:255
+#: templates/base.html:345
 msgid "Plan Name"
 msgstr "Planname"
 
@@ -348,24 +667,23 @@ msgstr "Zurück zum Plan"
 #: templates/create_week.html:24
 msgid ""
 "Search for dishes. Click one to assign it automatically to the next free "
-"day. Drag main courses via drag-and-drop onto other days to move them. "
-"Days without a dish are filled in automatically. Use the 🚫 button to "
-"exclude a day's main course from the plan. 🥗 extra dishes (side dishes) "
-"don't block the day, can be added any number of times in addition to the "
-"main course (each going to the day with the fewest side dishes so far) "
-"and also work on excluded days - fine-tuning which side dish ends up on "
-"which day can always be done afterwards on the finished plan page."
+"day. Drag main courses via drag-and-drop onto other days to move them. Days "
+"without a dish are filled in automatically. Use the 🚫 button to exclude a "
+"day's main course from the plan. 🥗 extra dishes (side dishes) don't block "
+"the day, can be added any number of times in addition to the main course "
+"(each going to the day with the fewest side dishes so far) and also work on "
+"excluded days - fine-tuning which side dish ends up on which day can always "
+"be done afterwards on the finished plan page."
 msgstr ""
-"Nach Gerichten suchen. Anklicken, um es automatisch dem nächsten freien "
-"Tag zuzuweisen. Hauptgerichte per Drag-and-drop auf andere Tage ziehen, "
-"um sie zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. "
-"Mit dem 🚫-Button das Hauptgericht eines Tages von der Planung "
-"ausschließen. 🥗 Extra-Gerichte (Beilagen) blockieren den Tag nicht, "
-"können beliebig oft zusätzlich zum Hauptgericht hinzugefügt werden "
-"(jeweils an den Tag mit bisher den wenigsten Beilagen) und funktionieren "
-"auch an ausgeschlossenen Tagen - die Feinabstimmung, welche Beilage an "
-"welchem Tag landet, kann jederzeit später auf der fertigen Planseite "
-"vorgenommen werden."
+"Nach Gerichten suchen. Anklicken, um es automatisch dem nächsten freien Tag "
+"zuzuweisen. Hauptgerichte per Drag-and-drop auf andere Tage ziehen, um sie "
+"zu verschieben. Tage ohne Gericht werden automatisch aufgefüllt. Mit dem "
+"🚫-Button das Hauptgericht eines Tages von der Planung ausschließen. 🥗 Extra-"
+"Gerichte (Beilagen) blockieren den Tag nicht, können beliebig oft zusätzlich"
+" zum Hauptgericht hinzugefügt werden (jeweils an den Tag mit bisher den "
+"wenigsten Beilagen) und funktionieren auch an ausgeschlossenen Tagen - die "
+"Feinabstimmung, welche Beilage an welchem Tag landet, kann jederzeit später "
+"auf der fertigen Planseite vorgenommen werden."
 
 #: templates/create_week.html:36
 msgid "Enter dish or category..."
@@ -379,17 +697,9 @@ msgstr "Feste Tageszuordnung"
 msgid "Clear All"
 msgstr "Alles zurücksetzen"
 
-#: templates/create_week.html:77
-msgid "Exclude this day from planning"
-msgstr "Diesen Tag von der Planung ausschließen"
-
 #: templates/create_week.html:79
 msgid "Fill in automatically"
 msgstr "Automatisch auffüllen"
-
-#: templates/create_week.html:89
-msgid "No side dish"
-msgstr "Keine Beilage"
 
 #: templates/create_week.html:101
 msgid "Fill Remaining Days in Balance & Create Plan"
@@ -405,20 +715,19 @@ msgstr "Ausgeschlossen – kein Hauptgericht"
 
 #: templates/ingredient_aliases_manage.html:31
 msgid ""
-"Enter a common name under \"Counts as\" to merge several ingredients on "
-"the shopping list into one line item (e.g. \"Spaghetti\" and \"Fusilli\" "
-"→ \"Noodles\", \"Olive Oil\" and \"Sunflower Oil\" → \"Oil\"). Without a "
+"Enter a common name under \"Counts as\" to merge several ingredients on the "
+"shopping list into one line item (e.g. \"Spaghetti\" and \"Fusilli\" → "
+"\"Noodles\", \"Olive Oil\" and \"Sunflower Oil\" → \"Oil\"). Without a "
 "change, an ingredient still only counts as itself. This only affects the "
 "shopping list - recipes still show the ingredient name as originally "
 "entered."
 msgstr ""
-"Unter \"Zählt als\" einen gemeinsamen Namen eingeben, um mehrere Zutaten "
-"auf der Einkaufsliste zu einem Eintrag zusammenzuführen (z. B. "
-"\"Spaghetti\" und \"Fusilli\" → \"Nudeln\", \"Olivenöl\" und "
-"\"Sonnenblumenöl\" → \"Öl\"). Ohne Änderung zählt eine Zutat weiterhin "
-"nur als sie selbst. Dies wirkt sich nur auf die Einkaufsliste aus - "
-"Rezepte zeigen den Zutatennamen weiterhin so, wie er ursprünglich "
-"eingegeben wurde."
+"Unter \"Zählt als\" einen gemeinsamen Namen eingeben, um mehrere Zutaten auf"
+" der Einkaufsliste zu einem Eintrag zusammenzuführen (z. B. \"Spaghetti\" "
+"und \"Fusilli\" → \"Nudeln\", \"Olivenöl\" und \"Sonnenblumenöl\" → \"Öl\")."
+" Ohne Änderung zählt eine Zutat weiterhin nur als sie selbst. Dies wirkt "
+"sich nur auf die Einkaufsliste aus - Rezepte zeigen den Zutatennamen "
+"weiterhin so, wie er ursprünglich eingegeben wurde."
 
 #: templates/ingredient_aliases_manage.html:35
 #: templates/ingredient_nutrition_manage.html:54
@@ -426,8 +735,8 @@ msgid "Search ingredient..."
 msgstr "Zutat suchen..."
 
 #: templates/ingredient_aliases_manage.html:41
-#: templates/ingredient_nutrition_manage.html:60 templates/recipe_form.html:175
-#: templates/recipe_form.html:214
+#: templates/ingredient_nutrition_manage.html:60
+#: templates/recipe_form.html:175 templates/recipe_form.html:223
 msgid "Ingredient"
 msgstr "Zutat"
 
@@ -443,15 +752,13 @@ msgstr "Noch keine Zutaten."
 msgid ""
 "Nutrition values per base ingredient (e.g. \"Noodles\", \"Oil\") - "
 "automatically applies to all merged spellings (e.g. \"Spaghetti\", "
-"\"Fusilli\"). Recipe nutrition values are computed from this "
-"automatically, as long as a recipe is not set to \"override manually\". "
-"Rows in"
+"\"Fusilli\"). Recipe nutrition values are computed from this automatically, "
+"as long as a recipe is not set to \"override manually\". Rows in"
 msgstr ""
-"Nährwerte pro Basiszutat (z. B. \"Nudeln\", \"Öl\") - gilt automatisch "
-"für alle zusammengeführten Schreibweisen (z. B. \"Spaghetti\", "
-"\"Fusilli\"). Die Nährwerte eines Rezepts werden daraus automatisch "
-"berechnet, solange ein Rezept nicht auf \"manuell überschreiben\" "
-"gestellt ist. Zeilen in"
+"Nährwerte pro Basiszutat (z. B. \"Nudeln\", \"Öl\") - gilt automatisch für "
+"alle zusammengeführten Schreibweisen (z. B. \"Spaghetti\", \"Fusilli\"). Die"
+" Nährwerte eines Rezepts werden daraus automatisch berechnet, solange ein "
+"Rezept nicht auf \"manuell überschreiben\" gestellt ist. Zeilen in"
 
 #: templates/ingredient_nutrition_manage.html:50
 msgid "gray"
@@ -459,31 +766,15 @@ msgstr "grauem"
 
 #: templates/ingredient_nutrition_manage.html:50
 msgid ""
-"text don't have their own entry yet - the reference unit was guessed from"
-" the ingredient amounts actually used, but can be adjusted at any time."
+"text don't have their own entry yet - the reference unit was guessed from "
+"the ingredient amounts actually used, but can be adjusted at any time."
 msgstr ""
-"Text haben noch keinen eigenen Eintrag - die Referenzeinheit wurde anhand"
-" der tatsächlich verwendeten Zutatenmengen geraten, kann aber jederzeit "
+"Text haben noch keinen eigenen Eintrag - die Referenzeinheit wurde anhand "
+"der tatsächlich verwendeten Zutatenmengen geraten, kann aber jederzeit "
 "angepasst werden."
 
-#: templates/ingredient_nutrition_manage.html:61
-msgid "Reference"
-msgstr "Referenz"
-
-#: templates/ingredient_nutrition_manage.html:62 templates/recipe_form.html:291
-msgid "Protein (g)"
-msgstr "Eiweiß (g)"
-
-#: templates/ingredient_nutrition_manage.html:63 templates/recipe_form.html:295
-msgid "Carbs (g)"
-msgstr "Kohlenhydrate (g)"
-
-#: templates/ingredient_nutrition_manage.html:64 templates/recipe_form.html:299
-msgid "Fat (g)"
-msgstr "Fett (g)"
-
-#: templates/ingredient_nutrition_manage.html:65 templates/recipe_form.html:274
-#: templates/recipe_form.html:287
+#: templates/ingredient_nutrition_manage.html:65
+#: templates/recipe_form.html:286 templates/recipe_form.html:299
 msgid "Kcal"
 msgstr "kcal"
 
@@ -491,27 +782,18 @@ msgstr "kcal"
 msgid "Reference basis"
 msgstr "Bezugsgröße"
 
-#: templates/ingredient_nutrition_manage.html:76
-msgid "per 100 g"
-msgstr "pro 100 g"
-
-#: templates/ingredient_nutrition_manage.html:77
-msgid "per 100 ml"
-msgstr "pro 100 ml"
-
-#: templates/ingredient_nutrition_manage.html:78
-msgid "per 1 pc"
-msgstr "pro 1 Stück"
-
-#: templates/ingredient_nutrition_manage.html:81 templates/recipe_form.html:275
+#: templates/ingredient_nutrition_manage.html:81
+#: templates/recipe_form.html:287
 msgid "Protein"
 msgstr "Eiweiß"
 
-#: templates/ingredient_nutrition_manage.html:82 templates/recipe_form.html:276
+#: templates/ingredient_nutrition_manage.html:82
+#: templates/recipe_form.html:288
 msgid "Carbs"
 msgstr "Kohlenhydrate"
 
-#: templates/ingredient_nutrition_manage.html:83 templates/recipe_form.html:277
+#: templates/ingredient_nutrition_manage.html:83
+#: templates/recipe_form.html:289
 msgid "Fat"
 msgstr "Fett"
 
@@ -523,15 +805,6 @@ msgstr "Berechnet aus Eiweiß/Kohlenhydraten/Fett"
 msgid "No merged ingredients yet."
 msgstr "Noch keine zusammengeführten Zutaten."
 
-#: templates/login.html:14 templates/login.html:73
-msgid "Sign In"
-msgstr "Anmelden"
-
-#: templates/login.html:75 templates/register.html:52
-#: templates/register.html:76
-msgid "Create Account"
-msgstr "Konto erstellen"
-
 #: templates/manage.html:13
 msgid "Good Day"
 msgstr "Guten Tag"
@@ -541,8 +814,8 @@ msgid ""
 "Everything in one place: recipes, categories, and how your ingredients & "
 "nutrition values are maintained."
 msgstr ""
-"Alles an einem Ort: Rezepte, Kategorien und wie deine Zutaten & Nährwerte"
-" gepflegt werden."
+"Alles an einem Ort: Rezepte, Kategorien und wie deine Zutaten & Nährwerte "
+"gepflegt werden."
 
 #: templates/manage.html:20
 msgid "Ingredients Merged"
@@ -647,13 +920,13 @@ msgstr "Woche neu erstellen"
 #: templates/plan.html:89
 msgid ""
 "Drag a day card with drag-and-drop onto another one to swap both days "
-"completely (side dishes come along). Drag a single side dish onto another"
-" day card to move only IT. ✏️ opens a search for manual selection."
+"completely (side dishes come along). Drag a single side dish onto another "
+"day card to move only IT. ✏️ opens a search for manual selection."
 msgstr ""
 "Eine Tageskarte per Drag-and-drop auf eine andere ziehen, um beide Tage "
-"komplett zu tauschen (Beilagen werden mitgenommen). Eine einzelne Beilage"
-" auf eine andere Tageskarte ziehen, um NUR SIE zu verschieben. ✏️ öffnet "
-"eine Suche zur manuellen Auswahl."
+"komplett zu tauschen (Beilagen werden mitgenommen). Eine einzelne Beilage "
+"auf eine andere Tageskarte ziehen, um NUR SIE zu verschieben. ✏️ öffnet eine"
+" Suche zur manuellen Auswahl."
 
 #: templates/plan.html:117
 msgid "Weekly nutrition overview"
@@ -663,39 +936,15 @@ msgstr "Wöchentliche Nährwertübersicht"
 msgid "Shopping list"
 msgstr "Einkaufsliste"
 
-#: templates/plan.html:149
+#: templates/plan.html:152
 msgid "Item..."
 msgstr "Artikel..."
 
-#: templates/plan.html:152 templates/recipe_form.html:175
-#: templates/recipe_form.html:215
-msgid "Amount"
-msgstr "Menge"
-
-#: templates/plan.html:155 templates/recipe_form.html:175
-#: templates/recipe_form.html:216
-msgid "Unit"
-msgstr "Einheit"
-
-#: templates/plan.html:158 templates/recipe_form.html:200
-#: templates/recipe_form.html:217
-msgid "Shopping list category"
-msgstr "Einkaufslisten-Kategorie"
-
-#: templates/plan.html:159 templates/recipe_form.html:201
-#: templates/recipe_form.html:218
-msgid "Other"
-msgstr "Sonstiges"
-
-#: templates/plan.html:166
-msgid "Add to shopping list"
-msgstr "Zur Einkaufsliste hinzufügen"
-
-#: templates/plan.html:183
+#: templates/plan.html:186
 msgid "Check pantry"
 msgstr "Vorrat prüfen"
 
-#: templates/plan.html:186
+#: templates/plan.html:189
 msgid ""
 "Usually already at home - only add to the shopping list by clicking, if "
 "needed."
@@ -703,11 +952,11 @@ msgstr ""
 "Normalerweise schon zu Hause vorhanden - bei Bedarf durch Anklicken zur "
 "Einkaufsliste hinzufügen."
 
-#: templates/plan.html:210 templates/recipe_form.html:25
+#: templates/plan.html:213 templates/recipe_form.html:25
 msgid "Edit recipe"
 msgstr "Rezept bearbeiten"
 
-#: templates/plan.html:215
+#: templates/plan.html:218
 msgid "Cooked"
 msgstr "Gekocht"
 
@@ -717,11 +966,11 @@ msgstr "Wochenübersicht"
 
 #: templates/plan_summary.html:25
 msgid ""
-"What everyone is cooking this week, across all your plans - click a dish "
-"to open its own plan."
+"What everyone is cooking this week, across all your plans - click a dish to "
+"open its own plan."
 msgstr ""
-"Was diese Woche überall gekocht wird, über alle deine Pläne hinweg - "
-"klicke auf ein Gericht, um dessen Plan zu öffnen."
+"Was diese Woche überall gekocht wird, über alle deine Pläne hinweg - klicke "
+"auf ein Gericht, um dessen Plan zu öffnen."
 
 #: templates/plan_summary.html:30
 msgid "Combined weekly nutrition"
@@ -782,8 +1031,8 @@ msgstr "Löschen"
 #: templates/recipe_edit_list.html:78
 msgid "Remove from this plan only, the recipe remains in its original plan"
 msgstr ""
-"Nur aus diesem Plan entfernen, das Rezept bleibt in seinem ursprünglichen"
-" Plan erhalten"
+"Nur aus diesem Plan entfernen, das Rezept bleibt im ursprünglichen Plan "
+"erhalten"
 
 #: templates/recipe_edit_list.html:79 templates/sharing.html:23
 msgid "Remove"
@@ -814,8 +1063,8 @@ msgid ""
 "chefkoch.de, lecker.de & others - automatically fills in ingredients, "
 "nutrition & instructions."
 msgstr ""
-"chefkoch.de, lecker.de & weitere - füllt Zutaten, Nährwerte & Zubereitung"
-" automatisch aus."
+"chefkoch.de, lecker.de & weitere - füllt Zutaten, Nährwerte & Zubereitung "
+"automatisch aus."
 
 #: templates/recipe_form.html:45
 msgid "Import"
@@ -830,8 +1079,8 @@ msgid ""
 "Enter it from scratch - e.g. for your own family recipe with no source "
 "online."
 msgstr ""
-"Von Grund auf eingeben - z. B. für ein eigenes Familienrezept ohne Quelle"
-" im Internet."
+"Von Grund auf eingeben - z. B. für ein eigenes Familienrezept ohne Quelle im"
+" Internet."
 
 #: templates/recipe_form.html:66
 msgid "In these plans"
@@ -853,7 +1102,7 @@ msgstr "Anderen Plan wählen..."
 msgid "The dish stays ONE record - changes apply across all linked plans."
 msgstr ""
 "Das Gericht bleibt EIN Datensatz - Änderungen wirken sich auf alle "
-"verlinkten Pläne aus."
+"verknüpften Pläne aus."
 
 #: templates/recipe_form.html:106
 msgid "Basic info"
@@ -883,134 +1132,108 @@ msgstr "Portionen"
 msgid "Link (optional)"
 msgstr "Link (optional)"
 
-#: templates/recipe_form.html:169
-msgid "Ingredients"
-msgstr "Zutaten"
-
 #: templates/recipe_form.html:173
 msgid ""
-"Units are automatically normalized (g/kg, ml/l/tbsp/tsp/cup) - which unit"
-" is displayed can be set under ⚙️ Settings → 📏 Units."
+"Units are automatically normalized (g/kg, ml/l/tbsp/tsp/cup) - which unit is"
+" displayed can be set under ⚙️ Settings → 📏 Units."
 msgstr ""
-"Einheiten werden automatisch normalisiert (g/kg, ml/l/EL/TL/Tasse) - "
-"welche Einheit angezeigt wird, lässt sich unter ⚙️ Einstellungen → 📏 "
-"Einheiten festlegen."
+"Einheiten werden automatisch normalisiert (g/kg, ml/l/EL/TL/Tasse) - welche "
+"Einheit angezeigt wird, lässt sich unter ⚙️ Einstellungen → 📏 Einheiten "
+"festlegen."
+
+#: templates/recipe_form.html:175
+msgid "Pantry"
+msgstr "Vorrat"
 
 #: templates/recipe_form.html:195
 msgid "Click to edit"
 msgstr "Zum Bearbeiten anklicken"
 
-#: templates/recipe_form.html:206 templates/recipe_form.html:223
-msgid "Remove ingredient"
-msgstr "Zutat entfernen"
-
-#: templates/recipe_form.html:214
-msgid "New ingredient..."
-msgstr "Neue Zutat..."
-
-#: templates/recipe_form.html:228
+#: templates/recipe_form.html:240
 msgid "Add ingredient"
 msgstr "Zutat hinzufügen"
 
-#: templates/recipe_form.html:235
+#: templates/recipe_form.html:247
 msgid "Season"
 msgstr "Saison"
 
-#: templates/recipe_form.html:235
+#: templates/recipe_form.html:247
 msgid "optional"
 msgstr "optional"
 
-#: templates/recipe_form.html:249
+#: templates/recipe_form.html:261
 msgid "Custom period from"
 msgstr "Individueller Zeitraum von"
 
-#: templates/recipe_form.html:253
+#: templates/recipe_form.html:265
 msgid "to"
 msgstr "bis"
 
-#: templates/recipe_form.html:257
+#: templates/recipe_form.html:269
 msgid ""
-"No selection = year-round. Multiple seasons and/or a custom period can be"
-" combined (the year in the custom period is ignored, only day/month "
-"count)."
+"No selection = year-round. Multiple seasons and/or a custom period can be "
+"combined (the year in the custom period is ignored, only day/month count)."
 msgstr ""
 "Keine Auswahl = ganzjährig. Mehrere Saisons und/oder ein individueller "
-"Zeitraum können kombiniert werden (das Jahr im individuellen Zeitraum "
-"wird ignoriert, nur Tag/Monat zählen)."
+"Zeitraum können kombiniert werden (das Jahr im individuellen Zeitraum wird "
+"ignoriert, nur Tag/Monat zählen)."
 
-#: templates/recipe_form.html:267
+#: templates/recipe_form.html:279
 msgid "calculated on save"
 msgstr "wird beim Speichern berechnet"
 
-#: templates/recipe_form.html:281
+#: templates/recipe_form.html:293
 msgid "Enter manually instead"
 msgstr "Stattdessen manuell eingeben"
 
-#: templates/recipe_form.html:283
+#: templates/recipe_form.html:295
 msgid ""
 "Without the checkbox, nutrition is calculated automatically from the "
 "ingredients (see ⚙️ Settings → 🍎 Nutrition) - freshly on every save."
 msgstr ""
-"Ohne die Checkbox werden die Nährwerte automatisch aus den Zutaten "
-"berechnet (siehe ⚙️ Einstellungen → 🍎 Nährwerte) - bei jedem Speichern "
-"neu."
+"Ohne die Checkbox werden die Nährwerte automatisch aus den Zutaten berechnet"
+" (siehe ⚙️ Einstellungen → 🍎 Nährwerte) - bei jedem Speichern neu."
 
-#: templates/recipe_form.html:288
+#: templates/recipe_form.html:300
 msgid "Calculated from protein/carbs/fat"
 msgstr "Berechnet aus Eiweiß/Kohlenhydraten/Fett"
 
-#: templates/recipe_form.html:308 templates/recipe_form.html:333
+#: templates/recipe_form.html:320 templates/recipe_form.html:345
 msgid "Instructions"
 msgstr "Zubereitung"
 
-#: templates/recipe_form.html:310
+#: templates/recipe_form.html:322
 msgid "Preparation steps..."
 msgstr "Zubereitungsschritte..."
 
-#: templates/recipe_form.html:321
-msgid "Untitled recipe"
-msgstr "Unbenanntes Rezept"
-
-#: templates/recipe_form.html:324
+#: templates/recipe_form.html:336
 #, python-format
 msgid "%(count)s servings"
 msgstr "%(count)s Portionen"
 
-#: templates/recipe_form.html:327
+#: templates/recipe_form.html:339
 msgid "per serving"
 msgstr "pro Portion"
 
-#: templates/recipe_form.html:328
+#: templates/recipe_form.html:340
 msgid "ingredients added"
 msgstr "Zutaten hinzugefügt"
 
-#: templates/recipe_form.html:331
+#: templates/recipe_form.html:343
 msgid "Name & Category"
 msgstr "Name & Kategorie"
 
-#: templates/recipe_form.html:332
+#: templates/recipe_form.html:344
 msgid "Ingredients (0)"
 msgstr "Zutaten (0)"
 
-#: templates/recipe_form.html:344
+#: templates/recipe_form.html:356
 msgid "Save changes"
 msgstr "Änderungen speichern"
 
-#: templates/recipe_form.html:344
+#: templates/recipe_form.html:356
 msgid "Save recipe"
 msgstr "Rezept speichern"
-
-#: templates/register.html:10
-msgid "Register"
-msgstr "Registrieren"
-
-#: templates/register.html:73
-msgid "Confirm Password"
-msgstr "Passwort bestätigen"
-
-#: templates/register.html:93
-msgid "Already have an account? Sign in"
-msgstr "Schon ein Konto? Anmelden"
 
 #: templates/sharing.html:15
 msgid "Members"
@@ -1031,13 +1254,14 @@ msgstr "Einladen"
 #: templates/sharing.html:36
 msgid ""
 "If an account already exists for it, the plan is shared immediately. "
-"Otherwise a registration invite is \"sent\" (see below) - invited users "
-"have full access to this plan, same as an owner."
+"Otherwise the invite applies automatically the moment that email first signs"
+" in via Authelia (see below) - invited users have full access to this plan, "
+"same as an owner."
 msgstr ""
 "Wenn dafür bereits ein Konto existiert, wird der Plan sofort geteilt. "
-"Andernfalls wird eine Registrierungseinladung \"versendet\" (siehe unten)"
-" - eingeladene Nutzer haben vollen Zugriff auf diesen Plan, genau wie ein"
-" Besitzer."
+"Andernfalls greift die Einladung automatisch, sobald sich diese E-Mail-"
+"Adresse zum ersten Mal über Authelia anmeldet (siehe unten) - eingeladene "
+"Nutzer haben vollen Zugriff auf diesen Plan, genau wie ein Besitzer."
 
 #: templates/sharing.html:39
 msgid "Pending invites"
@@ -1049,8 +1273,8 @@ msgstr "Zurückziehen"
 
 #: templates/sharing.html:64
 msgid ""
-"The starred plan opens automatically after login and appears at the top "
-"of the sidebar."
+"The starred plan opens automatically after login and appears at the top of "
+"the sidebar."
 msgstr ""
 "Der favorisierte Plan öffnet sich automatisch nach der Anmeldung und "
 "erscheint oben in der Seitenleiste."
@@ -1077,7 +1301,8 @@ msgstr "Als Standard festlegen"
 
 #: templates/sharing.html:99
 msgid "Removes only you - the plan remains for the other members"
-msgstr "Entfernt nur dich - der Plan bleibt für die anderen Mitglieder bestehen"
+msgstr ""
+"Entfernt nur dich - der Plan bleibt für die anderen Mitglieder bestehen"
 
 #: templates/sharing.html:99
 msgid "Leave"
@@ -1097,10 +1322,10 @@ msgid ""
 "deleted as well. Recipes that are additionally linked into another plan "
 "remain there and automatically get a new owner."
 msgstr ""
-"Alle Rezepte, Kategorien und Einstellungen, die nur zu diesem Plan "
-"gehören, werden ebenfalls gelöscht. Rezepte, die zusätzlich in einen "
-"anderen Plan verlinkt sind, bleiben dort erhalten und erhalten "
-"automatisch einen neuen Besitzer."
+"Alle Rezepte, Kategorien und Einstellungen, die nur zu diesem Plan gehören, "
+"werden ebenfalls gelöscht. Rezepte, die zusätzlich in einen anderen Plan "
+"verlinkt sind, bleiben dort erhalten und erhalten automatisch einen neuen "
+"Besitzer."
 
 #: templates/sharing.html:134
 msgid "Delete permanently"
@@ -1112,15 +1337,15 @@ msgstr "Plan umbenennen"
 
 #: templates/units_manage.html:29
 msgid ""
-"Ingredient amounts are automatically normalized when entered and imported"
-" (e.g. \"1 kg\", \"1000 grams\" and \"2 tbsp\" all end up in the same "
-"family) and displayed here in the chosen unit - regardless of how they "
-"were originally entered."
+"Ingredient amounts are automatically normalized when entered and imported "
+"(e.g. \"1 kg\", \"1000 grams\" and \"2 tbsp\" all end up in the same family)"
+" and displayed here in the chosen unit - regardless of how they were "
+"originally entered."
 msgstr ""
 "Zutatenmengen werden bei der Eingabe und beim Import automatisch "
 "normalisiert (z. B. landen \"1 kg\", \"1000 Gramm\" und \"2 EL\" alle in "
-"derselben Familie) und hier in der gewählten Einheit angezeigt - "
-"unabhängig davon, wie sie ursprünglich eingegeben wurden."
+"derselben Familie) und hier in der gewählten Einheit angezeigt - unabhängig "
+"davon, wie sie ursprünglich eingegeben wurden."
 
 #: templates/units_manage.html:36
 msgid "Mass (e.g. flour, meat)"
@@ -1148,9 +1373,64 @@ msgstr "Liter (l)"
 
 #: templates/units_manage.html:57
 msgid ""
-"Also applies to spoon/cup measures (tsp/tbsp/cup) - these are displayed "
-"in this unit as well."
+"Also applies to spoon/cup measures (tsp/tbsp/cup) - these are displayed in "
+"this unit as well."
 msgstr ""
-"Gilt auch für Löffel-/Tassenmaße (TL/EL/Tasse) - diese werden ebenfalls "
-"in dieser Einheit angezeigt."
+"Gilt auch für Löffel-/Tassenmaße (TL/EL/Tasse) - diese werden ebenfalls in "
+"dieser Einheit angezeigt."
 
+#~ msgid "Passwords do not match."
+#~ msgstr "Passwörter stimmen nicht überein."
+
+#~ msgid "Password is incorrect."
+#~ msgstr "Passwort ist falsch."
+
+#~ msgid "Email address or password is incorrect."
+#~ msgstr "E-Mail-Adresse oder Passwort falsch."
+
+#~ msgid "Please provide name, email address, and password."
+#~ msgstr "Bitte Name, E-Mail-Adresse und Passwort angeben."
+
+#~ msgid "Please provide a valid email address."
+#~ msgstr "Bitte eine gültige E-Mail-Adresse angeben."
+
+#~ msgid "An account already exists for this email address."
+#~ msgstr "Für diese E-Mail-Adresse existiert bereits ein Konto."
+
+#~ msgid "Change Password"
+#~ msgstr "Passwort ändern"
+
+#~ msgid "Password changed."
+#~ msgstr "Passwort geändert."
+
+#~ msgid "Current Password"
+#~ msgstr "Aktuelles Passwort"
+
+#~ msgid "New Password"
+#~ msgstr "Neues Passwort"
+
+#~ msgid "Confirm New Password"
+#~ msgstr "Neues Passwort bestätigen"
+
+#~ msgid "This action cannot be undone. To confirm, please enter your password:"
+#~ msgstr ""
+#~ "Diese Aktion kann nicht rückgängig gemacht werden. Bitte gib zur Bestätigung"
+#~ " dein Passwort ein:"
+
+#~ msgid "Password"
+#~ msgstr "Passwort"
+
+#~ msgid "Sign In"
+#~ msgstr "Anmelden"
+
+#~ msgid "Create Account"
+#~ msgstr "Konto erstellen"
+
+#~ msgid "Register"
+#~ msgstr "Registrieren"
+
+#~ msgid "Confirm Password"
+#~ msgstr "Passwort bestätigen"
+
+#~ msgid "Already have an account? Sign in"
+#~ msgstr "Schon ein Konto? Anmelden"
