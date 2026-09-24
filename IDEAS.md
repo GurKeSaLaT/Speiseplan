@@ -92,6 +92,31 @@ Backlog for future features - not yet implemented, just collected.
   the recipe links, so no extra query. Runs automatically on every view
   of the page (self-healing, no separate maintenance step); a real
   in-use alias is never touched.
+- **Autosave for the recipe form.** No more explicit "Save changes"
+  button for an EXISTING recipe: `static/recipe_form.js: rformAutosave()`
+  resubmits the whole form via `fetch()` to the same `edit_recipe()`
+  endpoint a traditional submit would use, debounced (800ms after the
+  last change) and delegated on the form itself so it catches every
+  field - name, category, servings, side dish/favorite/pantry toggles,
+  nutrition override + values, season chips/custom range, source link,
+  instructions. Ingredient rows added/removed via their own buttons don't
+  fire a native `input`/`change` event, so
+  `rformUpdateIngredientCount()` (already called after both) explicitly
+  schedules a save too. `edit_recipe()` tells autosave calls apart from a
+  traditional submit via an `X-Requested-With: XMLHttpRequest` header and
+  answers with JSON (recalculated calories/protein/carbs/fat) instead of
+  redirecting the page out from under whatever the user is still typing;
+  a real, non-JS form submit still gets the normal redirect.
+
+  Confirmed design for a brand NEW recipe: there's no id to autosave into
+  before it exists, so creating one still needs exactly one explicit
+  click ("Save recipe") - `add_recipe()` now redirects straight into
+  `recipe_edit_view()` for the freshly created recipe (previously back to
+  a blank create form, to enter the next recipe quickly) rather than the
+  overview list, so autosave takes over immediately from there. The
+  create-mode page keeps its Save button; the edit-mode page replaces it
+  with a small "✓"/"⚠" status indicator, matching the ingredients &
+  nutrition page's autosave pattern.
 - **Swap days on the finished plan.** Day cards on `plan.html` are now
   fully swappable via drag-and-drop (main dish, side dish, and exclusion
   status), purely client-side.

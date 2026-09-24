@@ -352,8 +352,19 @@
 <div class="rform-bottom-spacer"></div>
 
 <div class="rform-action-bar">
+    {% if recipe %}
+    {# Existing recipes autosave (see static/recipe_form.js:
+       rformWireAutosave()) - no Save button, just a small status
+       indicator, same pattern as templates/ingredient_aliases_manage.html. #}
+    <a href="{{ url_for('recipes.recipe_edit_list_view', plan_id=plan_id) }}" class="rform-btn rform-btn-ghost">{{ _('← Back to list') }}</a>
+    <span id="recipeAutosaveIndicator" class="rform-autosave-indicator"></span>
+    {% else %}
+    {# A brand new recipe has no id to autosave into yet - one explicit
+       click creates it, then add_recipe() redirects straight into the
+       edit view above, where autosave takes over from here on. #}
     <a href="/manage/recipe/edit-list" class="rform-btn rform-btn-ghost">{{ _('Cancel') }}</a>
-    <button type="submit" form="recipe-form" class="rform-btn rform-btn-primary">{{ _('Save changes') if recipe else _('Save recipe') }}</button>
+    <button type="submit" form="recipe-form" class="rform-btn rform-btn-primary">{{ _('Save recipe') }}</button>
+    {% endif %}
 </div>
 
 <datalist id="ingredients-datalist">
@@ -371,6 +382,7 @@
 window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};
 window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 {% if recipe %}
+window.RECIPE_ID = {{ recipe.id }};
 window.RECIPE_NUTRITION = {{ {'calories': recipe.calories, 'protein': recipe.protein, 'carbs': recipe.carbs, 'fat': recipe.fat} | tojson }};
 {% endif %}
 </script>

@@ -14,6 +14,15 @@ a chefkoch.de URL, with which recipe_form.html pre-fills the normal form
 category themselves anyway, a direct save without review would be
 riskier).
 
+Autosave (confirmed design: one explicit click to CREATE a recipe, full
+autosave from then on): add_recipe() redirects straight into
+recipe_edit_view() for the new recipe instead of back to a blank create
+form - from that point on, static/recipe_form.js resubmits the whole form
+to edit_recipe() via fetch() on every change (debounced), which responds
+with JSON instead of redirecting when it detects that AJAX call (see the
+X-Requested-With check there). A traditional (non-JS) submit to either
+endpoint still works exactly as before.
+
 The actual season form logic (parsing checkboxes + custom date range,
 pre-filling for the edit view) deliberately does NOT live here, but in
 services/seasons.py - this file stays focused on "create, change, delete
@@ -303,12 +312,12 @@ def add_recipe():
         ))
 
     db.session.commit()
-    # Back to the "create" subpage (not the list), so the next recipe can
-    # be entered right away without navigating first. plan_id ensures the
-    # currently chosen plan is preserved, instead of falling back to the
-    # starred one again for the next recipe (services/auth.py:
-    # default_plan_id()).
-    return redirect(url_for('recipes.recipe_create_view', plan_id=plan_id))
+    # Straight into editing the just-created recipe (not back to a blank
+    # create form) - see edit_recipe() below for why: from here on every
+    # further change autosaves, so this one submit is the ONLY explicit
+    # "Save" click this recipe will ever need (confirmed design: one click
+    # to create, full autosave after).
+    return redirect(url_for('recipes.recipe_edit_view', id=new_recipe.id, plan_id=plan_id))
 
 
 @recipes_bp.route('/edit-recipe/<int:id>', methods=['POST'])
@@ -395,10 +404,18 @@ def edit_recipe(id):
         recipe.carbs, recipe.fat = computed["carbs"], computed["fat"]
 
     db.session.commit()
-    # Back to the edit list (unlike add_recipe, which redirects back to
-    # the create page) - there's no "next" recipe here to jump directly
-    # to. plan_id ensures the previously selected tab (if one was active)
-    # is preserved.
+
+    # This same endpoint now also serves the recipe form's autosave (see
+    # templates/recipe_form.html / static/recipe_form.js: rformWireAutosave())
+    # - it resubmits the WHOLE form via fetch() on every change, marked
+    # with this header so it gets JSON back instead of being redirected
+    # out from under the page the user is still editing. A traditional
+    # (non-JS) submit still gets the normal redirect.
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return {
+            "ok": True, "calories": recipe.calories, "protein": recipe.protein,
+            "carbs": recipe.carbs, "fat": recipe.fat,
+        }
     return redirect(url_for('recipes.recipe_edit_list_view', plan_id=plan_id))
 
 

@@ -128,6 +128,30 @@ def test_recipe_edit_view_ingredient_row_has_delete_button(client, make_recipe):
     assert "this.closest('.ingredient-row').remove()" in html
 
 
+def test_recipe_edit_view_has_no_save_button(client, make_recipe):
+    """An existing recipe autosaves (see static/recipe_form.js:
+    rformAutosave()) - no Save button, just a small status indicator, same
+    pattern as templates/ingredient_aliases_manage.html."""
+    recipe_id = make_recipe("Bekanntes Gericht")
+    resp = client.get(f"/manage/recipe/edit/{recipe_id}")
+    assert resp.status_code == 200
+    assert b'id="recipeAutosaveIndicator"' in resp.data
+    assert b"Save changes" not in resp.data
+    assert b"Save recipe" not in resp.data
+    assert f'window.RECIPE_ID = {recipe_id};'.encode() in resp.data
+
+
+def test_recipe_create_view_has_save_button_not_autosave(client):
+    """A brand new recipe has no id to autosave into yet - one explicit
+    click creates it (see add_recipe(), which redirects into the edit
+    view above for everything from then on)."""
+    resp = client.get("/manage/recipe/create")
+    assert resp.status_code == 200
+    assert b"Save recipe" in resp.data
+    assert b'id="recipeAutosaveIndicator"' not in resp.data
+    assert b"window.RECIPE_ID" not in resp.data
+
+
 def test_recipe_edit_view_unknown_id_returns_404(client):
     resp = client.get("/manage/recipe/edit/999999")
     assert resp.status_code == 404
@@ -237,6 +261,24 @@ def test_add_recipe_creates_recipe_with_ingredients_and_seasons(client, app, mak
         assert len(recipe.ingredients) == 1
         assert recipe.ingredients[0].name == "Nudeln"
         assert len(recipe.seasons) == 1
+
+
+def test_add_recipe_redirects_into_edit_view_of_the_new_recipe(client, app, make_category):
+    """Confirmed autosave design: one explicit click creates the recipe,
+    then the user lands directly on its edit page (where every further
+    change autosaves, see edit_recipe()'s X-Requested-With branch) -
+    not back on a blank create form like before."""
+    from models import Recipe
+
+    cat_id = make_category("Hauptgerichte")
+    form = _base_recipe_form(cat_id)
+
+    resp = client.post("/add-recipe", data=form)
+    assert resp.status_code == 302
+
+    with app.app_context():
+        recipe = Recipe.query.filter_by(name="Neues Gericht").first()
+    assert resp.headers["Location"] == f"/manage/recipe/edit/{recipe.id}?plan_id={client.plan_id}"
 
 
 def test_recipe_create_view_hides_plan_selector_with_single_plan(client):
@@ -405,6 +447,41 @@ def test_edit_recipe_replaces_ingredients_and_fields(client, app, make_recipe):
         recipe = db.session.get(Recipe, recipe_id)
         assert recipe.name == "Geändertes Gericht"
         assert [i.name for i in recipe.ingredients] == ["Neu"]
+
+
+def test_edit_recipe_returns_json_for_autosave_requests(client, app, make_recipe):
+    """static/recipe_form.js resubmits the whole form via fetch() on every
+    change once a recipe exists (see rformAutosave()) - marked with this
+    header so the page doesn't get redirected out from under the user
+    still editing it, unlike a traditional submit."""
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Altes Gericht", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
+    with app.app_context():
+        cat_id = db.session.get(Recipe, recipe_id).category_id
+
+    form = _base_recipe_form(cat_id, name="Geändertes Gericht")
+    resp = client.post(f"/edit-recipe/{recipe_id}", data=form, headers={"X-Requested-With": "XMLHttpRequest"})
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "calories": 290, "protein": 20.0, "carbs": 30.0, "fat": 10.0}
+
+    with app.app_context():
+        assert db.session.get(Recipe, recipe_id).name == "Geändertes Gericht"
+
+
+def test_edit_recipe_still_redirects_for_a_traditional_submit(client, app, make_recipe):
+    from models import Recipe, db
+
+    recipe_id = make_recipe("Altes Gericht", ingredients=[{"name": "Alt", "amount": 1, "unit": "Stk"}])
+    with app.app_context():
+        cat_id = db.session.get(Recipe, recipe_id).category_id
+
+    form = _base_recipe_form(cat_id, name="Geändertes Gericht")
+    resp = client.post(f"/edit-recipe/{recipe_id}", data=form)
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == f"/manage/recipe/edit-list?plan_id={client.plan_id}"
 
 
 def test_edit_recipe_sets_ingredient_pantry_flag(client, app, make_recipe):
