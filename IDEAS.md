@@ -223,6 +223,26 @@ Backlog for future features - not yet implemented, just collected.
   itself.
 ## Implemented (continued)
 
+- **Demo data moved out of the committed binary database.**
+  `instance/speiseplan.db` is no longer version-controlled at all (see
+  `.gitignore`) - it changed 34 times over the project's history, each
+  time as an opaque, undiffable binary commit, and carried a real risk of
+  a genuine deployment's actual data accidentally ending up committed
+  through the same tracked path. The same sample content (recipes,
+  categories, ingredient aliases, two example accounts, in FK-dependency
+  order) now lives in `fixtures/demo_data.json` - plain, diffable JSON,
+  loaded on demand by `services/demo_seed.py: seed_demo_data_if_requested()`
+  via `SEED_DEMO_DATA=1` (see README.md: "Trying it out with sample
+  data"). Deliberately opt-in rather than "seed whenever the database
+  happens to be empty" - that condition is also exactly what a brand new
+  production deployment looks like before its first real Authelia login.
+  Loads via SQLAlchemy Core's `Table.insert()` rather than hand-written
+  SQL text, so a fixture row that predates a later-added column (e.g. an
+  ingredient from before `Ingredient.is_pantry` existed) still gets that
+  column's normal default applied automatically. Added a `.dockerignore`
+  at the same time - without one, `docker build` from a local working
+  directory would happily bake in whatever real `instance/speiseplan.db`
+  happens to sit there, independent of what git tracks.
 - **Exclude/re-include a day AFTER the week already exists.** Previously
   `PlanDay.excluded` could only be set while first creating a week
   (`static/create_week.js`, `templates/create_week.html`) - there was no

@@ -23,6 +23,7 @@ from flask_wtf import CSRFProtect
 from models import db
 from migrations import init_db
 from services.auth import current_plan, current_user, user_plan_memberships, SESSION_LIFETIME
+from services.demo_seed import seed_demo_data_if_requested
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
@@ -150,6 +151,13 @@ app.register_blueprint(account_bp)
 # with multiple workers, which could otherwise migrate concurrently).
 with app.app_context():
     init_db()
+    # Opt-in only (SEED_DEMO_DATA=1) and only into an otherwise still
+    # completely empty database - see services/demo_seed.py module
+    # docstring for why this can't just run automatically whenever the
+    # database happens to be empty (that's also the exact state of a
+    # brand new PRODUCTION deployment before its first real Authelia
+    # login).
+    seed_demo_data_if_requested()
 
 
 # Endpoints that must stay reachable even entirely WITHOUT plan

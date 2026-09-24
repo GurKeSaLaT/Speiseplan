@@ -1,0 +1,17 @@
+# Never bake a local, possibly-real database (or its secret key) into
+# the image - COPY . . in the Dockerfile would otherwise happily pick up
+# whatever happens to sit in instance/ on the machine running
+# `docker build`, independent of what's committed to git (see
+# .gitignore: instance/speiseplan.db is no longer version-controlled at
+# all, for the same reason - see fixtures/demo_data.json instead).
+instance/
+
+.git/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+BUGS.md
+.DS_Store

@@ -151,18 +151,30 @@ python3 app.py
 
 The app then runs at `http://127.0.0.1:5000` (see "Authentication" above
 for how to reach it without a real Authelia/proxy chain in front of it
-locally). `instance/speiseplan.db` is version-controlled in the repo with
-sample data (around 100 imported recipes including ingredient aliasing)
-so the app can be tried out meaningfully right after setup instead of
-starting with an empty database - on later updates, missing tables/
-columns are migrated automatically. This sample-data detail is irrelevant
-for the Docker deployment - there, `instance/` is mounted as a volume
-onto a directory outside the container (see below), which always takes
-precedence over the database state included in the image.
+locally) against a fresh, empty `instance/speiseplan.db` - on later
+updates, missing tables/columns are migrated automatically.
 
 By default the server listens on all network interfaces (`0.0.0.0`) -
 for a purely local test run that shouldn't be reachable from the LAN,
 use `HOST=127.0.0.1 python3 app.py`.
+
+### Trying it out with sample data
+
+`fixtures/demo_data.json` holds a set of sample data (around 100 imported
+recipes including ingredient aliasing, for two example accounts) as
+plain, diffable JSON - set `SEED_DEMO_DATA=1` on first start to load it
+into an otherwise still-empty database:
+
+```bash
+SEED_DEMO_DATA=1 python3 app.py
+```
+
+Only takes effect once, into a database that doesn't already have at
+least one user (see `services/demo_seed.py`) - safe to leave set
+afterward, it becomes a no-op. Deliberately NOT the default: an empty
+database is also the exact state of a brand new production deployment
+before its first real Authelia login, which must never get seeded with
+sample content just because nobody has logged in yet.
 
 ### With Docker
 
@@ -172,7 +184,9 @@ docker run -p 5000:5000 -e AUTHELIA_LOGOUT_URL=https://auth.example.com/logout s
 ```
 
 In production this container sits behind the SWAG/Authelia reverse-proxy
-chain described above, not exposed directly.
+chain described above, not exposed directly. Add `-e SEED_DEMO_DATA=1`
+to the same `docker run` command for a one-off container with sample
+data to poke around in.
 
 ## Tests
 
@@ -232,6 +246,9 @@ services/
   units.py                     Unit normalization/conversion (mass -> g, volume -> ml)
   settings.py                  Storage of the display-unit setting (AppSettings)
   ingredient_aliases.py        Ingredient aliasing for the shopping list (IngredientAlias)
+  demo_seed.py                 Loads fixtures/demo_data.json when SEED_DEMO_DATA=1 (see Setup)
+fixtures/
+  demo_data.json                Sample data for services/demo_seed.py, plain JSON (no binary DB in git)
 translations/                 Flask-Babel German catalog (translations/de/LC_MESSAGES/messages.po)
 templates/                    Jinja2 templates (plan calendar, create weekly plan,
                                account management, sharing, recipe forms)
@@ -243,7 +260,7 @@ static/
   create_week.js                Live search & drag-and-drop when creating a weekly plan
   ingredient_category_select.js Option markup shared by the recipe forms
   bootstrap.*, style.css        Local Bootstrap 5 + custom stylesheet
-instance/speiseplan.db        SQLite database
+instance/speiseplan.db        SQLite database (not version-controlled, see fixtures/ above)
 ```
 
 ## License

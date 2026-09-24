@@ -17,6 +17,8 @@ top returns seeded_plans_by_username, threaded through as a parameter to
 every step that needs it.
 """
 
+import re
+
 from sqlalchemy import text
 
 from models import db, ExtraShoppingItem, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
@@ -24,6 +26,39 @@ from services.plans import seed_default_categories
 from services.planning import friday_of
 from services.seasons import SEASON_PRESETS
 from services.units import renormalize_existing_ingredients
+
+# _add_plan_id_column()/_add_plan_id_with_rebuild() below take a table/
+# column name as a plain Python parameter and interpolate it into raw SQL
+# via an f-string, since SQLite's DDL statements don't support bind
+# parameters for identifiers (only for values). Every CALL site in this
+# file passes a hardcoded literal, never anything derived from user
+# input - but that's an invariant of how the functions happen to be used
+# today, not something enforced by the functions themselves. _identifier()
+# below is a cheap, permanent guardrail against that assumption quietly
+# becoming false later (a copy-pasted call site, a future refactor that
+# threads a variable through) - it fails loudly at startup instead of
+# silently building unexpected SQL.
+_VALID_IDENTIFIER = re.compile(r'^[a-z_][a-z0-9_]*$')
+
+
+def _identifier(name):
+    """Validates a single table/column name against a strict snake_case
+    allowlist before it's allowed into an f-string SQL fragment - raises
+    ValueError instead of proceeding if it doesn't match exactly (no
+    quoting/escaping attempted, since a legitimate identifier here never
+    needs any)."""
+    if not _VALID_IDENTIFIER.match(name):
+        raise ValueError(f"Refusing to build SQL with unsafe identifier: {name!r}")
+    return name
+
+
+def _identifier_list(csv_names):
+    """Like _identifier() above, but for a comma-separated list of column
+    names (see _add_plan_id_with_rebuild(): copy_columns) - validates each
+    one individually."""
+    for part in csv_names.split(','):
+        _identifier(part.strip())
+    return csv_names
 
 
 def _legacy_plan(seeded_plans_by_username):
@@ -379,6 +414,7 @@ def _add_plan_id_column(table, column, seeded_plans_by_username, unique_index_sq
     standalone "CREATE UNIQUE INDEX" (SQLite doesn't allow a retroactive
     ALTER TABLE ... ADD CONSTRAINT, but does allow an independently
     created unique index with the same effect, without any table copy)."""
+    table, column = _identifier(table), _identifier(column)
     existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
     if column in existing_columns:
         return
@@ -414,6 +450,7 @@ def _add_plan_id_with_rebuild(table, create_new_table_sql, copy_columns, seeded_
     migration for plan_day, the table is therefore rebuilt once with the
     complete target schema (including IDs, which e.g. recipe.category_id
     still depends on)."""
+    table, copy_columns = _identifier(table), _identifier_list(copy_columns)
     existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
     if 'plan_id' in existing_columns:
         return
