@@ -17,7 +17,7 @@ plans via RecipePlanLink, viewing it ALWAYS applies the equating of the
 CURRENTLY ACTIVE plan, not that of its owning plan.
 """
 
-from models import Ingredient, IngredientAlias, db
+from models import Ingredient, IngredientAlias, Recipe, db
 from services.recipe_visibility import visible_recipe_ids_subquery
 
 
@@ -61,6 +61,36 @@ def get_all_aliases(plan_id):
     """All alias mappings maintained for plan_id as a dict {raw_name:
     canonical_name}."""
     return {a.raw_name: a.canonical_name for a in IngredientAlias.query.filter_by(plan_id=plan_id).all()}
+
+
+def recipes_by_ingredient_name(plan_id):
+    """Maps each normalized ingredient name used in a recipe VISIBLE to
+    plan_id to the (id, name) pairs of every recipe that uses it directly
+    under that literal spelling - the basis for templates/
+    ingredient_aliases_manage.html linking an ingredient/alias straight
+    to "the recipe it's part of" (routes/settings.py:
+    ingredient_aliases_view()).
+
+    Built in ONE query plus a single grouping pass, NOT one query per
+    name - see services/nutrition.py: infer_reference_units_for_plan()
+    for why that distinction matters on this exact page (a real
+    production incident from calling a per-name query in a loop over
+    every known ingredient)."""
+    rows = (
+        db.session.query(Ingredient.name, Recipe.id, Recipe.name)
+        .join(Recipe, Ingredient.recipe_id == Recipe.id)
+        .filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
+        .all()
+    )
+    recipes_by_name = {}
+    for ingredient_name, recipe_id, recipe_name in rows:
+        key = normalize_name(ingredient_name)
+        seen_ids = {rid for rid, _ in recipes_by_name.get(key, [])}
+        if recipe_id not in seen_ids:
+            recipes_by_name.setdefault(key, []).append((recipe_id, recipe_name))
+    for entries in recipes_by_name.values():
+        entries.sort(key=lambda pair: pair[1])
+    return recipes_by_name
 
 
 def set_alias(plan_id, raw_name, canonical_name):

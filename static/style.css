@@ -728,3 +728,14 @@ body {
 [data-bs-theme="dark"] .alias-remove-btn { color: #E27168; }
 [data-bs-theme="dark"] .alias-remove-btn:hover { background: #3A2422; }
 .alias-item-removed { opacity: 0.45; text-decoration: line-through; }
+
+.ingredient-recipe-link { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--border-subtle); }
+.ingredient-recipe-link:hover { color: var(--primary-food); border-bottom-color: var(--primary-food); }
+.ingredient-recipe-link.dropdown-toggle::after { margin-left: 0.35em; vertical-align: 0.1em; }
+
+.autosave-indicator {
+    display: inline-block; width: 1.1em; font-size: 0.85rem; font-weight: 700;
+}
+.autosave-ok { color: var(--primary-food); }
+.autosave-error { color: #C1443B; }
+[data-bs-theme="dark"] .autosave-error { color: #E27168; }

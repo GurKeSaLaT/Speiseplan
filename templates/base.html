@@ -8,6 +8,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🍽️ Speiseplanhelfer</title>
+    {# Emoji favicon via an inline SVG data URI - no separate image asset
+       to vendor/maintain, and browsers otherwise request /favicon.ico by
+       convention even with no <link> at all, which 404s without this
+       (harmless, but shows up as console/network noise). #}
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍽️</text></svg>">
+
 
     {# Light/dark mode: deliberately runs as the VERY FIRST thing in <head>,
        even before the CSS links further down, so that data-bs-theme is set

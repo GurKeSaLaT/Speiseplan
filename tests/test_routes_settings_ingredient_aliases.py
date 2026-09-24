@@ -1,6 +1,10 @@
 """Tests for routes/settings.py: the combined ingredients & nutrition
-page (/manage/ingredient-aliases, /update-ingredients) - merges what used
-to be two separate pages/routes (see IDEAS.md)."""
+page (/manage/ingredient-aliases) - merges what used to be two separate
+pages/routes (see IDEAS.md). Every field on the page autosaves via the
+AJAX endpoints (api_set_ingredient_alias()/api_set_ingredient_nutrition())
+rather than a batch form submit - see the "AJAX endpoint" sections below
+for those, and services/ingredient_aliases.py: recipes_by_ingredient_name()
+for the "click a name to open its recipe" tests."""
 
 
 def test_ingredient_aliases_view_lists_unaliased_names_under_other(client, make_recipe):
@@ -111,111 +115,48 @@ def test_ingredient_aliases_view_other_row_has_own_nutrition_fields(client, make
     assert b'value="g" selected' in resp.data
 
 
-def test_update_ingredients_creates_grouping(client, app, make_recipe):
-    from services.ingredient_aliases import normalize_ingredient_name
-
-    make_recipe("A", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
-    make_recipe("B", ingredients=[{"name": "Fusilli", "amount": 300, "unit": "g"}])
-
-    resp = client.post("/update-ingredients", data={
-        "raw_name[]": ["Spaghetti", "Fusilli"],
-        "canonical_name[]": ["Nudeln", "Nudeln"],
-    }, follow_redirects=False)
-    assert resp.status_code == 302
-
-    with app.app_context():
-        assert normalize_ingredient_name(client.plan_id, "Spaghetti") == "Nudeln"
-        assert normalize_ingredient_name(client.plan_id, "Fusilli") == "Nudeln"
-
-
-def test_update_ingredients_unchanged_row_stays_unaliased(client, app, make_recipe):
-    from services.ingredient_aliases import get_all_aliases
-
+def test_ingredient_aliases_view_has_no_save_button(client, make_recipe):
+    """Everything on this page autosaves via AJAX (see the "AJAX
+    endpoint" sections below) - there is deliberately no batch-save form/
+    Save button to click anymore (formerly update_ingredients(), see
+    IDEAS.md). The sidebar's OWN plan-switch <form>s are unrelated and
+    still expected to be present, so this checks for the specific
+    batch-save markup rather than "<form" globally."""
     make_recipe("A", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
-
-    client.post("/update-ingredients", data={
-        "raw_name[]": ["Reis"],
-        "canonical_name[]": ["Reis"],
-    })
-    with app.app_context():
-        assert get_all_aliases(client.plan_id) == {}
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    assert b'action="/update-ingredients"' not in resp.data
+    assert b'name="raw_name[]"' not in resp.data
+    assert b'name="canonical_name[]"' not in resp.data
 
 
-def test_update_ingredients_removing_alias_via_canonical_equal_to_raw(client, app, make_recipe):
-    """The "×" button behind a nested alias (see
-    templates/ingredient_aliases_manage.html: removeAliasRow()) works by
-    setting canonical_name[] back to the raw name itself before submit -
-    exactly like retyping "Counts as" back to the original name."""
-    from services.ingredient_aliases import get_all_aliases, set_alias
+def test_ingredient_aliases_view_links_single_recipe_name_directly(client, app, make_recipe):
+    """A name used in exactly one recipe links straight to it (see
+    services/ingredient_aliases.py: recipes_by_ingredient_name())."""
+    recipe_id = make_recipe("Nudelauflauf", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
 
-    make_recipe("A", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
-    with app.app_context():
-        set_alias(client.plan_id, "Spaghetti", "Nudeln")
-
-    client.post("/update-ingredients", data={
-        "raw_name[]": ["Spaghetti"],
-        "canonical_name[]": ["Spaghetti"],
-    })
-    with app.app_context():
-        assert get_all_aliases(client.plan_id) == {}
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    assert f'href="/manage/recipe/edit/{recipe_id}?plan_id={client.plan_id}"'.encode() in resp.data
 
 
-def test_update_ingredients_saves_nutrition_for_main_and_other_rows(client, app, make_recipe):
-    from services.ingredient_aliases import set_alias
-    from services.nutrition import get_nutrition_entry
-
+def test_ingredient_aliases_view_shows_dropdown_for_multiple_recipes(client, make_recipe):
+    """A name used in more than one recipe gets a dropdown listing each,
+    instead of a single ambiguous link."""
     make_recipe("A", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
-    with app.app_context():
-        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+    make_recipe("B", ingredients=[{"name": "Reis", "amount": 100, "unit": "g"}])
 
-    resp = client.post("/update-ingredients", data={
-        "nutrition_name[]": ["Nudeln", "Reis"],
-        "reference_unit[]": ["g", "g"],
-        "protein[]": ["12", "3"],
-        "carbs[]": ["70", "28"],
-        "fat[]": ["1.5", "0.3"],
-    }, follow_redirects=False)
-    assert resp.status_code == 302
-
-    with app.app_context():
-        nudeln = get_nutrition_entry(client.plan_id, "Nudeln")
-        assert nudeln.protein == 12
-        reis = get_nutrition_entry(client.plan_id, "Reis")
-        assert reis.protein == 3
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    assert b"dropdown-menu" in resp.data
+    assert resp.data.count(b'class="dropdown-item"') == 2
 
 
-def test_update_ingredients_reassigning_alias_and_nutrition_in_one_submit(client, app, make_recipe):
-    """Saving a new "counts as" AND a nutrition value for the SAME row in
-    one submit must land the nutrition under the NEW canonical name, not
-    the old one - alias pairs are applied before nutrition rows (see
-    routes/settings.py: update_ingredients())."""
-    from models import IngredientNutrition
-    from services.nutrition import get_nutrition_entry
-
-    make_recipe("A", ingredients=[{"name": "Tomaten", "amount": 400, "unit": "g"}])
-
-    client.post("/update-ingredients", data={
-        "raw_name[]": ["Tomaten"],
-        "canonical_name[]": ["Passierte Tomaten"],
-        "nutrition_name[]": ["Tomaten"],
-        "reference_unit[]": ["g"],
-        "protein[]": ["0.9"],
-        "carbs[]": ["3.9"],
-        "fat[]": ["0.2"],
-    })
-
-    with app.app_context():
-        assert get_nutrition_entry(client.plan_id, "Passierte Tomaten").protein == 0.9
-        # No SEPARATE, stray entry was created directly under the old
-        # literal name - get_nutrition_entry("Tomaten") would still find
-        # the same row via alias resolution, so check the raw storage
-        # instead (no row whose OWN canonical_name is still "Tomaten").
-        assert IngredientNutrition.query.filter_by(
-            plan_id=client.plan_id, canonical_name="Tomaten"
-        ).first() is None
-
-
-def test_ingredient_aliases_view_prefills_existing_alias(client, app, make_recipe):
+def test_ingredient_aliases_view_nests_existing_alias_under_its_group(client, app, make_recipe):
+    """An ingredient with an alias set shows up as a nested alias item
+    under its canonical name's main-ingredient group (not as an editable
+    "counts as" input - that only exists for rows still in "Everything
+    else", see the other_rows loop in the template)."""
     from services.ingredient_aliases import set_alias
 
     make_recipe("A", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
@@ -223,7 +164,10 @@ def test_ingredient_aliases_view_prefills_existing_alias(client, app, make_recip
         set_alias(client.plan_id, "Spaghetti", "Nudeln")
 
     resp = client.get("/manage/ingredient-aliases")
-    assert b'value="Nudeln"' in resp.data
+    assert resp.status_code == 200
+    assert b"Nudeln" in resp.data
+    assert b'removeAlias(this, "Spaghetti")' in resp.data
+    assert b'data-raw-name="Spaghetti"' not in resp.data
 
 
 # --- AJAX endpoint for the recipe forms (api_set_ingredient_alias) ---
@@ -302,3 +246,47 @@ def test_api_set_ingredient_alias_requires_both_fields(client):
 def test_api_set_ingredient_alias_rejects_empty_body(client):
     resp = client.post("/api/ingredient-alias/set", json={})
     assert resp.status_code == 400
+
+
+# --- explicit plan_id (used by the autosave on ingredient_aliases_manage.html
+# itself, which may be viewing a non-active plan via its own tab switcher) ---
+
+def test_api_set_ingredient_alias_accepts_explicit_plan_id_for_a_membership(client, app, make_user):
+    """The active plan (current_plan()) is client.plan_id - explicitly
+    targeting a DIFFERENT plan the same user is ALSO a member of must
+    still work (not silently fall back to the active one)."""
+    from models import PlanMembership, db
+    from services.ingredient_aliases import normalize_ingredient_name
+
+    other_user_id, other_plan_id = make_user("Andere")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    resp = client.post("/api/ingredient-alias/set", json={
+        "raw_name": "Reis", "canonical_name": "Getreide", "plan_id": other_plan_id,
+    })
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert normalize_ingredient_name(other_plan_id, "Reis") == "Getreide"
+        # Did NOT leak into the active plan.
+        assert normalize_ingredient_name(client.plan_id, "Reis") == "Reis"
+
+
+def test_api_set_ingredient_alias_ignores_plan_id_without_membership(client, app, make_user):
+    """A plan_id the user has no access to must be ignored, not silently
+    grant write access - falls back to the active plan instead, exactly
+    like an absent plan_id would."""
+    from services.ingredient_aliases import normalize_ingredient_name
+
+    _, foreign_plan_id = make_user("Fremd")
+
+    resp = client.post("/api/ingredient-alias/set", json={
+        "raw_name": "Reis", "canonical_name": "Getreide", "plan_id": foreign_plan_id,
+    })
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert normalize_ingredient_name(foreign_plan_id, "Reis") == "Reis"
+        assert normalize_ingredient_name(client.plan_id, "Reis") == "Getreide"

@@ -69,3 +69,42 @@ def test_api_set_ingredient_nutrition_rejects_arbitrary_reference_unit(client, a
     data = resp.get_json()
     assert data["reference_unit"] == "g"
     assert data["reference_amount"] == 100
+
+
+# --- explicit plan_id (used by the autosave on ingredient_aliases_manage.html
+# itself, which may be viewing a non-active plan via its own tab switcher) ---
+
+def test_api_set_ingredient_nutrition_accepts_explicit_plan_id_for_a_membership(client, app, make_user):
+    from models import PlanMembership, db
+    from services.nutrition import get_nutrition_entry
+
+    other_user_id, other_plan_id = make_user("Andere")
+    with app.app_context():
+        db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
+        db.session.commit()
+
+    resp = client.post("/api/ingredient-nutrition/set", json={
+        "name": "Reis", "reference_unit": "g", "protein": 3, "carbs": 28, "fat": 0.3,
+        "plan_id": other_plan_id,
+    })
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert get_nutrition_entry(other_plan_id, "Reis").protein == 3
+        assert get_nutrition_entry(client.plan_id, "Reis") is None
+
+
+def test_api_set_ingredient_nutrition_ignores_plan_id_without_membership(client, app, make_user):
+    from services.nutrition import get_nutrition_entry
+
+    _, foreign_plan_id = make_user("Fremd")
+
+    resp = client.post("/api/ingredient-nutrition/set", json={
+        "name": "Reis", "reference_unit": "g", "protein": 3, "carbs": 28, "fat": 0.3,
+        "plan_id": foreign_plan_id,
+    })
+    assert resp.status_code == 200
+
+    with app.app_context():
+        assert get_nutrition_entry(foreign_plan_id, "Reis") is None
+        assert get_nutrition_entry(client.plan_id, "Reis").protein == 3

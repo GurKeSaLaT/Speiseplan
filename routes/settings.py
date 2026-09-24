@@ -10,19 +10,23 @@ both areas are small):
    are stored internally (always canonical g/ml), only how they are
    displayed in forms/the shopping list.
 
-2. Ingredients & nutrition (ingredient_aliases_view/update_ingredients):
-   ONE page covering both which concrete ingredient names (e.g.
-   "spaghetti", "fusilli") should count as the same item for the
-   shopping list (e.g. "pasta", see services/ingredient_aliases.py) AND
-   the nutrition reference per resulting canonical ingredient (see
-   services/nutrition.py), from which recipe nutrition values are
-   automatically calculated (see routes/recipes/crud.py:
-   add_recipe()/edit_recipe()). Used to be two separate pages/routes
-   (ingredient_nutrition_view/update_ingredient_nutrition) - merged
-   because a main ingredient's nutrition reference and the individual
-   spellings merged into it are really one editing task, not two (see
-   IDEAS.md). Equating an ingredient does NOT change the ingredient
-   names shown in a recipe, only the grouping on the shopping list.
+2. Ingredients & nutrition (ingredient_aliases_view): ONE page covering
+   both which concrete ingredient names (e.g. "spaghetti", "fusilli")
+   should count as the same item for the shopping list (e.g. "pasta",
+   see services/ingredient_aliases.py) AND the nutrition reference per
+   resulting canonical ingredient (see services/nutrition.py), from
+   which recipe nutrition values are automatically calculated (see
+   routes/recipes/crud.py: add_recipe()/edit_recipe()). Used to be two
+   separate pages/routes (ingredient_nutrition_view/
+   update_ingredient_nutrition) - merged because a main ingredient's
+   nutrition reference and the individual spellings merged into it are
+   really one editing task, not two (see IDEAS.md). Equating an
+   ingredient does NOT change the ingredient names shown in a recipe,
+   only the grouping on the shopping list. Every field on this page
+   autosaves via api_set_ingredient_alias()/api_set_ingredient_nutrition()
+   below - there was a batch-save update_ingredients() endpoint here
+   briefly, replaced once the page itself became autosaving (see
+   IDEAS.md).
 
 Both areas are separated PER PLAN (see models/settings.py: AppSettings.
 plan_id/IngredientAlias.plan_id/IngredientNutrition.plan_id) - each page
@@ -35,9 +39,10 @@ the CURRENTLY selected plan, not necessarily the otherwise active one
 from flask import Blueprint, redirect, render_template, request, url_for
 from flask_babel import gettext as _
 
-from services.auth import current_plan, current_user, selected_plan_id, user_plan_memberships
+from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.ingredient_aliases import (
-    get_all_aliases, list_known_ingredient_names, normalize_ingredient_name, normalize_name, set_alias,
+    get_all_aliases, list_known_ingredient_names, normalize_ingredient_name, normalize_name,
+    recipes_by_ingredient_name, set_alias,
 )
 from services.nutrition import (
     compute_calories, get_all_nutrition_entries, infer_reference_units_for_plan, list_alias_canonical_names,
@@ -129,13 +134,19 @@ def ingredient_aliases_view():
     already only returns names that are actual alias TARGETS, and
     other_rows explicitly excludes those plus every name that is itself
     an alias SOURCE (aliased_raw_names) - it would otherwise show up
-    twice, once as its own row and once nested under its target."""
+    twice, once as its own row and once nested under its target.
+
+    Every name/alias also carries "recipes" - the (id, name) pairs of
+    every recipe that uses it directly (services/ingredient_aliases.py:
+    recipes_by_ingredient_name()), so the template can link straight to
+    "the recipe this is part of" instead of only being editable here."""
     user = current_user()
     plan_id = selected_plan_id(request.args, user)
 
     aliases = get_all_aliases(plan_id)
     entries = get_all_nutrition_entries(plan_id)
     inferred_units = infer_reference_units_for_plan(plan_id)
+    recipes_by_name = recipes_by_ingredient_name(plan_id)
     main_names = list_alias_canonical_names(plan_id)
 
     aliased_raw_names_by_target = {}
@@ -145,7 +156,11 @@ def ingredient_aliases_view():
     main_groups = [
         {
             "canonical_name": name,
-            "aliases": sorted(aliased_raw_names_by_target.get(name, [])),
+            "aliases": [
+                {"name": alias, "recipes": recipes_by_name.get(alias, [])}
+                for alias in sorted(aliased_raw_names_by_target.get(name, []))
+            ],
+            "recipes": recipes_by_name.get(name, []),
             **_nutrition_row(entries, inferred_units, name),
         }
         for name in main_names
@@ -154,7 +169,7 @@ def ingredient_aliases_view():
     main_name_set = set(main_names)
     aliased_raw_names = set(aliases.keys())
     other_rows = [
-        {"raw_name": name, **_nutrition_row(entries, inferred_units, name)}
+        {"raw_name": name, "recipes": recipes_by_name.get(name, []), **_nutrition_row(entries, inferred_units, name)}
         for name in list_known_ingredient_names(plan_id)
         if name not in main_name_set and name not in aliased_raw_names
     ]
@@ -166,62 +181,36 @@ def ingredient_aliases_view():
     )
 
 
-@settings_bp.route('/update-ingredients', methods=['POST'])
-def update_ingredients():
-    """Saves EVERY editable field of ingredient_aliases_view() at once
-    (parallel lists, like the ingredient rows of the recipe forms) -
-    replaces the two formerly separate update_ingredient_aliases()/
-    update_ingredient_nutrition() endpoints (see IDEAS.md).
-
-    Alias pairs (raw_name[]/canonical_name[]) are saved FIRST, before any
-    nutrition value - both a nested alias's "×" removal (see
-    templates/ingredient_aliases_manage.html: the hidden inputs behind
-    it) and an "other ingredient" row's "counts as" field arrive this
-    way. Nutrition rows are identified by nutrition_name[] (a main
-    group's canonical name, or an "other" row's own name) rather than
-    reusing canonical_name[], since the two lists differ in length/order
-    and would otherwise collide. Saving nutrition AFTER the alias pairs
-    means set_nutrition()'s own alias resolution (via
-    normalize_ingredient_name()) already sees this same submission's
-    fresh mapping - so re-pointing an ingredient's "counts as" AND
-    editing its nutrition in the same submit lands the nutrition under
-    the new canonical name, not the old one."""
-    plan_id = selected_plan_id(request.form, current_user())
-
-    raw_names = request.form.getlist('raw_name[]')
-    canonical_names = request.form.getlist('canonical_name[]')
-    for raw_name, canonical_name in zip(raw_names, canonical_names):
-        set_alias(plan_id, raw_name, canonical_name)
-
-    nutrition_names = request.form.getlist('nutrition_name[]')
-    reference_units = request.form.getlist('reference_unit[]')
-    protein_list = request.form.getlist('protein[]')
-    carbs_list = request.form.getlist('carbs[]')
-    fat_list = request.form.getlist('fat[]')
-    for i, name in enumerate(nutrition_names):
-        values = _parse_nutrition_form_values({
-            "reference_unit": reference_units[i] if i < len(reference_units) else None,
-            "protein": protein_list[i] if i < len(protein_list) else None,
-            "carbs": carbs_list[i] if i < len(carbs_list) else None,
-            "fat": fat_list[i] if i < len(fat_list) else None,
-        })
-        set_nutrition(plan_id, name, **values)
-
-    return redirect(url_for('settings.ingredient_aliases_view', plan_id=plan_id))
+def _resolve_ajax_plan_id(data, user):
+    """Resolves which plan an AJAX body applies to: an explicit plan_id
+    in the JSON body wins, but ONLY if user is actually a member of it
+    (never trust a client-supplied ID otherwise) - falls back to
+    current_plan() when absent, which is what both callers below
+    originally always used unconditionally (the recipe form's inline
+    hint, see static/ingredient_alias_hint.js, always means the active
+    plan and never sends one). Added so templates/ingredient_aliases_manage.html's
+    autosave can target whichever plan its OWN tab switcher has selected
+    (services/auth.py: selected_plan_id()), which is not necessarily the
+    active plan - without this, autosaving on a non-active plan's tab
+    would silently write to the wrong plan."""
+    requested = data.get('plan_id')
+    if requested is not None and user_has_plan_access(user, requested):
+        return requested
+    plan = current_plan()
+    return plan.id if plan else None
 
 
 @settings_bp.route('/api/ingredient-alias/set', methods=['POST'])
 def api_set_ingredient_alias():
-    """AJAX counterpart to update_ingredients() above: sets EXACTLY
-    ONE alias immediately while entering an ingredient in recipe_form.html/
-    recipe_edit_list.html, without leaving the page (see
+    """Sets EXACTLY ONE alias immediately - used both by the recipe form's inline hint
+    (recipe_form.html/recipe_edit_list.html, see
     static/ingredient_alias_hint.js - the "Set alias" button there, which
-    appears for the case "neither alias nor base ingredient"). Always
-    applies to the currently ACTIVE plan (current_plan(), not
-    selected_plan_id() - this AJAX action comes from a recipe page, not
-    from one of the tab-capable settings pages).
+    appears for the case "neither alias nor base ingredient", always for
+    the active plan) AND by the autosave on
+    templates/ingredient_aliases_manage.html itself (which may target a
+    non-active plan, see _resolve_ajax_plan_id() above).
 
-    Expects a JSON body {"raw_name": str, "canonical_name": str}.
+    Expects a JSON body {"raw_name": str, "canonical_name": str, "plan_id": int (optional)}.
     Returns the NORMALIZED values so the frontend can keep its local copy
     of window.INGREDIENT_ALIASES consistent with the lookup key that the
     server also uses (see services/ingredient_aliases.py: normalize_name).
@@ -235,21 +224,22 @@ def api_set_ingredient_alias():
     infer_is_pantry) is adopted the same way into the pantry checkbox,
     but only ever to CHECK it, never to uncheck one the user already set -
     see static/ingredient_alias_hint.js: fillPantryFromAlias()."""
-    plan = current_plan()
+    user = current_user()
     data = request.get_json() or {}
+    plan_id = _resolve_ajax_plan_id(data, user)
     raw_name = (data.get('raw_name') or '').strip()
     canonical_name = (data.get('canonical_name') or '').strip()
-    if not raw_name or not canonical_name:
+    if not plan_id or not raw_name or not canonical_name:
         return {"error": _("Name and alias must not be empty.")}, 400
 
-    set_alias(plan.id, raw_name, canonical_name)
-    resolved_canonical = normalize_ingredient_name(plan.id, raw_name)
+    set_alias(plan_id, raw_name, canonical_name)
+    resolved_canonical = normalize_ingredient_name(plan_id, raw_name)
     return {
         "ok": True,
         "raw_name": normalize_name(raw_name),
         "canonical_name": resolved_canonical,
-        "category": infer_category(plan.id, resolved_canonical),
-        "is_pantry": infer_is_pantry(plan.id, resolved_canonical),
+        "category": infer_category(plan_id, resolved_canonical),
+        "is_pantry": infer_is_pantry(plan_id, resolved_canonical),
     }
 
 
@@ -280,25 +270,28 @@ def _parse_nutrition_form_values(data):
 
 @settings_bp.route('/api/ingredient-nutrition/set', methods=['POST'])
 def api_set_ingredient_nutrition():
-    """AJAX endpoint for the inline hint while entering an ingredient (see
-    static/ingredient_alias_hint.js): immediately adds a nutrition entry
-    for an ingredient, without leaving the recipe page - offered exactly
-    when window.INGREDIENT_NUTRITION doesn't yet have an entry for the
-    resolved canonical ingredient. Like api_set_ingredient_alias() above,
-    always for the currently ACTIVE plan (current_plan()).
+    """AJAX endpoint - used both by the inline hint while entering an
+    ingredient (see static/ingredient_alias_hint.js: immediately adds a
+    nutrition entry without leaving the recipe page, offered exactly when
+    window.INGREDIENT_NUTRITION doesn't yet have an entry for the
+    resolved canonical ingredient, always for the active plan) AND by the
+    autosave on templates/ingredient_aliases_manage.html itself (which
+    may target a non-active plan, see api_set_ingredient_alias() above:
+    _resolve_ajax_plan_id()).
 
     Expects a JSON body {"name": str, "reference_unit": "g"|"ml"|"Stk",
-    "protein"/"carbs"/"fat": number}. calories in the response is purely
-    informational (calculated from protein/carbs/fat), not a stored
-    value."""
-    plan = current_plan()
+    "protein"/"carbs"/"fat": number, "plan_id": int (optional)}. calories
+    in the response is purely informational (calculated from
+    protein/carbs/fat), not a stored value."""
+    user = current_user()
     data = request.get_json() or {}
+    plan_id = _resolve_ajax_plan_id(data, user)
     name = (data.get('name') or '').strip()
-    if not name:
+    if not plan_id or not name:
         return {"error": _("Ingredient name must not be empty.")}, 400
 
     values = _parse_nutrition_form_values(data)
-    entry = set_nutrition(plan.id, name, **values)
+    entry = set_nutrition(plan_id, name, **values)
     return {
         "ok": True,
         "canonical_name": entry.canonical_name,

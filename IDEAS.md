@@ -4,22 +4,54 @@ Backlog for future features - not yet implemented, just collected.
 
 ## Implemented
 
-- **Merged "Merge Ingredients" and "Nutrition" into one page.**
-  `/manage/ingredient-aliases` (routes/settings.py: ingredient_aliases_view())
-  now covers both what used to be two separate pages: two sub-tabs,
-  "Main Ingredients" (every canonical name at least one other ingredient
-  is aliased to, each with its own nutrition editor and, nested
-  underneath, every merged spelling - removable via "×") and "Everything
-  Else" (every other known ingredient, ALSO with its own nutrition
-  editor - previously only settable via the recipe form's inline hint -
-  plus a "Counts as" field to promote it into a main ingredient). One
-  combined save endpoint (update_ingredients(), replacing the former
-  update_ingredient_aliases()/update_ingredient_nutrition()) applies
-  alias changes before nutrition changes, so re-pointing an ingredient's
-  "Counts as" and editing its nutrition in the same submit lands the
-  nutrition under the new canonical name. The former
+- **Merged "Merge Ingredients" and "Nutrition" into one page, fully
+  autosaving, with a jump-to-recipe link.**
+  `/manage/ingredient-aliases` (routes/settings.py: ingredient_aliases_view(),
+  templates/ingredient_aliases_manage.html) now covers both what used to
+  be two separate pages: two sub-tabs, "Main Ingredients" (every
+  canonical name at least one other ingredient is aliased to, each with
+  its own nutrition editor and, nested underneath, every merged spelling
+  - removable via "×") and "Everything Else" (every other known
+  ingredient, ALSO with its own nutrition editor - previously only
+  settable via the recipe form's inline hint - plus a "Counts as" field
+  to promote it into a main ingredient). The former
   `/manage/ingredient-nutrition` page/route is gone; its sidebar tile
   and rail link were merged into one "🔗 Ingredients & Nutrition" entry.
+
+  Every field on the page saves itself immediately (`fetch()` on
+  change/blur, small "✓"/"⚠" `.autosave-indicator`) - there is no Save
+  button and no batch-submit endpoint anymore. Nutrition edits reuse
+  `/api/ingredient-nutrition/set`; alias removal ("×") and "Counts as"
+  reuse `/api/ingredient-alias/set` - the exact same AJAX endpoints the
+  recipe form's inline hint already called, now also accepting an
+  explicit `plan_id` in the request body (`routes/settings.py:
+  _resolve_ajax_plan_id()`), since this page's own plan tab-switcher may
+  be showing a plan other than the currently active one. Removing an
+  alias or changing "Counts as" to a genuinely different name reloads the
+  page (the row may need to move between sub-tabs, simplest to get right
+  server-side); pure nutrition edits never reload.
+
+  Clicking an ingredient or alias name jumps straight to a recipe it's
+  part of (`services/ingredient_aliases.py: recipes_by_ingredient_name()`,
+  one query in the whole view, not one per name - see the performance
+  note below): a name used in exactly one recipe links directly there, a
+  name used in several shows a small dropdown to pick one.
+
+  While merging the two pages' ingredient sets onto this one page, an
+  existing per-name query in `services/nutrition.py: infer_reference_unit()`
+  (previously only ever called for the small number of alias-target main
+  ingredients) started also running once per "Everything Else" row -
+  turning what used to be a handful of calls into one per known
+  ingredient (hundreds), each doing its own ingredient-table scan. Caused
+  a real production page load of 34.5 seconds. Fixed with a bulk
+  counterpart, `infer_reference_units_for_plan()`, that computes every
+  name's guess in a single pass over an already-fetched alias dict
+  instead of one query per name - reduced the same page to roughly
+  100ms. A regression test asserts the query count stays bounded
+  (`tests/test_services_nutrition.py`, via SQLAlchemy's
+  `before_cursor_execute` event) so a future per-name query creeping back
+  into a loop over all known ingredients gets caught before it reaches
+  production again.
 - **Swap days on the finished plan.** Day cards on `plan.html` are now
   fully swappable via drag-and-drop (main dish, side dish, and exclusion
   status), purely client-side.
@@ -185,14 +217,10 @@ Backlog for future features - not yet implemented, just collected.
   `normalize_ingredient_name()` is called in `jsonify_recipe()` instead of
   the previous plain `.strip().title()` (still does that internally, plus
   alias replacement if present) - an ingredient name with no entry simply
-  stays itself, no grouping is the default case. Own management page
-  `/manage/ingredient-aliases` (blueprint `settings`, tile on `/manage`):
-  one row per ingredient name currently used in any recipe with an
-  editable "counts as" field, all savable at once via form (parallel
-  `raw_name[]`/`canonical_name[]` lists, analogous to the ingredient rows
-  of the recipe forms) instead of one round trip per row - impractical
-  otherwise with potentially hundreds of ingredients. A field left
-  unchanged (still counts only as itself) creates no alias record.
+  stays itself, no grouping is the default case. Management page: see
+  "Merged 'Merge Ingredients' and 'Nutrition' into one page, fully
+  autosaving, with a jump-to-recipe link" above for its current form -
+  superseded twice since this entry was first written.
 - **DE/EN localization.** Flask-Babel-based, with English as the default
   UI language and German as a fully translated second language,
   switchable per account under ⚙️ → 👤 Account (`User.language`, see
