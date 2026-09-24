@@ -29,8 +29,15 @@ def test_static_files_reachable_without_identity_header(app):
 def test_first_request_with_new_email_auto_provisions_a_user(app):
     from models import User
 
-    resp = app.test_client().get("/", headers={"Remote-Email": "neu@test.local", "Remote-Name": "Neu"})
-    assert resp.status_code == 302  # zero-plan gate redirect, same as before
+    # zero-plan gate lands on the "no plan yet" page - follow_redirects
+    # since whether that's a direct 200 or one 302 hop first depends on
+    # whether today happens to already be a Friday (routes/plan/pages.py:
+    # index() -> week_view(), which redirects to the canonical Friday URL
+    # only when date.today() isn't already one).
+    resp = app.test_client().get(
+        "/", headers={"Remote-Email": "neu@test.local", "Remote-Name": "Neu"}, follow_redirects=True
+    )
+    assert resp.status_code == 200
 
     with app.app_context():
         user = User.query.filter_by(email="neu@test.local").first()

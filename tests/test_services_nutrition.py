@@ -159,6 +159,39 @@ def test_infer_reference_unit_defaults_to_g_when_unused(app, test_plan_id):
         assert infer_reference_unit(test_plan_id, "Nie Verwendet") == "g"
 
 
+def test_infer_reference_units_for_plan_matches_single_name_version(app, test_plan_id, make_recipe):
+    """Bulk counterpart to infer_reference_unit() above (see
+    routes/settings.py: ingredient_aliases_view() - computing this once
+    per plan instead of once per row was the fix for a real production
+    incident, see tests/test_routes_settings_ingredient_aliases.py:
+    test_ingredient_aliases_view_query_count_does_not_scale_with_ingredient_count).
+    Must agree with the single-name version for every name it covers."""
+    from services.ingredient_aliases import set_alias
+    from services.nutrition import infer_reference_units_for_plan
+
+    make_recipe("A", ingredients=[{"name": "Zucker", "amount": 100, "unit": "g"}])
+    make_recipe("B", ingredients=[{"name": "Sahne", "amount": 200, "unit": "ml"}])
+    make_recipe("C", ingredients=[{"name": "Frühlingszwiebel", "amount": 1, "unit": "Bund"}])
+    make_recipe("D", ingredients=[{"name": "Olivenöl", "amount": 2, "unit": "EL"}])
+    with app.app_context():
+        set_alias(test_plan_id, "Olivenöl", "Öl")
+
+        units = infer_reference_units_for_plan(test_plan_id)
+        assert units["Zucker"] == "g"
+        assert units["Sahne"] == "ml"
+        assert units["Frühlingszwiebel"] == "Stk"
+        # Resolved through the alias, same as get_nutrition_entry() would.
+        assert units["Öl"] == "ml"
+        assert "Olivenöl" not in units
+
+
+def test_infer_reference_units_for_plan_omits_names_with_no_ingredient_line(app, test_plan_id):
+    from services.nutrition import infer_reference_units_for_plan
+
+    with app.app_context():
+        assert "Nie Verwendet" not in infer_reference_units_for_plan(test_plan_id)
+
+
 def test_compute_recipe_nutrition_basic(app, test_plan_id):
     from services.nutrition import compute_recipe_nutrition, set_nutrition
 

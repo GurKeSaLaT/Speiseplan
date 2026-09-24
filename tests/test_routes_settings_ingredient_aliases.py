@@ -18,6 +18,50 @@ def test_ingredient_aliases_view_empty_state(client):
     assert "No ingredients yet.".encode("utf-8") in resp.data
 
 
+def test_ingredient_aliases_view_query_count_does_not_scale_with_ingredient_count(client, app, make_recipe):
+    """Regression test for a real production incident (2026-09-25): a
+    page load with ~400 known ingredients took 34 SECONDS. Cause: this
+    view called the single-name services/nutrition.py:
+    infer_reference_unit() once per row without an existing nutrition
+    entry - each call did its own full scan of every visible ingredient
+    PLUS one alias-resolving query per ingredient inside that scan. That
+    was already wasteful for the old, separate nutrition page (which
+    only ever covered the usually-few alias TARGETS), but turned into a
+    real O(rows x ingredients) query explosion once this page started
+    covering every unaliased "other" ingredient too. Fixed via
+    services/nutrition.py: infer_reference_units_for_plan(), which
+    computes the guess for every canonical name in ONE pass. Asserts the
+    number of SQL statements issued stays a small, bounded constant
+    regardless of how many ingredients exist, rather than scaling with
+    them - a purely functional/timing-based test wouldn't have caught
+    this at all (both the buggy and fixed version return the exact same
+    page content, just at wildly different speeds)."""
+    from sqlalchemy import event
+    from models import db
+
+    for i in range(40):
+        make_recipe(f"Rezept {i}", ingredients=[{"name": f"Zutat {i}", "amount": 100, "unit": "g"}])
+
+    queries = []
+
+    def _count(conn, cursor, statement, parameters, context, executemany):
+        queries.append(statement)
+
+    with app.app_context():
+        engine = db.engine
+        event.listen(engine, "before_cursor_execute", _count)
+        try:
+            resp = client.get("/manage/ingredient-aliases")
+        finally:
+            event.remove(engine, "before_cursor_execute", _count)
+
+    assert resp.status_code == 200
+    # A handful of queries total (aliases/entries/known-names/inferred-units/
+    # plan-membership lookups, ...), NOT one extra query per ingredient -
+    # comfortably under the 40 "other" rows just created either way.
+    assert len(queries) < 25
+
+
 def test_ingredient_aliases_view_groups_main_ingredient_with_nested_aliases(client, app, make_recipe):
     from services.ingredient_aliases import set_alias
 

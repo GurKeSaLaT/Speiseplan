@@ -40,7 +40,8 @@ from services.ingredient_aliases import (
     get_all_aliases, list_known_ingredient_names, normalize_ingredient_name, normalize_name, set_alias,
 )
 from services.nutrition import (
-    compute_calories, get_all_nutrition_entries, infer_reference_unit, list_alias_canonical_names, set_nutrition,
+    compute_calories, get_all_nutrition_entries, infer_reference_units_for_plan, list_alias_canonical_names,
+    set_nutrition,
 )
 from services.settings import get_settings, update_display_units
 from services.shopping import infer_category, infer_is_pantry
@@ -76,19 +77,28 @@ def update_units():
     return redirect(url_for('settings.units_view', plan_id=plan_id))
 
 
-def _nutrition_row(plan_id, entries, name):
+def _nutrition_row(entries, inferred_units, name):
     """Builds the nutrition-editing fields shared by both a "main
     ingredient" card and a standalone "other ingredient" card (see
     ingredient_aliases_view() below) - pre-filled with the maintained
     entry or, without one yet, sensible defaults (see
     ingredient_nutrition_view() formerly here, now folded into this one
-    view)."""
+    view).
+
+    inferred_units is the WHOLE-PLAN guess computed once by
+    ingredient_aliases_view() (services/nutrition.py:
+    infer_reference_units_for_plan()) - calling the single-name
+    infer_reference_unit() here instead, once per row, used to mean a
+    full ingredient scan (with an alias-resolving query inside it) PER
+    ROW, which became a genuine multi-second page load once this
+    function started running for every unaliased ingredient too, not
+    just the (usually far fewer) alias targets (see git history)."""
     entry = entries.get(name)
     protein = entry["protein"] if entry else 0
     carbs = entry["carbs"] if entry else 0
     fat = entry["fat"] if entry else 0
     return {
-        "reference_unit": entry["reference_unit"] if entry else infer_reference_unit(plan_id, name),
+        "reference_unit": entry["reference_unit"] if entry else inferred_units.get(name, 'g'),
         "calories": compute_calories(protein, carbs, fat),
         "protein": protein,
         "carbs": carbs,
@@ -125,6 +135,7 @@ def ingredient_aliases_view():
 
     aliases = get_all_aliases(plan_id)
     entries = get_all_nutrition_entries(plan_id)
+    inferred_units = infer_reference_units_for_plan(plan_id)
     main_names = list_alias_canonical_names(plan_id)
 
     aliased_raw_names_by_target = {}
@@ -135,7 +146,7 @@ def ingredient_aliases_view():
         {
             "canonical_name": name,
             "aliases": sorted(aliased_raw_names_by_target.get(name, [])),
-            **_nutrition_row(plan_id, entries, name),
+            **_nutrition_row(entries, inferred_units, name),
         }
         for name in main_names
     ]
@@ -143,7 +154,7 @@ def ingredient_aliases_view():
     main_name_set = set(main_names)
     aliased_raw_names = set(aliases.keys())
     other_rows = [
-        {"raw_name": name, **_nutrition_row(plan_id, entries, name)}
+        {"raw_name": name, **_nutrition_row(entries, inferred_units, name)}
         for name in list_known_ingredient_names(plan_id)
         if name not in main_name_set and name not in aliased_raw_names
     ]

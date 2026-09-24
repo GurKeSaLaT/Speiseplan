@@ -51,7 +51,7 @@ contradict the other three values.
 from collections import Counter
 
 from models import Ingredient, IngredientAlias, IngredientNutrition, db
-from services.ingredient_aliases import normalize_ingredient_name
+from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name, normalize_name
 from services.recipe_visibility import visible_recipe_ids_subquery
 from services.units import NON_CONVERTIBLE_UNITS, normalize_amount_unit
 
@@ -174,6 +174,44 @@ def infer_reference_unit(plan_id, canonical_name):
     if not families:
         return 'g'
     return Counter(families).most_common(1)[0][0]
+
+
+def infer_reference_units_for_plan(plan_id):
+    """Bulk counterpart to infer_reference_unit() above - guesses a
+    default reference unit for EVERY canonical ingredient name that
+    occurs in a recipe visible for plan_id, in ONE pass over the plan's
+    ingredients (resolving aliases via a single, already-fetched
+    get_all_aliases() dict lookup) instead of one full ingredient scan
+    PLUS one alias-resolving query PER ingredient PER canonical name.
+
+    This exists because routes/settings.py: ingredient_aliases_view()
+    needs a guess for potentially every known ingredient in the plan at
+    once (main ingredients AND every unaliased "other" ingredient) -
+    calling infer_reference_unit() in a loop there was an accidental
+    O(names x ingredients) scan with a DB query inside the inner loop,
+    which went from merely wasteful to a genuine multi-second page load
+    once the page started covering every unaliased ingredient too, not
+    just the (usually far fewer) alias targets.
+
+    Returns {canonical_name: "g"|"ml"|"Stk"} for every canonical name
+    that occurs at all - a name with no matching ingredient line (e.g. a
+    freshly created alias target nobody has used yet) simply has no key
+    here; callers fall back to "g" themselves, exactly like
+    infer_reference_unit() does for that same case."""
+    aliases = get_all_aliases(plan_id)
+    visible_ingredients = Ingredient.query.filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
+
+    families_by_name = {}
+    for ing in visible_ingredients:
+        canonical = aliases.get(normalize_name(ing.name), normalize_name(ing.name))
+        _, unit = normalize_amount_unit(1, ing.unit)
+        family = unit if unit in ('g', 'ml') else 'Stk'
+        families_by_name.setdefault(canonical, []).append(family)
+
+    return {
+        name: Counter(families).most_common(1)[0][0]
+        for name, families in families_by_name.items()
+    }
 
 
 def compute_recipe_nutrition(plan_id, ingredient_rows, servings):
