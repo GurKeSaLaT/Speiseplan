@@ -90,7 +90,7 @@
                     {% if main_groups %}
                     <div class="d-flex flex-column gap-3">
                         {% for group in main_groups %}
-                        <div class="ingredient-card main-ingredient-row" data-search="{{ group.canonical_name }} {{ group.aliases | map(attribute='name') | join(' ') }}">
+                        <div class="ingredient-card main-ingredient-row" data-row-key="main:{{ group.canonical_name }}" data-search="{{ group.canonical_name }} {{ group.aliases | map(attribute='name') | join(' ') }}">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <div class="fw-bold fs-5">{{ recipe_link(group.canonical_name, group.recipes, plan_id) }}</div>
                                 <span class="badge-count">{{ group.aliases|length }} {{ _('ingredient') if group.aliases|length == 1 else _('ingredients') }}</span>
@@ -133,7 +133,7 @@
                     {% if other_rows %}
                     <div class="d-flex flex-column gap-3">
                         {% for row in other_rows %}
-                        <div class="ingredient-card other-ingredient-row" data-search="{{ row.raw_name }}">
+                        <div class="ingredient-card other-ingredient-row" data-row-key="other:{{ row.raw_name }}" data-search="{{ row.raw_name }}">
                             <div class="fw-bold fs-5 mb-2">{{ recipe_link(row.raw_name, row.recipes, plan_id) }}</div>
 
                             <div class="nutrition-block{% if not row.has_entry %} text-muted{% endif %}" data-nutrition-name="{{ row.raw_name }}">
@@ -175,83 +175,6 @@
 <script>
 const INGREDIENTS_PLAN_ID = {{ plan_id | tojson }};
 
-/** Wires up everything inside .card-body: subtab switching, the search
- * filter, and the nutrition/alias-removal/"counts as" autosave handlers.
- * Called once on page load AND again after refreshIngredientsContent()
- * swaps in freshly fetched markup - re-querying the DOM fresh each time
- * means it works identically for elements that were just parsed in as
- * for the ones the server rendered on first load. */
-function wireIngredientsPage() {
-    // Sub-tab switching - both contents stay in the DOM the whole time,
-    // only .d-none toggles which one is visible.
-    document.querySelectorAll('.ingredient-subtab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.ingredient-subtab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const isMain = btn.dataset.subtab === 'main';
-            document.getElementById('mainSubtabContent')?.classList.toggle('d-none', !isMain);
-            document.getElementById('otherSubtabContent')?.classList.toggle('d-none', isMain);
-        });
-    });
-
-    // Search filters whichever sub-tab is currently visible, across the
-    // ingredient's own name AND (for main ingredients) its merged
-    // spellings (see data-search on .ingredient-card).
-    wireFuzzyFilter(
-        document.getElementById('ingredientFilter'), '.ingredient-card',
-        row => row.dataset.search
-    );
-
-    wireIngredientNutritionBlocks();
-    wireAliasRemoveButtons();
-    wireCountsAsInputs();
-}
-
-/** Re-fetches this same page in the background and swaps the whole
- * .card-body content in place of window.location.reload() - removing an
- * alias or re-pointing "Counts as" can move a row between sub-tabs
- * (possibly creating/dissolving a whole group), which needs a fresh
- * server render to get right, but an actual page navigation reset the
- * scroll position back to the top and lost which sub-tab/search filter
- * the user had active, defeating the point of autosaving in the first
- * place (reported live). Since nothing here is an actual navigation, the
- * browser's scroll position is simply never touched - no manual restore
- * needed, unlike the sub-tab/filter selection below, which IS pure
- * client-side state that a fresh server render otherwise wipes back to
- * its defaults (main tab, empty filter). */
-function refreshIngredientsContent() {
-    const activeSubtab = document.querySelector('.ingredient-subtab-btn.active')?.dataset.subtab;
-    const filterValue = document.getElementById('ingredientFilter')?.value || '';
-
-    return fetch(window.location.href)
-        .then(response => {
-            if (!response.ok) throw new Error('refresh failed');
-            return response.text();
-        })
-        .then(html => {
-            const freshBody = new DOMParser().parseFromString(html, 'text/html').querySelector('.card-body');
-            const currentBody = document.querySelector('.card-body');
-            if (!freshBody || !currentBody) throw new Error('unexpected markup');
-            currentBody.innerHTML = freshBody.innerHTML;
-
-            wireIngredientsPage();
-
-            if (activeSubtab) {
-                document.querySelector(`.ingredient-subtab-btn[data-subtab="${activeSubtab}"]`)?.click();
-            }
-            const filterInput = document.getElementById('ingredientFilter');
-            if (filterInput && filterValue) {
-                filterInput.value = filterValue;
-                filterInput.dispatchEvent(new Event('input'));
-            }
-        })
-        // A real error (network/server) is the one case an actual reload
-        // is still the right fallback - better a lost scroll position
-        // than a page stuck showing data that may no longer match the
-        // database.
-        .catch(() => window.location.reload());
-}
-
 /** Everything below autosaves - no Save button anywhere on this page.
  * Reuses the exact same AJAX endpoints the recipe form's inline hint
  * already calls (static/ingredient_alias_hint.js), just always with an
@@ -274,45 +197,78 @@ function showAutosaveResult(indicatorEl, ok) {
     setTimeout(() => { indicatorEl.textContent = ''; indicatorEl.className = 'autosave-indicator'; }, 2000);
 }
 
+// Subtab switching and the search filter are wired ONCE, right here at
+// the bottom of this script - #ingredientFilter and the subtab buttons
+// themselves are never recreated (see refreshIngredientsContent() below,
+// which patches only the individual .ingredient-card rows that actually
+// changed, nothing outside them), so there is nothing to re-wire later.
+document.querySelectorAll('.ingredient-subtab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.ingredient-subtab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const isMain = btn.dataset.subtab === 'main';
+        document.getElementById('mainSubtabContent')?.classList.toggle('d-none', !isMain);
+        document.getElementById('otherSubtabContent')?.classList.toggle('d-none', isMain);
+    });
+});
+wireFuzzyFilter(
+    document.getElementById('ingredientFilter'), '.ingredient-card',
+    row => row.dataset.search
+);
+
+/** Wires the nutrition/alias-removal/"counts as" autosave handlers for
+ * ONE .ingredient-card - called once per row rendered on initial page
+ * load, and again for any row refreshIngredientsContent() below inserts
+ * or replaces. A row it decides is UNCHANGED keeps its existing,
+ * already-wired DOM node untouched (never passed back through here
+ * again), so this never double-attaches a listener to the same element. */
+function wireIngredientCard(card) {
+    const block = card.querySelector('.nutrition-block');
+    if (block) wireNutritionBlock(block);
+
+    card.querySelectorAll('.alias-remove-btn').forEach(wireAliasRemoveButton);
+
+    const countsAsInput = card.querySelector('.counts-as-input');
+    if (countsAsInput) wireCountsAsInput(countsAsInput);
+}
+
 // Nutrition fields: save on change (blur/selection, not per keystroke),
 // live kcal display (Atwater rule of thumb 4/4/9 kcal per g, same
 // formula as services/nutrition.py: compute_calories()) either way.
 // Never needs refreshIngredientsContent() - editing nutrition never
 // changes which tab an ingredient belongs to.
-function wireIngredientNutritionBlocks() {
-    document.querySelectorAll('.nutrition-block').forEach(block => {
-        const name = block.dataset.nutritionName;
-        const referenceSelect = block.querySelector('.nutrition-reference');
-        const proteinInput = block.querySelector('.nutrition-protein');
-        const carbsInput = block.querySelector('.nutrition-carbs');
-        const fatInput = block.querySelector('.nutrition-fat');
-        const caloriesDisplay = block.querySelector('.nutrition-calories-display');
-        const indicator = block.querySelector('.autosave-indicator');
+function wireNutritionBlock(block) {
+    const name = block.dataset.nutritionName;
+    const referenceSelect = block.querySelector('.nutrition-reference');
+    const proteinInput = block.querySelector('.nutrition-protein');
+    const carbsInput = block.querySelector('.nutrition-carbs');
+    const fatInput = block.querySelector('.nutrition-fat');
+    const caloriesDisplay = block.querySelector('.nutrition-calories-display');
+    const indicator = block.querySelector('.autosave-indicator');
 
-        function recalcCalories() {
-            const protein = parseFloat(proteinInput.value) || 0;
-            const carbs = parseFloat(carbsInput.value) || 0;
-            const fat = parseFloat(fatInput.value) || 0;
-            caloriesDisplay.textContent = Math.round(protein * 4 + carbs * 4 + fat * 9);
-        }
+    function recalcCalories() {
+        const protein = parseFloat(proteinInput.value) || 0;
+        const carbs = parseFloat(carbsInput.value) || 0;
+        const fat = parseFloat(fatInput.value) || 0;
+        caloriesDisplay.textContent = Math.round(protein * 4 + carbs * 4 + fat * 9);
+    }
 
-        function save() {
-            recalcCalories();
-            postJson('/api/ingredient-nutrition/set', {
-                name: name,
-                reference_unit: referenceSelect.value,
-                protein: proteinInput.value,
-                carbs: carbsInput.value,
-                fat: fatInput.value,
-            }).then(({ ok }) => showAutosaveResult(indicator, ok))
-              .catch(() => showAutosaveResult(indicator, false));
-        }
+    function save() {
+        recalcCalories();
+        postJson('/api/ingredient-nutrition/set', {
+            name: name,
+            reference_unit: referenceSelect.value,
+            protein: proteinInput.value,
+            carbs: carbsInput.value,
+            fat: fatInput.value,
+        }).then(({ ok }) => showAutosaveResult(indicator, ok))
+          .catch(() => showAutosaveResult(indicator, false));
+    }
 
-        proteinInput.addEventListener('input', recalcCalories);
-        carbsInput.addEventListener('input', recalcCalories);
-        fatInput.addEventListener('input', recalcCalories);
-        [referenceSelect, proteinInput, carbsInput, fatInput].forEach(el => el.addEventListener('change', save));
-    });
+    proteinInput.addEventListener('input', recalcCalories);
+    carbsInput.addEventListener('input', recalcCalories);
+    fatInput.addEventListener('input', recalcCalories);
+    [referenceSelect, proteinInput, carbsInput, fatInput].forEach(el => el.addEventListener('change', save));
 }
 
 // Removes a single ingredient from a main ingredient's group (the "×"
@@ -320,10 +276,12 @@ function wireIngredientNutritionBlocks() {
 // mapping when canonical_name == raw_name, see
 // services/ingredient_aliases.py) - exactly like retyping "Counts as"
 // back to the original name. Refreshes on success (see
-// refreshIngredientsContent() above): the removed ingredient (and, if it
+// refreshIngredientsContent() below): the removed ingredient (and, if it
 // was the group's last one, the group itself) needs to move to/appear
 // under "Everything else", which is simplest to get right by
-// re-rendering from the server rather than patching the DOM by hand.
+// re-rendering from the server rather than patching the DOM by hand -
+// but note that this now only replaces the ROWS that actually changed
+// (this one, and whichever group it left/joined), not the whole page.
 //
 // The raw name travels via a data-raw-name attribute (set with a plain,
 // auto-escaped Jinja expression in the template) rather than being
@@ -337,44 +295,127 @@ function wireIngredientNutritionBlocks() {
 // SyntaxError: expected expression, got '}'" - reproduced locally, the
 // rendered attribute was literally onclick=removeAlias(this, followed by
 // an unescaped double quote right where the name started.
-function wireAliasRemoveButtons() {
-    document.querySelectorAll('.alias-remove-btn').forEach(button => {
-        button.addEventListener('click', () => {
-            const rawName = button.dataset.rawName;
-            button.disabled = true;
-            postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
-                .then(({ ok }) => {
-                    if (ok) { refreshIngredientsContent(); return; }
-                    button.disabled = false;
-                    alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
-                })
-                .catch(() => {
-                    button.disabled = false;
-                    alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
-                });
-        });
+function wireAliasRemoveButton(button) {
+    button.addEventListener('click', () => {
+        const rawName = button.dataset.rawName;
+        button.disabled = true;
+        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
+            .then(({ ok }) => {
+                if (ok) { refreshIngredientsContent(); return; }
+                button.disabled = false;
+                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+            })
+            .catch(() => {
+                button.disabled = false;
+                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+            });
     });
 }
 
 // "Counts as" field on an "everything else" row: refreshes on success for
-// the same reason as wireAliasRemoveButtons() above (the row may need to
+// the same reason as wireAliasRemoveButton() above (the row may need to
 // move under "Main Ingredients", possibly creating a brand new group).
-function wireCountsAsInputs() {
-    document.querySelectorAll('.counts-as-input').forEach(input => {
-        const indicator = input.nextElementSibling;
-        input.addEventListener('change', () => {
-            const rawName = input.dataset.rawName;
-            const canonicalName = input.value.trim() || rawName;
-            postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: canonicalName })
-                .then(({ ok }) => {
-                    if (ok && canonicalName !== rawName) { refreshIngredientsContent(); return; }
-                    showAutosaveResult(indicator, ok);
-                })
-                .catch(() => showAutosaveResult(indicator, false));
-        });
+function wireCountsAsInput(input) {
+    const indicator = input.nextElementSibling;
+    input.addEventListener('change', () => {
+        const rawName = input.dataset.rawName;
+        const canonicalName = input.value.trim() || rawName;
+        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: canonicalName })
+            .then(({ ok }) => {
+                if (ok && canonicalName !== rawName) { refreshIngredientsContent(); return; }
+                showAutosaveResult(indicator, ok);
+            })
+            .catch(() => showAutosaveResult(indicator, false));
     });
 }
 
-wireIngredientsPage();
+/** Reconciles ONE sub-tab's rows against a freshly fetched version of
+ * this page (see refreshIngredientsContent() below): rows whose markup
+ * is byte-for-byte identical keep their EXISTING, live DOM node exactly
+ * as-is (so any field a user has focused/is mid-typing in stays
+ * completely untouched, cursor position included, if that row didn't
+ * change) - only rows that are new, removed, or actually changed get
+ * swapped for the freshly rendered version, which is also the only case
+ * wireIngredientCard() needs to run again for.
+ *
+ * If the row LIST container itself doesn't exist on one side (the
+ * "no ingredients / no main ingredients yet" placeholder text instead of
+ * the .d-flex.flex-column.gap-3 wrapper) - i.e. this sub-tab is
+ * transitioning between having some rows and having none - falls back to
+ * replacing the whole sub-tab content wholesale rather than reconciling
+ * row by row: there is nothing meaningful to preserve on the "empty"
+ * side anyway, and this transition is rare (a tab losing/gaining its
+ * very last row). */
+function reconcileIngredientSubtab(containerId, freshDoc) {
+    const currentContainer = document.getElementById(containerId);
+    const freshContainer = freshDoc.getElementById(containerId);
+    if (!currentContainer || !freshContainer) return;
+
+    const currentList = currentContainer.querySelector(':scope > .d-flex');
+    const freshList = freshContainer.querySelector(':scope > .d-flex');
+
+    if (!currentList || !freshList) {
+        currentContainer.innerHTML = freshContainer.innerHTML;
+        currentContainer.querySelectorAll('.ingredient-card').forEach(wireIngredientCard);
+        return;
+    }
+
+    const currentRowsByKey = new Map();
+    currentList.querySelectorAll(':scope > .ingredient-card').forEach(row => {
+        currentRowsByKey.set(row.dataset.rowKey, row);
+    });
+
+    const finalRows = Array.from(freshList.querySelectorAll(':scope > .ingredient-card')).map(freshRow => {
+        const existingRow = currentRowsByKey.get(freshRow.dataset.rowKey);
+        if (existingRow && existingRow.outerHTML === freshRow.outerHTML) return existingRow;
+        wireIngredientCard(freshRow);
+        return freshRow;
+    });
+
+    currentList.replaceChildren(...finalRows);
+}
+
+/** Re-fetches this same page in the background and reconciles both
+ * sub-tabs' rows against it (see reconcileIngredientSubtab() above) -
+ * removing an alias or re-pointing "Counts as" can move a row between
+ * sub-tabs (possibly creating/dissolving a whole group), which needs a
+ * fresh server render to get right, but a REAL page navigation
+ * (window.location.reload()) reset the scroll position to the top and
+ * lost whichever sub-tab/search filter was active, defeating the point
+ * of autosaving in the first place (reported live) - and even swapping
+ * the ENTIRE page content in one go (an earlier version of this
+ * function) still destroyed and recreated every row, losing focus/cursor
+ * in whatever OTHER, completely unrelated field the user had already
+ * clicked into next (reported live too). Reconciling row by row fixes
+ * both: nothing here is an actual navigation, so scroll position is
+ * simply never touched, and an unrelated row's DOM node - and thus its
+ * focus/cursor - is never touched either, since only rows that actually
+ * changed get swapped out. */
+function refreshIngredientsContent() {
+    return fetch(window.location.href)
+        .then(response => {
+            if (!response.ok) throw new Error('refresh failed');
+            return response.text();
+        })
+        .then(html => {
+            const freshDoc = new DOMParser().parseFromString(html, 'text/html');
+            reconcileIngredientSubtab('mainSubtabContent', freshDoc);
+            reconcileIngredientSubtab('otherSubtabContent', freshDoc);
+
+            const freshMainBadge = freshDoc.querySelector('.ingredient-subtab-btn[data-subtab="main"] .badge');
+            const freshOtherBadge = freshDoc.querySelector('.ingredient-subtab-btn[data-subtab="other"] .badge');
+            const mainBadge = document.querySelector('.ingredient-subtab-btn[data-subtab="main"] .badge');
+            const otherBadge = document.querySelector('.ingredient-subtab-btn[data-subtab="other"] .badge');
+            if (freshMainBadge && mainBadge) mainBadge.textContent = freshMainBadge.textContent;
+            if (freshOtherBadge && otherBadge) otherBadge.textContent = freshOtherBadge.textContent;
+        })
+        // A real error (network/server) is the one case an actual reload
+        // is still the right fallback - better a lost scroll position
+        // than a page stuck showing data that may no longer match the
+        // database.
+        .catch(() => window.location.reload());
+}
+
+document.querySelectorAll('.ingredient-card').forEach(wireIngredientCard);
 </script>
 {% endblock %}

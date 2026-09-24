@@ -85,6 +85,27 @@ def test_ingredient_aliases_view_groups_main_ingredient_with_nested_aliases(clie
     assert b"Fusilli" in resp.data
 
 
+def test_ingredient_aliases_view_rows_carry_a_stable_row_key(client, app, make_recipe):
+    """Each .ingredient-card carries data-row-key="main:<canonical>" or
+    "other:<raw_name>" - static/... 's inline script (see
+    reconcileIngredientSubtab()) uses this to tell which rows are
+    genuinely unchanged after an autosave-triggered refresh (and can keep
+    their existing, already-focused DOM node untouched) from ones that
+    are new/removed/changed and need to be swapped for a freshly rendered
+    version."""
+    from services.ingredient_aliases import set_alias
+
+    make_recipe("A", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
+    make_recipe("B", ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
+    with app.app_context():
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    assert b'data-row-key="main:Nudeln"' in resp.data
+    assert b'data-row-key="other:Reis"' in resp.data
+
+
 def test_ingredient_aliases_view_main_ingredient_has_nutrition_fields(client, app, make_recipe):
     from services.ingredient_aliases import set_alias
     from services.nutrition import set_nutrition

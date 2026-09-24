@@ -78,17 +78,31 @@ Backlog for future features - not yet implemented, just collected.
 
   A third issue was UX rather than a bug: removing an alias or
   re-pointing "Counts as" used `window.location.reload()` to get a fresh
-  server render of which sub-tab/group a row now belongs to - a REAL
-  page navigation, which reset the scroll position to the top and lost
-  whichever sub-tab/search filter the user had active, defeating the
-  point of autosaving in the first place. Replaced with
-  `refreshIngredientsContent()`: fetches this same page in the
-  background and swaps the whole `.card-body` markup in place, then
-  re-wires it (`wireIngredientsPage()`, now a reusable function called
-  both on initial load and after every refresh) and restores the
-  previously active sub-tab/search text. Since nothing here is an actual
-  navigation, the scroll position is simply never touched - no manual
-  restore needed for that part.
+  server render of which sub-tab/group a row now belongs to - a REAL page
+  navigation, which reset the scroll position to the top and lost
+  whichever sub-tab/search filter was active, defeating the point of
+  autosaving in the first place. An in-between fix (fetch the page in the
+  background and swap the WHOLE `.card-body` in place instead of
+  navigating) removed the scroll-jump but introduced a second live-
+  reported issue of its own: jumping from the field that triggered the
+  save into a completely unrelated NEXT field still lost focus/cursor
+  there, since replacing that much markup destroys and recreates every
+  row regardless of whether it actually changed.
+
+  Fixed properly with row-level reconciliation instead
+  (`reconcileIngredientSubtab()`): each `.ingredient-card` now carries a
+  stable `data-row-key` (`main:<canonical name>` / `other:<raw name>`);
+  `refreshIngredientsContent()` fetches the page, and for each sub-tab
+  compares every row's `outerHTML` between the current DOM and the fresh
+  fetch - a row that comes back byte-for-byte identical keeps its
+  EXISTING, already-wired DOM node completely untouched (so any field a
+  user has focused, cursor position included, survives if that row
+  itself didn't change), and only rows that are new, removed, or
+  genuinely different get swapped for the freshly rendered version and
+  re-wired. Since nothing here is an actual navigation either, scroll
+  position was never at risk in the first place, on top of now also
+  preserving focus in every row unrelated to whatever triggered the
+  save.
 
 - **Automatic cleanup of orphaned ingredient aliases.** An `IngredientAlias`
   row is a plain string mapping (`raw_name` -> `canonical_name`),
