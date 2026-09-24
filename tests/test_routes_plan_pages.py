@@ -492,7 +492,7 @@ def test_other_plan_meals_empty_when_no_other_plan_has_a_dish(app, client, make_
     assert plan_data["otherPlanMeals"] == [[], [], [], [], [], [], []]
 
 
-def test_other_plan_meals_respects_per_membership_overview_flag(app, client, make_recipe, make_user):
+def test_other_plan_meals_respects_per_membership_overview_flag(app, client, make_recipe, make_user, login_as):
     """show_in_week_overview applies individually PER USER (models/plan.py:
     PlanMembership) - if client turns off their own membership in a
     shared plan from the overview, that has no effect on an OTHER
@@ -513,9 +513,8 @@ def test_other_plan_meals_respects_per_membership_overview_flag(app, client, mak
     resp = client.get(f"/plan/{friday.isoformat()}")
     assert _extract_plan_data(resp)["otherPlanMeals"][0] == []
 
-    user_b_client = app.test_client()
+    user_b_client = login_as(user_b_id)
     with user_b_client.session_transaction() as sess:
-        sess['user_id'] = user_b_id
         sess['active_plan_id'] = user_b_own_plan_id
     resp_b = user_b_client.get(f"/plan/{friday.isoformat()}")
     other_meals_b = _extract_plan_data(resp_b)["otherPlanMeals"][0]

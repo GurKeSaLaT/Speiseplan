@@ -3,13 +3,6 @@ the zero-plan gate in app.py: require_login() - since plans are decoupled
 from accounts, "no plan at all" is a normal, reachable state."""
 
 
-def _login_as(app, user_id):
-    test_client = app.test_client()
-    with test_client.session_transaction() as sess:
-        sess['user_id'] = user_id
-    return test_client
-
-
 # --- /plan/create ---
 
 def test_create_plan_switches_active_plan_and_redirects(client):
@@ -58,7 +51,7 @@ def test_delete_plan_requires_membership(app, client, make_user):
         assert db.session.get(Plan, other_plan_id) is not None
 
 
-def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
+def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_user, login_as):
     """Any member may delete, not just the owner (see
     models/plan.py: Plan docstring - owner_user_id doesn't grant any special
     rights)."""
@@ -69,7 +62,7 @@ def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_use
         db.session.add(PlanMembership(plan_id=client.plan_id, user_id=other_user_id, is_starred=False))
         db.session.commit()
 
-    other_client = _login_as(app, other_user_id)
+    other_client = login_as(other_user_id)
     resp = other_client.post(f"/plan/{client.plan_id}/delete", follow_redirects=False)
     assert resp.status_code == 302
 
@@ -106,7 +99,7 @@ def test_delete_active_plan_switches_to_remaining_membership(app, client):
 
 # --- Zero-Plan-Gate (app.py: require_login) ---
 
-def test_user_without_any_plan_is_redirected_to_plan_index(app, make_user):
+def test_user_without_any_plan_is_redirected_to_plan_index(app, make_user, login_as):
     from models import PlanMembership, User, db
 
     user_id, plan_id = make_user("Planlos")
@@ -114,13 +107,13 @@ def test_user_without_any_plan_is_redirected_to_plan_index(app, make_user):
         PlanMembership.query.filter_by(user_id=user_id).delete()
         db.session.commit()
 
-    planless_client = _login_as(app, user_id)
+    planless_client = login_as(user_id)
     resp = planless_client.get("/manage/sharing", follow_redirects=False)
     assert resp.status_code == 302
     assert resp.headers["Location"] == "/"
 
 
-def test_user_without_any_plan_can_still_reach_create_and_logout(app, make_user):
+def test_user_without_any_plan_can_still_reach_create_and_logout(app, make_user, login_as):
     from models import PlanMembership, db
 
     user_id, plan_id = make_user("Planlos2")
@@ -128,7 +121,7 @@ def test_user_without_any_plan_can_still_reach_create_and_logout(app, make_user)
         PlanMembership.query.filter_by(user_id=user_id).delete()
         db.session.commit()
 
-    planless_client = _login_as(app, user_id)
+    planless_client = login_as(user_id)
     resp = planless_client.post("/plan/create", data={"name": "Endlich ein Plan"}, follow_redirects=False)
     assert resp.status_code == 302
 
@@ -158,7 +151,7 @@ def test_rename_plan_ignores_blank_name(app, client):
         assert db.session.get(Plan, client.plan_id).name == original_name
 
 
-def test_rename_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
+def test_rename_plan_allowed_for_any_member_not_just_owner(app, client, make_user, login_as):
     from models import Plan, PlanMembership, db
 
     other_user_id, _ = make_user("Mitbewohner")
@@ -166,7 +159,7 @@ def test_rename_plan_allowed_for_any_member_not_just_owner(app, client, make_use
         db.session.add(PlanMembership(plan_id=client.plan_id, user_id=other_user_id, is_starred=False))
         db.session.commit()
 
-    other_client = _login_as(app, other_user_id)
+    other_client = login_as(other_user_id)
     resp = other_client.post(f"/plan/{client.plan_id}/rename", data={"name": "Von Mitbewohner umbenannt"})
     assert resp.status_code == 302
 

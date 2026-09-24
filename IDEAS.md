@@ -228,6 +228,21 @@ Backlog for future features - not yet implemented, just collected.
   language. Small, low-traffic surface; building a second i18n path for
   JS wasn't judged worth it yet.
 
+## Implemented (continued)
+
+- **Authelia-based authentication.** This app no longer has its own login/
+  registration/password (see `services/auth.py` module docstring) - it
+  runs behind Authelia as a forward-auth check in front of the reverse
+  proxy (SWAG/nginx on the home server), which attaches the authenticated
+  identity to every request via `Remote-Email`/`Remote-Name` headers.
+  `current_user()` auto-provisions a `User` row the first time a given
+  email is seen and keeps the display name in sync on every request.
+  `User.password_hash` was dropped entirely (`migrations.py:
+  _migrate_drop_user_password_hash_column()`). This retires two of the
+  three items previously listed below under "waiting on real email
+  delivery" - password reset and email verification are now Authelia's
+  problem, not this app's.
+
 ## Waiting on real email delivery
 
 Everything here only becomes worth implementing once `services/mail.py`
@@ -239,12 +254,3 @@ there - no SMTP credentials in place yet).
    actual invite email (`send_invite_email()`) is only logged and
    additionally shown as a copyable link on the sharing page (see
    `templates/sharing.html`: "Pending invites").
-2. **Password reset via email.** There is currently no "forgot password"
-   feature - a forgotten password can't be reset anywhere by yourself.
-   Would need a time-limited reset link sent by email (analogous to the
-   invite-link mechanism).
-3. **Email verification on registration.** `routes/auth.py: register()`
-   currently only checks the entered address for rough shape
-   (`services/auth.py: EMAIL_PATTERN`), not actual deliverability - a
-   confirmation link wouldn't be worth implementing without real email
-   delivery.

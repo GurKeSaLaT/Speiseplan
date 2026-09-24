@@ -4,13 +4,6 @@ and services/auth.py: current_plan()."""
 from datetime import date
 
 
-def _login_as(app, user_id):
-    test_client = app.test_client()
-    with test_client.session_transaction() as sess:
-        sess['user_id'] = user_id
-    return test_client
-
-
 def _email_for(app, user_id):
     from models import User, db
     with app.app_context():
@@ -23,7 +16,7 @@ def test_sharing_view_lists_owner_as_member(client):
     assert b"Testnutzer" in resp.data
 
 
-def test_invite_member_grants_full_access(app, client, make_user):
+def test_invite_member_grants_full_access(app, client, make_user, login_as):
     """An invited user immediately gets full access (without any
     confirmation step) - can e.g. fill in a plan day right away."""
     other_id, _ = make_user("Mitbewohner")
@@ -35,7 +28,7 @@ def test_invite_member_grants_full_access(app, client, make_user):
     with app.app_context():
         assert PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=other_id).first() is not None
 
-    other_client = _login_as(app, other_id)
+    other_client = login_as(other_id)
     with other_client.session_transaction() as sess:
         sess['active_plan_id'] = client.plan_id
     resp = other_client.post("/day/2026-06-15/servings", json={"servings": 4})
@@ -67,10 +60,9 @@ def test_invite_stars_first_membership_for_user_with_no_plan_yet(app, client):
     is_starred=False, mirrors the is_first check in services/plans.py:
     create_plan()/accept_pending_invites() now)."""
     from models import User, PlanMembership, db
-    from services.auth import hash_password
 
     with app.app_context():
-        user = User(name="Ohne Plan", email="ohne-plan@example.com", password_hash=hash_password("test"))
+        user = User(name="Ohne Plan", email="ohne-plan@example.com")
         db.session.add(user)
         db.session.commit()
         other_id = user.id
@@ -316,7 +308,9 @@ def test_invite_unknown_email_shows_up_as_pending_on_sharing_page(client):
     client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
     resp = client.get("/manage/sharing")
     assert b"neu@test.local" in resp.data
-    assert b"/register" in resp.data
+    # No registration link anymore - just points at the app itself (see
+    # routes/sharing.py: invite_member()).
+    assert b'value="http://localhost/"' in resp.data
 
 
 def test_invite_rejects_malformed_email(app, client):
@@ -328,15 +322,16 @@ def test_invite_rejects_malformed_email(app, client):
         assert PendingPlanInvite.query.count() == 0
 
 
-def test_registering_with_invited_email_auto_joins_plan(app, client):
-    """The actual core of the invitation flow: if someone later
-    registers with EXACTLY the invited email, the PlanMembership is
-    created immediately - without the client having to act again."""
+def test_first_authentication_with_invited_email_auto_joins_plan(app, client):
+    """The actual core of the invitation flow: if EXACTLY the invited
+    email later authenticates via Authelia for the first time, the
+    PlanMembership is created immediately - without the client having to
+    act again (see services/auth.py: current_user())."""
     client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
 
     test_client = app.test_client()
-    resp = test_client.post("/register", data={"name": "Neu", "email": "neu@test.local", "password": "geheim123", "confirm_password": "geheim123"})
-    assert resp.status_code == 302
+    resp = test_client.get("/", headers={"Remote-Email": "neu@test.local", "Remote-Name": "Neu"})
+    assert resp.status_code == 200
 
     from models import PendingPlanInvite, PlanMembership, User
     with app.app_context():
@@ -348,12 +343,10 @@ def test_registering_with_invited_email_auto_joins_plan(app, client):
         assert membership.is_starred is True
         assert PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first() is None
 
-    # Immediately logged in and lands in the invited plan - "/" is the
-    # cross-plan summary now (routes/plan/pages.py: index()), reachable
-    # directly (200) rather than via a redirect, as long as the user has
-    # at least one plan (the invited one, in this case).
-    resp = test_client.get("/")
-    assert resp.status_code == 200
+    # Lands in the invited plan right away - "/" is the cross-plan
+    # summary now (routes/plan/pages.py: index()), reachable directly
+    # (200) rather than via a redirect, as long as the user has at least
+    # one plan (the invited one, in this case).
     assert "not a member of any plan".encode("utf-8") not in resp.data
 
 

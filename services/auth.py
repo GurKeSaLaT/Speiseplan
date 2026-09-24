@@ -1,64 +1,112 @@
-"""Login/session management and access to the "active plan".
+"""Identity (via Authelia) and access to the "active plan".
 
-Deliberately implemented without an extra package such as Flask-Login: the
-app has so far gotten by with four dependencies (see requirements.txt), and
-everything needed - a signed session plus password hashing - is already
-provided by Flask/Werkzeug (app.py: SECRET_KEY signs the same session that
-CSRFProtect also uses).
+Since 2026-09-24 this app no longer has its own login/registration: it runs
+behind Authelia (a forward-auth check baked into the SWAG/nginx reverse
+proxy in front of the home server) - Authelia handles authentication
+entirely, and nginx's auth_request integration attaches the outcome to
+every request as a fixed pair of headers (see AUTHELIA_EMAIL_HEADER/
+AUTHELIA_NAME_HEADER below). This app never sees a password and performs
+NO credential check itself - it only trusts whatever identity the reverse
+proxy attaches to the request, exactly the same trust boundary the app
+previously placed on its own signed Flask session.
 
-current_user()/current_plan() ONLY read from the already-set Flask session
-(session['user_id']/session['active_plan_id']) - actually setting these
-values is handled exclusively by routes/auth.py on login/plan switch.
-login_required() exists as a decorator, but this app does not apply it
-per-route - app.py: require_login() instead protects all routes globally
-via a single @app.before_request hook, except the login page/static files
-(considerably less error-prone than risking forgetting a single route's
-@login_required)."""
+SECURITY ASSUMPTION: this only holds as long as the app is reachable
+EXCLUSIVELY through that proxy chain (SWAG -> Authelia auth_request ->
+this app). nginx's proxy_set_header OVERWRITES any Remote-* header a
+client might try to send itself, so a request can't forge its own
+identity as long as it actually passes through nginx - but this app adds
+no additional check of its own for that. If it were ever exposed directly
+(bypassing the proxy), anyone could set these headers themselves and
+"log in" as anyone.
 
+current_user() auto-provisions a User row the first time a given email is
+seen (Authelia already decided this person may authenticate - there's no
+separate registration step anymore) and keeps the display name in sync
+with Authelia's on every request. current_plan() is unchanged in spirit:
+which PLAN is active is an app-level preference, not an identity concern,
+and still lives in the Flask session (session['active_plan_id'], set here
+and via routes/auth.py: switch_plan())."""
+
+import os
 import re
-from functools import wraps
+from datetime import timedelta
 
-from flask import g, redirect, session, url_for, request
-from werkzeug.security import check_password_hash, generate_password_hash
+from flask import g, request, session
 
 from models import PlanMembership, User, db
+from services.plans import accept_pending_invites
 
-# Rough format check for email addresses (registration, email invitation,
-# profile email change) - no new package like email-validator, in keeping
-# with the existing lean dependency style (see module docstring above).
-# Only checks the rough shape ("something@something.something"), not
-# actual deliverability. ONE shared place instead of a copy per route file.
+# Rough sanity check on the email header value (a misconfigured/empty
+# header should be treated as "not authenticated", not crash on a
+# malformed value) - not a defense against a hostile header, since a
+# header that reaches this app at all is already trusted (see the
+# SECURITY ASSUMPTION above). Also still used to validate the email a
+# plan is shared TO (routes/sharing.py: invite_member()).
 EMAIL_PATTERN = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
+# Which request headers carry the authenticated identity, attached by
+# nginx's auth_request integration with Authelia - matches the
+# LinuxServer.io SWAG "authelia-server.conf" snippet's default
+# proxy_set_header names, which is what's actually deployed in front of
+# this app. Overridable via environment variable only for a differently
+# named proxy setup or for local development without the real proxy chain
+# in front (see README.md: Setup).
+AUTHELIA_EMAIL_HEADER = os.environ.get('AUTHELIA_EMAIL_HEADER', 'Remote-Email')
+AUTHELIA_NAME_HEADER = os.environ.get('AUTHELIA_NAME_HEADER', 'Remote-Name')
 
-def hash_password(raw_password):
-    return generate_password_hash(raw_password)
-
-
-def verify_password(user, raw_password):
-    return check_password_hash(user.password_hash, raw_password)
+# How long the active-plan-switch preference (session['active_plan_id'],
+# see current_plan() below) survives in the browser without a fresh
+# request - set generously since these are private devices on one's own
+# home network. Independent of the Authelia session itself, which this
+# app doesn't manage at all.
+SESSION_LIFETIME = timedelta(days=30)
 
 
 def current_user():
-    """Loads the logged-in user (or None, if there is no valid session) -
-    loaded only once per request, cached via flask.g (g only lives for the
-    duration of ONE request, no caching across requests needed/wanted)."""
-    if 'user_id' not in session:
+    """Resolves the authenticated user for the CURRENT request from the
+    Authelia identity headers (None if the header is missing/malformed -
+    e.g. a request that somehow reached the app without going through the
+    proxy) - loaded/created at most once per request, cached via flask.g
+    (g only lives for the duration of ONE request).
+
+    An email seen for the first time is auto-provisioned as a brand new
+    User (Authelia already decided this person may authenticate) and any
+    pending plan invite for that email is applied immediately (see
+    services/plans.py: accept_pending_invites() - previously done in
+    routes/auth.py: register(), now the natural place for it since this
+    IS the moment a new identity first shows up). An already-known user
+    instead gets their display name re-synced from AUTHELIA_NAME_HEADER
+    whenever it changed, so a rename in Authelia/the identity provider
+    shows up here automatically - there's no manual profile edit for the
+    name anymore."""
+    if hasattr(g, '_current_user'):
+        return g._current_user
+
+    email = (request.headers.get(AUTHELIA_EMAIL_HEADER) or '').strip().lower()
+    if not email or not EMAIL_PATTERN.match(email):
+        g._current_user = None
         return None
-    if not hasattr(g, '_current_user'):
-        g._current_user = db.session.get(User, session['user_id'])
-        # The user ID in the session no longer exists (e.g. a session from
-        # a test account that has since been deleted) - clean up the
-        # session instead of running into a dead end on every further
-        # access.
-        if g._current_user is None:
-            session.clear()
-    return g._current_user
+
+    display_name = (request.headers.get(AUTHELIA_NAME_HEADER) or '').strip() or email.split('@')[0]
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        user = User(name=display_name, email=email)
+        db.session.add(user)
+        db.session.flush()
+        accept_pending_invites(user)
+        db.session.commit()
+    elif user.name != display_name:
+        user.name = display_name
+        db.session.commit()
+
+    g._current_user = user
+    return user
 
 
 def current_plan():
-    """Resolves the logged-in user's currently active plan (None if no one
-    is logged in, or the user - practically never the case, see
+    """Resolves the currently authenticated user's active plan (None if
+    nobody is authenticated, or the user - practically never the case, see
     migrations.py: init_db() - is not yet a member of any plan at all).
 
     Order: 1. the plan last chosen via /plan/switch/<id>
@@ -85,6 +133,7 @@ def current_plan():
 
     g._current_plan = membership.plan if membership else None
     if g._current_plan is not None:
+        session.permanent = True
         session['active_plan_id'] = g._current_plan.id
     return g._current_plan
 
@@ -150,16 +199,3 @@ def default_plan_id(request_args, user):
             return requested
     starred = PlanMembership.query.filter_by(user_id=user.id, is_starred=True).first()
     return starred.plan_id if starred else None
-
-
-def login_required(view):
-    """Not actively used in routing (see module docstring - app.py:
-    require_login() handles this globally) - still present as a standalone
-    decorator in case a single route needs to be protected differently from
-    the global gate (e.g. within an otherwise open blueprint)."""
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if current_user() is None:
-            return redirect(url_for('auth.login', next=request.path))
-        return view(*args, **kwargs)
-    return wrapped

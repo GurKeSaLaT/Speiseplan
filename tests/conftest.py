@@ -49,19 +49,28 @@ def make_user(app):
     the same "Testnutzer" - otherwise a second bare make_user() call in
     the same test (or one that also uses the client fixture, which
     already creates "Testnutzer" internally, see default_plan) would
-    collide with a UNIQUE constraint violation on User.username. With
-    an EXPLICITLY passed name, the behavior stays unchanged."""
+    collide with a UNIQUE constraint violation on User.email. With
+    an EXPLICITLY passed name, the behavior stays unchanged.
+
+    No password anymore (see services/auth.py module docstring) -
+    identity is header-based now, see the client/login_as fixtures
+    below."""
     from models import Plan, PlanMembership, User, db
-    from services.auth import hash_password
 
     counter = {"n": 1}
 
-    def _make(username=None, password="test"):
+    def _make(username=None):
         if username is None:
             counter["n"] += 1
             username = f"Testnutzer{counter['n']}"
+        # A space in username (e.g. "Nutzer B") would otherwise land in
+        # the generated email's local part, which fails
+        # services/auth.py: EMAIL_PATTERN - harmless with the old,
+        # session-only login, but the header-based identity check
+        # re-validates this pattern on every request now.
+        email_local_part = username.lower().replace(' ', '.')
         with app.app_context():
-            user = User(name=username, email=f"{username.lower()}@test.local", password_hash=hash_password(password))
+            user = User(name=username, email=f"{email_local_part}@test.local")
             db.session.add(user)
             db.session.flush()
             plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)
@@ -98,24 +107,43 @@ def test_plan_id(default_plan):
 
 
 @pytest.fixture()
-def client(app, default_plan):
-    """An already logged-in test client: ever since user management was
-    added, app.py: require_login() requires an active session for
-    practically every route, completely independent of what the
-    respective test actually wants to check - login is thus simply
-    another invisible precondition, just like _clean_tables below.
+def login_as(app):
+    """Returns a function that builds a fresh test client already
+    "authenticated" as user_id - the Authelia-header equivalent of the old
+    session-based login helper that used to be duplicated across several
+    test files (recipe/plan sharing, zero-plan gate tests) wherever a
+    SECOND user besides the default `client` fixture is needed (see
+    services/auth.py module docstring: identity is no longer a Flask
+    session concern at all, it's resolved fresh from the Remote-Email
+    header on every request). Sets the header via environ_base so it's
+    attached to every request this client makes, not just the next
+    one."""
+    def _login_as(user_id):
+        from models import User, db
+
+        with app.app_context():
+            email = db.session.get(User, user_id).email
+        test_client = app.test_client()
+        test_client.environ_base['HTTP_REMOTE_EMAIL'] = email
+        test_client.user_id = user_id
+        return test_client
+
+    return _login_as
+
+
+@pytest.fixture()
+def client(login_as, default_plan):
+    """An already "authenticated" test client (see login_as above): ever
+    since app.py: require_login() requires a valid identity header for
+    practically every route, presenting one is thus simply another
+    invisible precondition, just like _clean_tables below.
     client.user_id/client.plan_id (see attributes below) make the
     associated test user/plan accessible for tests that e.g. need to
     create a PlanDay directly via the ORM (PlanDay.plan_id is NOT
-    NULL). Tests that explicitly want to check the NOT-logged-in
-    behavior (redirect to /login) instead build their own, deliberately
-    anonymous client directly via app.test_client() (see
-    tests/test_auth.py)."""
-    test_client = app.test_client()
-    with test_client.session_transaction() as sess:
-        sess['user_id'] = default_plan['user_id']
-        sess['active_plan_id'] = default_plan['plan_id']
-    test_client.user_id = default_plan['user_id']
+    NULL). Tests that explicitly want to check the NOT-authenticated
+    behavior (401) instead build their own, deliberately anonymous client
+    directly via app.test_client() (see tests/test_auth.py)."""
+    test_client = login_as(default_plan['user_id'])
     test_client.plan_id = default_plan['plan_id']
     return test_client
 

@@ -101,7 +101,7 @@ def delete_plan(plan):
     PlanMembership.query.filter_by(plan_id=plan.id).delete()
     # Any still-open invitations TO this plan (models/plan.py: PendingPlanInvite)
     # would otherwise be left pointing at a plan_id that no longer exists -
-    # if someone later registers with exactly that email,
+    # if someone with exactly that email later authenticates via Authelia,
     # accept_pending_invites() would otherwise create a PlanMembership for
     # an already-deleted plan.
     PendingPlanInvite.query.filter_by(plan_id=plan.id).delete()
@@ -111,9 +111,10 @@ def delete_plan(plan):
 
 def accept_pending_invites(user):
     """Converts every still-open PendingPlanInvite for user.email (see the
-    models/plan.py docstring there) into a real PlanMembership - called directly
-    after a new account is created (routes/auth.py: register()), so that
-    registering via an invite link leads immediately to plan membership,
+    models/plan.py docstring there) into a real PlanMembership - called
+    directly after a brand new User row is auto-provisioned
+    (services/auth.py: current_user()), so that a first-time Authelia
+    login for an invited email leads immediately to plan membership,
     without the inviter having to take a second action.
 
     is_starred follows the same criterion as create_plan() above: starred

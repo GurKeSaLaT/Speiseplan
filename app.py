@@ -16,17 +16,17 @@ migrations.py) - just application setup now.
 import os
 import secrets
 
-from flask import Flask, has_request_context, redirect, request, session, url_for
+from flask import Flask, abort, has_request_context, redirect, request, url_for
 from flask_babel import Babel
 from flask_wtf import CSRFProtect
 
 from models import db
 from migrations import init_db
-from services.auth import current_plan, current_user, user_plan_memberships
+from services.auth import current_plan, current_user, user_plan_memberships, SESSION_LIFETIME
 from services.ingredient_aliases import get_all_aliases
 from services.nutrition import get_all_nutrition_entries
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED
-from routes.auth import auth_bp, SESSION_LIFETIME
+from routes.auth import auth_bp
 from routes.plan import plan_bp
 from routes.manage import manage_bp
 from routes.recipes import recipes_bp
@@ -161,28 +161,28 @@ with app.app_context():
 # this same gate again, an infinite loop). plans.create is the only way
 # to get out of the zero-plan state.
 ZERO_PLAN_ALLOWED_ENDPOINTS = {
-    'plan.index', 'plan.week_view', 'plans.create', 'auth.logout',
+    'plan.index', 'plan.week_view', 'plans.create',
     # Profile management doesn't need a plan - a user without any
     # membership must still be able to manage/delete their own account
     # (routes/account.py).
-    'account.account_view', 'account.update_profile_route',
-    'account.update_password_route', 'account.delete_account_route',
+    'account.account_view', 'account.update_language_route', 'account.delete_account_route',
 }
 
 
 @app.before_request
 def require_login():
-    """Globally protects EVERY route except the login/registration page
-    itself and static files (CSS/JS/images) - a single gate point instead
-    of a @login_required decorator on each of the existing routes (see
-    services/auth.py: login_required() for the decorator variant, which is
-    currently not used anywhere in the routing), so that no route stays
-    unprotected by accident.
+    """Globally protects EVERY route except static files (CSS/JS/images) -
+    a single gate point instead of a per-route check, so that no route
+    stays unprotected by accident. There's no login PAGE to redirect to
+    anymore (see services/auth.py module docstring: identity comes from
+    the Authelia headers the reverse proxy attaches to every request) - a
+    request that reaches this app without a valid identity header either
+    bypassed the proxy or the proxy is misconfigured, so it's rejected
+    outright with 401 instead of redirected anywhere.
 
     request.endpoint is None for paths that can't be resolved (e.g. a
     typo in the URL) - those are deliberately let through here, so Flask
-    delivers its normal 404 response instead of wrongly redirecting to
-    /login.
+    delivers its normal 404 response instead of a 401.
 
     Second gate (since plans were decoupled from accounts, see
     services/plans.py): a logged-in user WITHOUT any plan membership
@@ -192,10 +192,10 @@ def require_login():
     numerous plan-bound routes (categories/settings/recipes/sharing/
     day actions) has to individually check whether current_plan() even
     exists."""
-    if request.endpoint is None or request.endpoint in ('auth.login', 'auth.register', 'static'):
+    if request.endpoint is None or request.endpoint == 'static':
         return None
     if current_user() is None:
-        return redirect(url_for('auth.login', next=request.path))
+        abort(401, description='Not authenticated. This app expects Authelia/the reverse proxy to attach an identity header to every request - see services/auth.py: AUTHELIA_EMAIL_HEADER.')
     if current_plan() is None and request.endpoint not in ZERO_PLAN_ALLOWED_ENDPOINTS:
         return redirect(url_for('plan.index'))
     return None
@@ -262,17 +262,23 @@ def inject_current_user_and_plans():
     log out, plan switch/star). Starred plan first, otherwise
     alphabetical.
 
-    On the login page itself (no logged-in user), all three values stay
-    empty/None - the template there doesn't extend base.html anyway, so it
-    doesn't need them at all."""
+    nav_authelia_logout_url: optional link to Authelia's OWN logout
+    endpoint (see templates/base.html) - this app has no session of its
+    own to log out of anymore (see services/auth.py module docstring), so
+    "logging out" can only mean ending the Authelia session itself. Unset
+    by default (the sidebar then simply shows no logout link at all)."""
     user = current_user()
     if user is None:
-        return {'nav_current_user': None, 'nav_current_plan': None, 'nav_user_plans': []}
+        return {
+            'nav_current_user': None, 'nav_current_plan': None, 'nav_user_plans': [],
+            'nav_authelia_logout_url': os.environ.get('AUTHELIA_LOGOUT_URL'),
+        }
 
     return {
         'nav_current_user': user,
         'nav_current_plan': current_plan(),
         'nav_user_plans': user_plan_memberships(user),
+        'nav_authelia_logout_url': os.environ.get('AUTHELIA_LOGOUT_URL'),
     }
 
 

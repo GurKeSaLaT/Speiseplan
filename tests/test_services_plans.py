@@ -27,11 +27,10 @@ def test_create_plan_seeds_categories_and_stars_first_membership(app, make_user)
 
 def test_create_plan_stars_a_users_very_first_membership(app):
     from models import PlanMembership, User, db
-    from services.auth import hash_password
     from services.plans import create_plan
 
     with app.app_context():
-        user = User(name="Blanko", email="blanko@test.local", password_hash=hash_password("test"))
+        user = User(name="Blanko", email="blanko@test.local")
         db.session.add(user)
         db.session.commit()
 

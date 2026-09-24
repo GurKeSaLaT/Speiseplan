@@ -6,10 +6,13 @@ effect everywhere the recipe is linked."""
 from datetime import date
 
 
-def _login_as(app, user_id, plan_id):
-    test_client = app.test_client()
+def _login_as(login_as, user_id, plan_id):
+    """Like the shared login_as fixture (conftest.py), but also makes
+    plan_id the ACTIVE plan for this client - needed here since these
+    tests act as a user in a plan that isn't their own starred one (see
+    services/auth.py: current_plan())."""
+    test_client = login_as(user_id)
     with test_client.session_transaction() as sess:
-        sess['user_id'] = user_id
         sess['active_plan_id'] = plan_id
     return test_client
 
@@ -28,16 +31,16 @@ def test_new_recipe_owned_by_active_plan(app, client, make_category):
         assert recipe.owner_plan_id == client.plan_id
 
 
-def test_recipe_invisible_to_other_plan_until_linked(app, client, make_recipe, make_user):
+def test_recipe_invisible_to_other_plan_until_linked(app, client, make_recipe, make_user, login_as):
     recipe_id = make_recipe("Nur bei mir")
     other_user_id, other_plan_id = make_user("Andere")
 
-    other_client = _login_as(app, other_user_id, other_plan_id)
+    other_client = _login_as(login_as, other_user_id, other_plan_id)
     resp = other_client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 404
 
 
-def test_link_recipe_to_plan_makes_it_visible_and_editable(app, client, make_recipe, make_user):
+def test_link_recipe_to_plan_makes_it_visible_and_editable(app, client, make_recipe, make_user, login_as):
     recipe_id = make_recipe("Zum Teilen")
     other_user_id, other_plan_id = make_user("Andere")
 
@@ -55,7 +58,7 @@ def test_link_recipe_to_plan_makes_it_visible_and_editable(app, client, make_rec
     with app.app_context():
         assert RecipePlanLink.query.filter_by(recipe_id=recipe_id, plan_id=other_plan_id).first() is not None
 
-    other_client = _login_as(app, other_user_id, other_plan_id)
+    other_client = _login_as(login_as, other_user_id, other_plan_id)
     resp = other_client.get(f"/manage/recipe/edit/{recipe_id}")
     assert resp.status_code == 200
 
@@ -114,7 +117,7 @@ def test_cannot_unlink_owner_plan(client, make_recipe):
     assert resp.status_code == 400
 
 
-def test_only_owner_plan_can_delete_recipe(app, client, make_recipe, make_user):
+def test_only_owner_plan_can_delete_recipe(app, client, make_recipe, make_user, login_as):
     recipe_id = make_recipe("Nur Eigentümer darf löschen")
     other_user_id, other_plan_id = make_user("Andere")
     from models import PlanMembership, db
@@ -123,7 +126,7 @@ def test_only_owner_plan_can_delete_recipe(app, client, make_recipe, make_user):
         db.session.commit()
     client.post(f"/manage/recipe/{recipe_id}/link/{other_plan_id}")
 
-    other_client = _login_as(app, other_user_id, other_plan_id)
+    other_client = _login_as(login_as, other_user_id, other_plan_id)
     resp = other_client.post(f"/delete-recipe/{recipe_id}")
     assert resp.status_code == 403
 
