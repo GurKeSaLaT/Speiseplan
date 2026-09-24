@@ -185,8 +185,13 @@ def test_ingredient_aliases_view_nests_existing_alias_under_its_group(client, ap
     resp = client.get("/manage/ingredient-aliases")
     assert resp.status_code == 200
     assert b"Nudeln" in resp.data
-    assert b'removeAlias(this, "Spaghetti")' in resp.data
-    assert b'data-raw-name="Spaghetti"' not in resp.data
+    # The raw name travels to the "x" button via a plain, auto-escaped
+    # data attribute rather than an inline onclick="..." with the name
+    # interpolated straight in via tojson - see the JS comment above
+    # removeAlias's addEventListener wiring for why that combination is
+    # unsafe (a real bug: ANY name broke it, since tojson always wraps a
+    # string in literal, unescaped double quotes).
+    assert b'class="alias-remove-btn" data-raw-name="Spaghetti"' in resp.data
 
 
 # --- AJAX endpoint for the recipe forms (api_set_ingredient_alias) ---

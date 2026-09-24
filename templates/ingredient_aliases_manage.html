@@ -117,7 +117,7 @@
                                 <div class="alias-item">
                                     <span class="alias-arrow">↳</span>
                                     <span class="alias-name">{{ recipe_link(alias.name, alias.recipes, plan_id) }}</span>
-                                    <button type="button" class="alias-remove-btn" onclick="removeAlias(this, {{ alias.name | tojson }})" aria-label="{{ _('Remove this ingredient from the group') }}">×</button>
+                                    <button type="button" class="alias-remove-btn" data-raw-name="{{ alias.name }}" aria-label="{{ _('Remove this ingredient from the group') }}">×</button>
                                 </div>
                                 {% endfor %}
                             </div>
@@ -264,19 +264,35 @@ document.querySelectorAll('.nutrition-block').forEach(block => {
 // (and, if it was the group's last one, the group itself) needs to move
 // to/appear under "Everything else", which is simplest to get right by
 // re-rendering from the server rather than patching the DOM by hand.
-function removeAlias(button, rawName) {
-    button.disabled = true;
-    postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
-        .then(({ ok }) => {
-            if (ok) { window.location.reload(); return; }
-            button.disabled = false;
-            alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
-        })
-        .catch(() => {
-            button.disabled = false;
-            alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
-        });
-}
+//
+// The raw name travels via a data-raw-name attribute (set with a plain,
+// auto-escaped Jinja expression in the template) rather than being
+// interpolated straight into an inline onclick="..." via the tojson
+// filter - that looked tempting, but Flask's tojson filter returns its
+// result PRE-MARKED SAFE for a script context (it does NOT escape the
+// quotes JSON itself uses), so a name containing... well, ANY name at
+// all, since every JSON string is wrapped in double quotes, breaks
+// straight out of the surrounding onclick="..." attribute. Real bug hit
+// in production: clicking any alias's "x" button threw "Uncaught
+// SyntaxError: expected expression, got '}'" - reproduced locally, the
+// rendered attribute was literally onclick=removeAlias(this, followed by
+// an unescaped double quote right where the name started.
+document.querySelectorAll('.alias-remove-btn').forEach(button => {
+    button.addEventListener('click', () => {
+        const rawName = button.dataset.rawName;
+        button.disabled = true;
+        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
+            .then(({ ok }) => {
+                if (ok) { window.location.reload(); return; }
+                button.disabled = false;
+                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+            })
+            .catch(() => {
+                button.disabled = false;
+                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+            });
+    });
+});
 
 // "Counts as" field on an "everything else" row: reloads on success for
 // the same reason as removeAlias() above (the row may need to move
