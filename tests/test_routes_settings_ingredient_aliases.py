@@ -152,6 +152,25 @@ def test_ingredient_aliases_view_shows_dropdown_for_multiple_recipes(client, mak
     assert resp.data.count(b'class="dropdown-item"') == 2
 
 
+def test_ingredient_aliases_view_links_group_heading_via_its_aliases(client, app, make_recipe):
+    """A main group's canonical name is often an invented umbrella (e.g.
+    "Nudeln" for "Spaghetti") that was never itself typed as an
+    ingredient anywhere - the heading must still link to the recipe(s)
+    its ALIASES belong to, not come back empty just because the literal
+    canonical string isn't used anywhere (see routes/settings.py:
+    _merged_recipes(), a real bug reported live: many main ingredients
+    showed no recipe link at all before this fix)."""
+    from services.ingredient_aliases import set_alias
+
+    recipe_id = make_recipe("Nudelauflauf", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
+    with app.app_context():
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    assert f'href="/manage/recipe/edit/{recipe_id}?plan_id={client.plan_id}"'.encode() in resp.data
+
+
 def test_ingredient_aliases_view_nests_existing_alias_under_its_group(client, app, make_recipe):
     """An ingredient with an alias set shows up as a nested alias item
     under its canonical name's main-ingredient group (not as an editable

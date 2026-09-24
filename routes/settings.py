@@ -112,6 +112,20 @@ def _nutrition_row(entries, inferred_units, name):
     }
 
 
+def _merged_recipes(recipes_by_name, names):
+    """Union of recipes_by_name.get(n, []) across several names, deduped by
+    recipe id and re-sorted by recipe name - used to give a main
+    ingredient's group heading a link that covers every recipe any of its
+    merged spellings appears in (see ingredient_aliases_view() below),
+    since recipes_by_name itself only knows about literal, as-typed
+    ingredient names, not canonical/alias ones."""
+    seen = {}
+    for name in names:
+        for recipe_id, recipe_name in recipes_by_name.get(name, []):
+            seen[recipe_id] = recipe_name
+    return sorted(seen.items(), key=lambda pair: pair[1])
+
+
 @settings_bp.route('/manage/ingredient-aliases')
 def ingredient_aliases_view():
     """Shows two groups of ingredient names known for the selected plan
@@ -160,7 +174,14 @@ def ingredient_aliases_view():
                 {"name": alias, "recipes": recipes_by_name.get(alias, [])}
                 for alias in sorted(aliased_raw_names_by_target.get(name, []))
             ],
-            "recipes": recipes_by_name.get(name, []),
+            # The union across the canonical name itself AND every alias
+            # merged into it - not just recipes_by_name.get(name, []).
+            # A canonical name is often an invented umbrella (e.g.
+            # "Noodles" for "Spaghetti"/"Fusilli") that was never itself
+            # typed as an ingredient anywhere, so looking it up alone
+            # would show NO recipe link even though its merged ingredients
+            # obviously belong to some.
+            "recipes": _merged_recipes(recipes_by_name, [name] + aliased_raw_names_by_target.get(name, [])),
             **_nutrition_row(entries, inferred_units, name),
         }
         for name in main_names
