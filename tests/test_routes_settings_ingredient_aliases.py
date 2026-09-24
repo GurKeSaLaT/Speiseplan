@@ -85,10 +85,15 @@ def test_ingredient_aliases_view_groups_main_ingredient_with_nested_aliases(clie
     assert b"Fusilli" in resp.data
 
 
-def test_ingredient_aliases_view_main_ingredient_has_nutrition_fields(client, app):
+def test_ingredient_aliases_view_main_ingredient_has_nutrition_fields(client, app, make_recipe):
     from services.ingredient_aliases import set_alias
     from services.nutrition import set_nutrition
 
+    # A recipe actually using "Olivenöl" - an alias for a name no recipe
+    # uses at all would otherwise be pruned as orphaned on this very view
+    # (see prune_orphaned_aliases()), same as the real "Ananasstuecke"
+    # case that feature was built for.
+    make_recipe("A", ingredients=[{"name": "Olivenöl", "amount": 30, "unit": "ml"}])
     with app.app_context():
         set_alias(client.plan_id, "Olivenöl", "Öl")
         set_nutrition(client.plan_id, "Öl", reference_unit="ml", protein=0, carbs=0, fat=100)
@@ -150,6 +155,55 @@ def test_ingredient_aliases_view_shows_dropdown_for_multiple_recipes(client, mak
     assert resp.status_code == 200
     assert b"dropdown-menu" in resp.data
     assert resp.data.count(b'class="dropdown-item"') == 2
+
+
+def test_ingredient_aliases_view_prunes_orphaned_aliases(client, app, make_recipe):
+    """An alias whose raw_name no longer matches ANY visible recipe's
+    ingredient (e.g. that recipe's ingredient line was retyped/renamed,
+    or the recipe was deleted) gets deleted outright the next time this
+    page is viewed - see services/ingredient_aliases.py:
+    prune_orphaned_aliases(). Real case that prompted this: an alias
+    "Ananasstuecke" -> "Ananas" survived after the ingredient was retyped
+    to "Ananasstuecke (ca. 200g Abtropfgewicht)"."""
+    from services.ingredient_aliases import get_all_aliases, set_alias
+
+    make_recipe("Obstsalat", ingredients=[{"name": "Ananasstuecke (approx)", "amount": 200, "unit": "g"}])
+    with app.app_context():
+        set_alias(client.plan_id, "Ananasstuecke", "Ananas")
+        assert "Ananasstuecke" in get_all_aliases(client.plan_id)
+
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    # Not a plain "Ananasstuecke" substring check - the still-valid
+    # ingredient "Ananasstuecke (approx)" legitimately contains that as a
+    # prefix once it shows up as its own "Everything Else" row. Checking
+    # for "alias-arrow" doesn't work either - that class is ALSO used for
+    # an "Everything Else" row's own "Counts as" field, so it stays
+    # present regardless. The precise signal: no main-ingredient GROUP
+    # remains at all, since "Ananas" had exactly one alias and it just
+    # got pruned.
+    assert b"main-ingredient-row" not in resp.data
+
+    with app.app_context():
+        assert "Ananasstuecke" not in get_all_aliases(client.plan_id)
+
+
+def test_ingredient_aliases_view_keeps_aliases_still_in_use(client, app, make_recipe):
+    """An alias whose raw_name IS still used by a visible recipe must
+    survive the pruning pass - only genuinely orphaned rows get
+    removed."""
+    from services.ingredient_aliases import get_all_aliases, set_alias
+
+    make_recipe("Nudelauflauf", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
+    with app.app_context():
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+
+    resp = client.get("/manage/ingredient-aliases")
+    assert resp.status_code == 200
+    assert b"Spaghetti" in resp.data
+
+    with app.app_context():
+        assert get_all_aliases(client.plan_id).get("Spaghetti") == "Nudeln"
 
 
 def test_ingredient_aliases_view_links_group_heading_via_its_aliases(client, app, make_recipe):

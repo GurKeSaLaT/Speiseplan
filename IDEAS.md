@@ -52,6 +52,46 @@ Backlog for future features - not yet implemented, just collected.
   `before_cursor_execute` event) so a future per-name query creeping back
   into a loop over all known ingredients gets caught before it reaches
   production again.
+
+  Two more issues surfaced live once real production data hit this
+  rewrite. First, a main group's heading linked via `recipe_link()` only
+  looked itself up in `recipes_by_ingredient_name()`'s result - but a
+  canonical name is usually an invented umbrella (e.g. "Noodles" for
+  "Spaghetti"/"Fusilli") that was never itself typed as an ingredient
+  anywhere, so the heading came back with no recipe link at all even
+  though its merged aliases obviously belong to one; many main
+  ingredients appeared "unassigned". Fixed by linking to the union of
+  recipes across the canonical name AND every alias merged into it
+  (`routes/settings.py: _merged_recipes()`). Second, the alias-removal
+  "×" button broke for literally every alias (not just ones with special
+  characters) with `Uncaught SyntaxError: expected expression, got '}'`:
+  it built `onclick="removeAlias(this, {{ alias.name | tojson }})"`, but
+  Flask's `tojson` filter returns its result PRE-MARKED SAFE for a
+  `<script>` context - it does not escape the double quotes JSON itself
+  always wraps a string in, so that quote closed the `onclick="..."`
+  attribute early and corrupted the rest of the tag. Fixed by moving the
+  raw name into a plain, auto-escaped `data-raw-name` attribute and
+  wiring the click via `addEventListener` instead, the same pattern the
+  "Counts as" input on the same page already used safely - and a good
+  reminder that `tojson` is only safe inside `<script>...</script>`,
+  never inline in an HTML attribute.
+
+- **Automatic cleanup of orphaned ingredient aliases.** An `IngredientAlias`
+  row is a plain string mapping (`raw_name` -> `canonical_name`),
+  independent of any `Ingredient` row - so once a recipe's ingredient line
+  is retyped/renamed or the recipe itself is edited/deleted, the old
+  mapping simply lingers forever with nothing to clean it up. Real case
+  that surfaced this: an alias "Ananasstücke" -> "Ananas" survived after
+  the ingredient was retyped to "Ananasstücke (ca. 200g Abtropfgewicht)",
+  so the old spelling no longer matched anything and the management page
+  showed it as an unlinkable, orphaned row (see the "jump to recipe" link
+  entry above). New `services/ingredient_aliases.py:
+  prune_orphaned_aliases()` deletes any alias whose `raw_name` isn't used
+  by any recipe currently visible to the plan - it reuses the
+  `recipes_by_name` dict `ingredient_aliases_view()` already computes for
+  the recipe links, so no extra query. Runs automatically on every view
+  of the page (self-healing, no separate maintenance step); a real
+  in-use alias is never touched.
 - **Swap days on the finished plan.** Day cards on `plan.html` are now
   fully swappable via drag-and-drop (main dish, side dish, and exclusion
   status), purely client-side.

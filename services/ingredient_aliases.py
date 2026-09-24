@@ -93,6 +93,37 @@ def recipes_by_ingredient_name(plan_id):
     return recipes_by_name
 
 
+def prune_orphaned_aliases(plan_id, recipes_by_name):
+    """Deletes every IngredientAlias row of plan_id whose raw_name is no
+    longer used by ANY recipe currently visible to plan_id - e.g. after a
+    recipe's ingredient line was retyped/renamed or the recipe itself was
+    edited/deleted, the old mapping otherwise lingers forever:
+    IngredientAlias is a plain string mapping, independent of any
+    Ingredient row (see the module docstring), so nothing else ever
+    cleans it up. Runs automatically on every view of the management page
+    (routes/settings.py: ingredient_aliases_view(), which already computes
+    recipes_by_name for the "jump to recipe" links and passes it in here
+    rather than this function querying it again) - self-healing, no
+    separate maintenance step needed.
+
+    Real example that prompted this: an alias "Ananasstuecke" ->
+    "Ananas" survived after the ingredient itself was retyped to
+    "Ananasstuecke (ca. 200g Abtropfgewicht)", so the old name no longer
+    matched anything and the page showed it as an unlinkable, orphaned
+    row.
+
+    Returns the list of raw_names actually removed, for a caller that
+    wants to report on it (currently unused, but cheap to keep instead of
+    throwing the information away)."""
+    orphaned_raw_names = [
+        raw_name for raw_name in get_all_aliases(plan_id)
+        if not recipes_by_name.get(raw_name)
+    ]
+    for raw_name in orphaned_raw_names:
+        delete_alias(plan_id, raw_name)
+    return orphaned_raw_names
+
+
 def set_alias(plan_id, raw_name, canonical_name):
     """Creates or updates a mapping for plan_id. If canonical_name (after
     normalization) is identical to raw_name, any existing alias is

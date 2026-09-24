@@ -42,7 +42,7 @@ from flask_babel import gettext as _
 from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.ingredient_aliases import (
     get_all_aliases, list_known_ingredient_names, normalize_ingredient_name, normalize_name,
-    recipes_by_ingredient_name, set_alias,
+    prune_orphaned_aliases, recipes_by_ingredient_name, set_alias,
 )
 from services.nutrition import (
     compute_calories, get_all_nutrition_entries, infer_reference_units_for_plan, list_alias_canonical_names,
@@ -153,14 +153,22 @@ def ingredient_aliases_view():
     Every name/alias also carries "recipes" - the (id, name) pairs of
     every recipe that uses it directly (services/ingredient_aliases.py:
     recipes_by_ingredient_name()), so the template can link straight to
-    "the recipe this is part of" instead of only being editable here."""
+    "the recipe this is part of" instead of only being editable here.
+
+    Before any of that, orphaned aliases (raw_name no longer used by any
+    visible recipe - see services/ingredient_aliases.py:
+    prune_orphaned_aliases()) are deleted outright, using the very same
+    recipes_by_name this view needs anyway. Self-healing on every view,
+    no separate maintenance step."""
     user = current_user()
     plan_id = selected_plan_id(request.args, user)
+
+    recipes_by_name = recipes_by_ingredient_name(plan_id)
+    prune_orphaned_aliases(plan_id, recipes_by_name)
 
     aliases = get_all_aliases(plan_id)
     entries = get_all_nutrition_entries(plan_id)
     inferred_units = infer_reference_units_for_plan(plan_id)
-    recipes_by_name = recipes_by_ingredient_name(plan_id)
     main_names = list_alias_canonical_names(plan_id)
 
     aliased_raw_names_by_target = {}
