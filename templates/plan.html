@@ -142,11 +142,14 @@
                    required field; the category selection determines which
                    group the item ends up in further down the list (see
                    static/plan-shopping.js: addExtraShoppingItem/
-                   rebuildShoppingList). #}
-                <div class="p-2 border-bottom">
+                   rebuildShoppingList). Enter submits from ANY field in
+                   this row (not just the name field) via one shared
+                   listener on the row itself, instead of each field
+                   needing its own onkeydown handler. #}
+                <div class="p-2 border-bottom" onkeydown="if(event.key==='Enter'){event.preventDefault();addExtraShoppingItem();}">
                     <div class="row g-1">
                         <div class="col-12 col-sm-4">
-                            <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="{{ _('Item...') }}" onkeydown="if(event.key==='Enter'){addExtraShoppingItem();}">
+                            <input type="text" id="extraItemName" class="form-control form-control-sm" placeholder="{{ _('Item...') }}">
                         </div>
                         <div class="col-4 col-sm-2">
                             <input type="number" step="0.1" id="extraItemAmount" class="form-control form-control-sm" placeholder="{{ _('Amount') }}">

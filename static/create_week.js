@@ -30,6 +30,17 @@ const searchInput = document.getElementById('searchInput');
 const searchResults = document.getElementById('searchResults');
 const searchItems = document.querySelectorAll('.search-item');
 
+/** Escapes text for safe embedding in innerHTML (recipe names are free-form
+ * user input, also filled in by the recipe import from external sites) -
+ * same implementation as static/plan.js: escapeHtml(). Kept local here
+ * rather than a shared <script> include, consistent with how this file is
+ * already deliberately self-contained (see module docstring above). */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Prevents one and the same recipe from being permanently assigned to two
 // different days at the same time: already-assigned IDs are hidden from
 // the live search (see search filter below). Main dish and side dish
@@ -177,7 +188,7 @@ function assignRecipeToZone(zoneElement, id, name, category) {
     card.setAttribute('data-category', category);
     card.ondragstart = dragStart;
     card.innerHTML = `
-        <span class="name">${name}</span>
+        <span class="name">${escapeHtml(name)}</span>
         <button type="button" class="x" onclick="removeRecipeFromZone('${id}', '${dayIndex}')" aria-label="Remove">✕</button>
     `;
     slotContainer.innerHTML = '';
@@ -228,7 +239,7 @@ function assignSideToZone(zoneElement, id, name, category) {
     chip.setAttribute('id', 'side-card-' + id);
     chip.setAttribute('data-id', id);
     chip.innerHTML = `
-        <span class="text-truncate">🥗 ${name}</span>
+        <span class="text-truncate">🥗 ${escapeHtml(name)}</span>
         <button type="button" class="x" onclick="removeSideFromZone('${id}', '${dayIndex}')" aria-label="Remove">✕</button>
     `;
     sideContainer.appendChild(chip);

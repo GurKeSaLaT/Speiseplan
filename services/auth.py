@@ -21,7 +21,7 @@ from functools import wraps
 from flask import g, redirect, session, url_for, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from models import PlanMembership, User
+from models import PlanMembership, User, db
 
 # Rough format check for email addresses (registration, email invitation,
 # profile email change) - no new package like email-validator, in keeping
@@ -46,7 +46,7 @@ def current_user():
     if 'user_id' not in session:
         return None
     if not hasattr(g, '_current_user'):
-        g._current_user = User.query.get(session['user_id'])
+        g._current_user = db.session.get(User, session['user_id'])
         # The user ID in the session no longer exists (e.g. a session from
         # a test account that has since been deleted) - clean up the
         # session instead of running into a dead end on every further

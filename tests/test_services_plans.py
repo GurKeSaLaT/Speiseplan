@@ -7,11 +7,11 @@ def test_create_plan_seeds_categories_and_stars_first_membership(app, make_user)
     from models import Category, Plan, PlanMembership
 
     with app.app_context():
-        from models import User
+        from models import User, db
         from services.plans import create_plan
 
         user_id, _ = make_user("Erstplan-Nutzer")
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         plan = create_plan(user, "Mein neuer Plan")
 
         assert plan.name == "Mein neuer Plan"
@@ -41,16 +41,16 @@ def test_create_plan_stars_a_users_very_first_membership(app):
 
 
 def test_delete_plan_removes_exclusively_owned_recipe(app, make_recipe, test_plan_id):
-    from models import Category, Plan, Recipe
+    from models import Category, Plan, Recipe, db
     from services.plans import delete_plan
 
     recipe_id = make_recipe("Nur hier")
     with app.app_context():
-        plan = Plan.query.get(test_plan_id)
+        plan = db.session.get(Plan, test_plan_id)
         delete_plan(plan)
 
-        assert Recipe.query.get(recipe_id) is None
-        assert Plan.query.get(test_plan_id) is None
+        assert db.session.get(Recipe, recipe_id) is None
+        assert db.session.get(Plan, test_plan_id) is None
         assert Category.query.filter_by(plan_id=test_plan_id).count() == 0
 
 
@@ -67,27 +67,27 @@ def test_delete_plan_transfers_linked_recipe_to_remaining_plan(app, client, make
     with app.app_context():
         db.session.add(PlanMembership(plan_id=other_plan_id, user_id=client.user_id, is_starred=False))
         db.session.commit()
-        old_category_name = Recipe.query.get(recipe_id).category.name
+        old_category_name = db.session.get(Recipe, recipe_id).category.name
         db.session.add(RecipePlanLink(recipe_id=recipe_id, plan_id=other_plan_id))
         db.session.commit()
 
     with app.app_context():
         from services.plans import delete_plan
-        plan = Plan.query.get(client.plan_id)
+        plan = db.session.get(Plan, client.plan_id)
         delete_plan(plan)
 
-        recipe = Recipe.query.get(recipe_id)
+        recipe = db.session.get(Recipe, recipe_id)
         assert recipe is not None
         assert recipe.owner_plan_id == other_plan_id
         assert recipe.category.name == old_category_name
         assert recipe.category.plan_id == other_plan_id
         # The now-redundant link to the new owner is gone.
         assert RecipePlanLink.query.filter_by(recipe_id=recipe_id, plan_id=other_plan_id).first() is None
-        assert Plan.query.get(client.plan_id) is None
+        assert db.session.get(Plan, client.plan_id) is None
 
 
 def test_delete_plan_removes_settings_and_memberships(app, client, make_category):
-    from models import AppSettings, Category, Plan, PlanMembership
+    from models import AppSettings, Category, Plan, PlanMembership, db
     from services.ingredient_aliases import set_alias
     from services.nutrition import set_nutrition
     from services.settings import update_display_units
@@ -102,7 +102,7 @@ def test_delete_plan_removes_settings_and_memberships(app, client, make_category
         from services.plans import delete_plan
         from models import IngredientAlias, IngredientNutrition
 
-        plan = Plan.query.get(client.plan_id)
+        plan = db.session.get(Plan, client.plan_id)
         delete_plan(plan)
 
         assert AppSettings.query.filter_by(plan_id=client.plan_id).count() == 0

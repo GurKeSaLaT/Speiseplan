@@ -21,7 +21,7 @@ def test_build_week_summary_groups_main_dishes_by_day_across_all_plans(app, clie
         db.session.add(PlanDay(plan_id=other_plan_id, date=friday, main_recipe_id=recipe_other, servings=2))
         db.session.commit()
 
-        user = User.query.get(client.user_id)
+        user = db.session.get(User, client.user_id)
         summary = build_week_summary(user, friday)
 
     friday_entries = summary["days"][0]
@@ -59,7 +59,7 @@ def test_build_week_summary_nutrition_sums_across_plans_unscaled(app, client, ma
         db.session.add(PlanDay(plan_id=client.plan_id, date=saturday, main_recipe_id=recipe_a, servings=1))
         db.session.commit()
 
-        user = User.query.get(client.user_id)
+        user = db.session.get(User, client.user_id)
         summary = build_week_summary(user, friday)
 
     assert summary["nutrition"]["week"]["calories"] == 500 + 300 + 500
@@ -69,11 +69,11 @@ def test_build_week_summary_nutrition_sums_across_plans_unscaled(app, client, ma
 
 
 def test_build_week_summary_nutrition_is_none_when_nothing_planned(app, client):
-    from models import User
+    from models import User, db
     from services.plan_summary import build_week_summary
 
     with app.app_context():
-        user = User.query.get(client.user_id)
+        user = db.session.get(User, client.user_id)
         summary = build_week_summary(user, date(2026, 6, 12))
 
     assert summary["nutrition"] is None
@@ -97,7 +97,7 @@ def test_build_week_summary_ignores_side_dishes(app, client, make_recipe):
         db.session.add(PlanDaySide(plan_day_id=plan_day.id, recipe_id=side))
         db.session.commit()
 
-        user = User.query.get(client.user_id)
+        user = db.session.get(User, client.user_id)
         summary = build_week_summary(user, friday)
 
     assert len(summary["days"][0]) == 1

@@ -12,9 +12,9 @@ def _login_as(app, user_id):
 
 
 def _email_for(app, user_id):
-    from models import User
+    from models import User, db
     with app.app_context():
-        return User.query.get(user_id).email
+        return db.session.get(User, user_id).email
 
 
 def test_sharing_view_lists_owner_as_member(client):
@@ -359,14 +359,14 @@ def test_registering_with_invited_email_auto_joins_plan(app, client):
 
 def test_cancel_invite_removes_pending_invite(app, client):
     client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
-    from models import PendingPlanInvite
+    from models import PendingPlanInvite, db
     with app.app_context():
         invite_id = PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first().id
 
     resp = client.post(f"/manage/sharing/invite/{invite_id}/cancel")
     assert resp.status_code == 302
     with app.app_context():
-        assert PendingPlanInvite.query.get(invite_id) is None
+        assert db.session.get(PendingPlanInvite, invite_id) is None
 
 
 def test_cancel_invite_requires_own_plan(app, client, make_user):
@@ -381,7 +381,7 @@ def test_cancel_invite_requires_own_plan(app, client, make_user):
     resp = client.post(f"/manage/sharing/invite/{invite_id}/cancel")
     assert resp.status_code == 404
     with app.app_context():
-        assert PendingPlanInvite.query.get(invite_id) is not None
+        assert db.session.get(PendingPlanInvite, invite_id) is not None
 
 
 # --- /manage/sharing/leave (remove own membership) ---
@@ -401,7 +401,7 @@ def test_leave_plan_removes_own_membership_only(app, client, make_user):
     with app.app_context():
         assert PlanMembership.query.filter_by(plan_id=other_plan_id, user_id=client.user_id).first() is None
         # The plan and the owner's membership stay untouched.
-        assert Plan.query.get(other_plan_id) is not None
+        assert db.session.get(Plan, other_plan_id) is not None
         assert PlanMembership.query.filter_by(plan_id=other_plan_id, user_id=other_user_id).first() is not None
 
 

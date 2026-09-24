@@ -86,7 +86,7 @@ def _resolve_and_activate_plan(user, request_args):
     if plan_id is None:
         return None
     session['active_plan_id'] = plan_id
-    return Plan.query.get(plan_id)
+    return db.session.get(Plan, plan_id)
 
 
 @plan_bp.route('/plan/<start_date>')

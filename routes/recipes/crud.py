@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from flask import abort, render_template, request, redirect, url_for
 from flask_babel import gettext as _
 
-from models import db, Category, Recipe, Ingredient
+from models import db, Category, Recipe, Ingredient, PlanDay, PlanDaySide
 from routes.recipes import recipes_bp
 from services.auth import current_plan, current_user, default_plan_id, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.seasons import (
@@ -38,6 +38,28 @@ from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display, normalize_amount_unit
+
+
+def _parse_float(raw, default=0.0):
+    """Like float(raw or default), but also swallows a value that ISN'T a
+    number at all (e.g. a locale that sends "1,5" with a comma, a stray
+    non-numeric value from a manipulated request) instead of raising and
+    turning into an unhandled 500 - same "invalid input silently falls
+    back to a safe default" philosophy already used throughout
+    services/recipe_import.py (_parse_amount_value, _parse_nutrition_value)
+    for the same reason."""
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_int(raw, default):
+    """Int-valued counterpart to _parse_float() above (see there)."""
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
 
 
 def _canonical_ingredient_list(plan_id):
@@ -227,7 +249,7 @@ def add_recipe():
     is_favorite = request.form.get('is_favorite') == '1'
     nutrition_override = request.form.get('nutrition_override') == '1'
     # At least 1 serving, even if the form field is empty/invalid.
-    servings = max(1, int(request.form.get('servings') or 2))
+    servings = max(1, _parse_int(request.form.get('servings'), 2))
     source_url = (request.form.get('source_url') or '').strip() or None
     instructions = (request.form.get('instructions') or '').strip() or None
 
@@ -240,7 +262,7 @@ def add_recipe():
     normalized_ingredients = []
     for i in range(len(ing_names)):
         if ing_names[i].strip():
-            amount = float(ing_amounts[i] or 0)
+            amount = _parse_float(ing_amounts[i])
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
             is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
             # Bring amount+unit into canonical form (always g/ml within
@@ -255,9 +277,9 @@ def add_recipe():
             })
 
     if nutrition_override:
-        protein = float(request.form.get('protein') or 0)
-        carbs = float(request.form.get('carbs') or 0)
-        fat = float(request.form.get('fat') or 0)
+        protein = _parse_float(request.form.get('protein'))
+        carbs = _parse_float(request.form.get('carbs'))
+        fat = _parse_float(request.form.get('fat'))
         calories = compute_calories(protein, carbs, fat)
     else:
         computed = compute_recipe_nutrition(plan_id, normalized_ingredients, servings)
@@ -320,7 +342,7 @@ def edit_recipe(id):
     recipe.is_side_dish = request.form.get('is_side_dish') == '1'
     recipe.is_favorite = request.form.get('is_favorite') == '1'
     recipe.nutrition_override = request.form.get('nutrition_override') == '1'
-    recipe.servings = max(1, int(request.form.get('servings') or 2))
+    recipe.servings = max(1, _parse_int(request.form.get('servings'), 2))
     recipe.source_url = (request.form.get('source_url') or '').strip() or None
     recipe.instructions = (request.form.get('instructions') or '').strip() or None
     # Explicit rather than via an onupdate=... on the column (see
@@ -342,7 +364,7 @@ def edit_recipe(id):
     normalized_ingredients = []
     for i in range(len(ing_names)):
         if ing_names[i].strip():
-            amount = float(ing_amounts[i] or 0)
+            amount = _parse_float(ing_amounts[i])
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
             is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
             # See add_recipe() above - the same normalization to canonical
@@ -363,9 +385,9 @@ def edit_recipe(id):
         ))
 
     if recipe.nutrition_override:
-        recipe.protein = float(request.form.get('protein') or 0)
-        recipe.carbs = float(request.form.get('carbs') or 0)
-        recipe.fat = float(request.form.get('fat') or 0)
+        recipe.protein = _parse_float(request.form.get('protein'))
+        recipe.carbs = _parse_float(request.form.get('carbs'))
+        recipe.fat = _parse_float(request.form.get('fat'))
         recipe.calories = compute_calories(recipe.protein, recipe.carbs, recipe.fat)
     else:
         computed = compute_recipe_nutrition(plan_id, normalized_ingredients, recipe.servings)
@@ -391,13 +413,17 @@ def delete_recipe(id):
     along with it via the cascade="all, delete-orphan" configuration in
     models/recipe.py.
 
-    Deliberately NO check whether the recipe is still referenced in the
-    weekly plan calendar: PlanDay.main_recipe_id and PlanDaySide.recipe_id
-    are both nullable/without an ON DELETE constraint, a deleted recipe
-    simply leaves a "dangling" ID there. This is a known, accepted
-    behavior (see IDEAS.md) - not relevant enough so far for this app's
-    small, personal use to warrant building in an extra deletion block or
-    cascade for it.
+    Also clears any reference to this recipe still sitting in the plan
+    calendar - PlanDay.main_recipe_id/PlanDaySide.recipe_id have no ON
+    DELETE constraint at the database level (SQLite foreign keys aren't
+    enforced here either), so without this the deleted recipe would
+    silently keep "existing" as a dangling ID on every day it was ever
+    planned for, breaking display there. main_recipe_id is nullable - that
+    day just goes back to "no main dish assigned" (cooked is reset for the
+    same reason reroll_day()/set_main_day() reset it: a different dish, not
+    yet cooked). PlanDaySide.recipe_id, by contrast, is NOT nullable (a
+    side-dish row without a recipe doesn't mean anything) - those rows are
+    removed outright instead.
 
     Permission: membership in the OWNER plan (Recipe.owner_plan_id), not
     necessarily the currently active plan (current_plan()) - someone
@@ -409,6 +435,8 @@ def delete_recipe(id):
     if not user_has_plan_access(user, recipe.owner_plan_id):
         abort(403)
     owner_plan_id = recipe.owner_plan_id
+    PlanDay.query.filter_by(main_recipe_id=recipe.id).update({"main_recipe_id": None, "cooked": False})
+    PlanDaySide.query.filter_by(recipe_id=recipe.id).delete()
     db.session.delete(recipe)
     db.session.commit()
     return redirect(url_for('recipes.recipe_edit_list_view', plan_id=owner_plan_id))

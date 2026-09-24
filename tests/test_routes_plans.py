@@ -53,9 +53,9 @@ def test_delete_plan_requires_membership(app, client, make_user):
     resp = client.post(f"/plan/{other_plan_id}/delete")
     assert resp.status_code == 404
 
-    from models import Plan
+    from models import Plan, db
     with app.app_context():
-        assert Plan.query.get(other_plan_id) is not None
+        assert db.session.get(Plan, other_plan_id) is not None
 
 
 def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
@@ -74,7 +74,7 @@ def test_delete_plan_allowed_for_any_member_not_just_owner(app, client, make_use
     assert resp.status_code == 302
 
     with app.app_context():
-        assert Plan.query.get(client.plan_id) is None
+        assert db.session.get(Plan, client.plan_id) is None
 
 
 def test_delete_last_plan_resolves_to_zero_plan_landing_page(client):
@@ -142,20 +142,20 @@ def test_rename_plan_updates_name(app, client):
     resp = client.post(f"/plan/{client.plan_id}/rename", data={"name": "Neuer Planname"}, follow_redirects=False)
     assert resp.status_code == 302
 
-    from models import Plan
+    from models import Plan, db
     with app.app_context():
-        assert Plan.query.get(client.plan_id).name == "Neuer Planname"
+        assert db.session.get(Plan, client.plan_id).name == "Neuer Planname"
 
 
 def test_rename_plan_ignores_blank_name(app, client):
-    from models import Plan
+    from models import Plan, db
     with app.app_context():
-        original_name = Plan.query.get(client.plan_id).name
+        original_name = db.session.get(Plan, client.plan_id).name
 
     client.post(f"/plan/{client.plan_id}/rename", data={"name": "   "})
 
     with app.app_context():
-        assert Plan.query.get(client.plan_id).name == original_name
+        assert db.session.get(Plan, client.plan_id).name == original_name
 
 
 def test_rename_plan_allowed_for_any_member_not_just_owner(app, client, make_user):
@@ -171,18 +171,18 @@ def test_rename_plan_allowed_for_any_member_not_just_owner(app, client, make_use
     assert resp.status_code == 302
 
     with app.app_context():
-        assert Plan.query.get(client.plan_id).name == "Von Mitbewohner umbenannt"
+        assert db.session.get(Plan, client.plan_id).name == "Von Mitbewohner umbenannt"
 
 
 def test_rename_plan_requires_membership(app, client, make_user):
-    from models import Plan
+    from models import Plan, db
 
     _, other_plan_id = make_user("Fremd")
     with app.app_context():
-        original_name = Plan.query.get(other_plan_id).name
+        original_name = db.session.get(Plan, other_plan_id).name
 
     resp = client.post(f"/plan/{other_plan_id}/rename", data={"name": "Übernommen"})
     assert resp.status_code == 404
 
     with app.app_context():
-        assert Plan.query.get(other_plan_id).name == original_name
+        assert db.session.get(Plan, other_plan_id).name == original_name

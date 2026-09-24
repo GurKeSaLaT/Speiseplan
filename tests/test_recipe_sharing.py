@@ -129,7 +129,7 @@ def test_only_owner_plan_can_delete_recipe(app, client, make_recipe, make_user):
 
     from models import Recipe
     with app.app_context():
-        assert Recipe.query.get(recipe_id) is not None
+        assert db.session.get(Recipe, recipe_id) is not None
 
 
 def test_category_isolated_per_plan_with_tab_switch(app, client, make_category, make_user):
