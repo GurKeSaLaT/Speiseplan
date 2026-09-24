@@ -361,18 +361,47 @@ function reconcileIngredientSubtab(containerId, freshDoc) {
     }
 
     const currentRowsByKey = new Map();
-    currentList.querySelectorAll(':scope > .ingredient-card').forEach(row => {
-        currentRowsByKey.set(row.dataset.rowKey, row);
-    });
+    const originalRows = Array.from(currentList.querySelectorAll(':scope > .ingredient-card'));
+    originalRows.forEach(row => currentRowsByKey.set(row.dataset.rowKey, row));
 
-    const finalRows = Array.from(freshList.querySelectorAll(':scope > .ingredient-card')).map(freshRow => {
+    // Deliberately NOT currentList.replaceChildren(...finalRows) here (an
+    // earlier version of this function did exactly that) - per spec,
+    // replaceChildren() first removes ALL existing children, even ones
+    // passed straight back in unchanged, before reinserting them.
+    // Detaching a focused element from the document always blurs it in
+    // every browser, even if it's immediately reattached - so that
+    // version still lost focus in a field whose OWN row never changed at
+    // all, just because SOME OTHER row's edit triggered this refresh
+    // (reported live, twice: once against the whole-page swap, again
+    // against this row-level version before this fix). insertBefore() on
+    // an already-connected node MOVES it in place instead - the same
+    // technique virtual-DOM libraries rely on to reorder lists without
+    // losing input focus.
+    const usedNodes = new Set();
+    let refNode = currentList.firstElementChild;
+
+    Array.from(freshList.querySelectorAll(':scope > .ingredient-card')).forEach(freshRow => {
         const existingRow = currentRowsByKey.get(freshRow.dataset.rowKey);
-        if (existingRow && existingRow.outerHTML === freshRow.outerHTML) return existingRow;
-        wireIngredientCard(freshRow);
-        return freshRow;
+        const unchanged = existingRow && existingRow.outerHTML === freshRow.outerHTML;
+        const node = unchanged ? existingRow : freshRow;
+
+        if (!unchanged) wireIngredientCard(node);
+        usedNodes.add(node);
+
+        if (node === refNode) {
+            refNode = refNode.nextElementSibling;
+        } else {
+            currentList.insertBefore(node, refNode);
+        }
     });
 
-    currentList.replaceChildren(...finalRows);
+    // Whatever's left from the original list wasn't reused - either
+    // superseded by a changed version of its own row (see "unchanged"
+    // above), or gone from this sub-tab entirely. A targeted single-node
+    // removal, never touching any node still in use.
+    originalRows.forEach(row => {
+        if (!usedNodes.has(row) && row.isConnected) row.remove();
+    });
 }
 
 /** Re-fetches this same page in the background and reconciles both

@@ -104,6 +104,24 @@ Backlog for future features - not yet implemented, just collected.
   preserving focus in every row unrelated to whatever triggered the
   save.
 
+  That row-level version STILL lost focus, though (reported live a
+  third time) - the bug wasn't in deciding which rows were unchanged,
+  it was in how that decision got applied: `currentList.replaceChildren(
+  ...finalRows)` was used to write the final row order back, but per
+  spec `replaceChildren()` first removes ALL of a parent's existing
+  children - even ones being passed straight back in completely
+  unchanged - before reinserting them. Detaching a focused element from
+  the document always blurs it in every browser, even if it's
+  immediately reattached, so every row still lost focus regardless of
+  whether its own content had changed. Fixed by never calling
+  `replaceChildren()` at all: `reconcileIngredientSubtab()` now walks
+  the desired row order and uses `insertBefore()` to MOVE an
+  already-connected, unchanged node into place (the same technique
+  virtual-DOM libraries rely on for keyed list diffing, since moving a
+  node this way does not detach-then-reattach it), only touching a row's
+  actual DOM node when it's genuinely new or content-changed, and
+  explicitly removing whichever original node ends up superseded.
+
 - **Automatic cleanup of orphaned ingredient aliases.** An `IngredientAlias`
   row is a plain string mapping (`raw_name` -> `canonical_name`),
   independent of any `Ingredient` row - so once a recipe's ingredient line
