@@ -76,6 +76,20 @@ Backlog for future features - not yet implemented, just collected.
   reminder that `tojson` is only safe inside `<script>...</script>`,
   never inline in an HTML attribute.
 
+  A third issue was UX rather than a bug: removing an alias or
+  re-pointing "Counts as" used `window.location.reload()` to get a fresh
+  server render of which sub-tab/group a row now belongs to - a REAL
+  page navigation, which reset the scroll position to the top and lost
+  whichever sub-tab/search filter the user had active, defeating the
+  point of autosaving in the first place. Replaced with
+  `refreshIngredientsContent()`: fetches this same page in the
+  background and swaps the whole `.card-body` markup in place, then
+  re-wires it (`wireIngredientsPage()`, now a reusable function called
+  both on initial load and after every refresh) and restores the
+  previously active sub-tab/search text. Since nothing here is an actual
+  navigation, the scroll position is simply never touched - no manual
+  restore needed for that part.
+
 - **Automatic cleanup of orphaned ingredient aliases.** An `IngredientAlias`
   row is a plain string mapping (`raw_name` -> `canonical_name`),
   independent of any `Ingredient` row - so once a recipe's ingredient line

@@ -175,25 +175,82 @@
 <script>
 const INGREDIENTS_PLAN_ID = {{ plan_id | tojson }};
 
-// Sub-tab switching - both contents stay in the DOM the whole time, only
-// .d-none toggles which one is visible.
-document.querySelectorAll('.ingredient-subtab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.ingredient-subtab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const isMain = btn.dataset.subtab === 'main';
-        document.getElementById('mainSubtabContent').classList.toggle('d-none', !isMain);
-        document.getElementById('otherSubtabContent').classList.toggle('d-none', isMain);
+/** Wires up everything inside .card-body: subtab switching, the search
+ * filter, and the nutrition/alias-removal/"counts as" autosave handlers.
+ * Called once on page load AND again after refreshIngredientsContent()
+ * swaps in freshly fetched markup - re-querying the DOM fresh each time
+ * means it works identically for elements that were just parsed in as
+ * for the ones the server rendered on first load. */
+function wireIngredientsPage() {
+    // Sub-tab switching - both contents stay in the DOM the whole time,
+    // only .d-none toggles which one is visible.
+    document.querySelectorAll('.ingredient-subtab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.ingredient-subtab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const isMain = btn.dataset.subtab === 'main';
+            document.getElementById('mainSubtabContent')?.classList.toggle('d-none', !isMain);
+            document.getElementById('otherSubtabContent')?.classList.toggle('d-none', isMain);
+        });
     });
-});
 
-// Search filters whichever sub-tab is currently visible, across the
-// ingredient's own name AND (for main ingredients) its merged spellings
-// (see data-search on .ingredient-card).
-wireFuzzyFilter(
-    document.getElementById('ingredientFilter'), '.ingredient-card',
-    row => row.dataset.search
-);
+    // Search filters whichever sub-tab is currently visible, across the
+    // ingredient's own name AND (for main ingredients) its merged
+    // spellings (see data-search on .ingredient-card).
+    wireFuzzyFilter(
+        document.getElementById('ingredientFilter'), '.ingredient-card',
+        row => row.dataset.search
+    );
+
+    wireIngredientNutritionBlocks();
+    wireAliasRemoveButtons();
+    wireCountsAsInputs();
+}
+
+/** Re-fetches this same page in the background and swaps the whole
+ * .card-body content in place of window.location.reload() - removing an
+ * alias or re-pointing "Counts as" can move a row between sub-tabs
+ * (possibly creating/dissolving a whole group), which needs a fresh
+ * server render to get right, but an actual page navigation reset the
+ * scroll position back to the top and lost which sub-tab/search filter
+ * the user had active, defeating the point of autosaving in the first
+ * place (reported live). Since nothing here is an actual navigation, the
+ * browser's scroll position is simply never touched - no manual restore
+ * needed, unlike the sub-tab/filter selection below, which IS pure
+ * client-side state that a fresh server render otherwise wipes back to
+ * its defaults (main tab, empty filter). */
+function refreshIngredientsContent() {
+    const activeSubtab = document.querySelector('.ingredient-subtab-btn.active')?.dataset.subtab;
+    const filterValue = document.getElementById('ingredientFilter')?.value || '';
+
+    return fetch(window.location.href)
+        .then(response => {
+            if (!response.ok) throw new Error('refresh failed');
+            return response.text();
+        })
+        .then(html => {
+            const freshBody = new DOMParser().parseFromString(html, 'text/html').querySelector('.card-body');
+            const currentBody = document.querySelector('.card-body');
+            if (!freshBody || !currentBody) throw new Error('unexpected markup');
+            currentBody.innerHTML = freshBody.innerHTML;
+
+            wireIngredientsPage();
+
+            if (activeSubtab) {
+                document.querySelector(`.ingredient-subtab-btn[data-subtab="${activeSubtab}"]`)?.click();
+            }
+            const filterInput = document.getElementById('ingredientFilter');
+            if (filterInput && filterValue) {
+                filterInput.value = filterValue;
+                filterInput.dispatchEvent(new Event('input'));
+            }
+        })
+        // A real error (network/server) is the one case an actual reload
+        // is still the right fallback - better a lost scroll position
+        // than a page stuck showing data that may no longer match the
+        // database.
+        .catch(() => window.location.reload());
+}
 
 /** Everything below autosaves - no Save button anywhere on this page.
  * Reuses the exact same AJAX endpoints the recipe form's inline hint
@@ -220,49 +277,52 @@ function showAutosaveResult(indicatorEl, ok) {
 // Nutrition fields: save on change (blur/selection, not per keystroke),
 // live kcal display (Atwater rule of thumb 4/4/9 kcal per g, same
 // formula as services/nutrition.py: compute_calories()) either way.
-// Doesn't reload - editing nutrition never changes which tab an
-// ingredient belongs to.
-document.querySelectorAll('.nutrition-block').forEach(block => {
-    const name = block.dataset.nutritionName;
-    const referenceSelect = block.querySelector('.nutrition-reference');
-    const proteinInput = block.querySelector('.nutrition-protein');
-    const carbsInput = block.querySelector('.nutrition-carbs');
-    const fatInput = block.querySelector('.nutrition-fat');
-    const caloriesDisplay = block.querySelector('.nutrition-calories-display');
-    const indicator = block.querySelector('.autosave-indicator');
+// Never needs refreshIngredientsContent() - editing nutrition never
+// changes which tab an ingredient belongs to.
+function wireIngredientNutritionBlocks() {
+    document.querySelectorAll('.nutrition-block').forEach(block => {
+        const name = block.dataset.nutritionName;
+        const referenceSelect = block.querySelector('.nutrition-reference');
+        const proteinInput = block.querySelector('.nutrition-protein');
+        const carbsInput = block.querySelector('.nutrition-carbs');
+        const fatInput = block.querySelector('.nutrition-fat');
+        const caloriesDisplay = block.querySelector('.nutrition-calories-display');
+        const indicator = block.querySelector('.autosave-indicator');
 
-    function recalcCalories() {
-        const protein = parseFloat(proteinInput.value) || 0;
-        const carbs = parseFloat(carbsInput.value) || 0;
-        const fat = parseFloat(fatInput.value) || 0;
-        caloriesDisplay.textContent = Math.round(protein * 4 + carbs * 4 + fat * 9);
-    }
+        function recalcCalories() {
+            const protein = parseFloat(proteinInput.value) || 0;
+            const carbs = parseFloat(carbsInput.value) || 0;
+            const fat = parseFloat(fatInput.value) || 0;
+            caloriesDisplay.textContent = Math.round(protein * 4 + carbs * 4 + fat * 9);
+        }
 
-    function save() {
-        recalcCalories();
-        postJson('/api/ingredient-nutrition/set', {
-            name: name,
-            reference_unit: referenceSelect.value,
-            protein: proteinInput.value,
-            carbs: carbsInput.value,
-            fat: fatInput.value,
-        }).then(({ ok }) => showAutosaveResult(indicator, ok))
-          .catch(() => showAutosaveResult(indicator, false));
-    }
+        function save() {
+            recalcCalories();
+            postJson('/api/ingredient-nutrition/set', {
+                name: name,
+                reference_unit: referenceSelect.value,
+                protein: proteinInput.value,
+                carbs: carbsInput.value,
+                fat: fatInput.value,
+            }).then(({ ok }) => showAutosaveResult(indicator, ok))
+              .catch(() => showAutosaveResult(indicator, false));
+        }
 
-    proteinInput.addEventListener('input', recalcCalories);
-    carbsInput.addEventListener('input', recalcCalories);
-    fatInput.addEventListener('input', recalcCalories);
-    [referenceSelect, proteinInput, carbsInput, fatInput].forEach(el => el.addEventListener('change', save));
-});
+        proteinInput.addEventListener('input', recalcCalories);
+        carbsInput.addEventListener('input', recalcCalories);
+        fatInput.addEventListener('input', recalcCalories);
+        [referenceSelect, proteinInput, carbsInput, fatInput].forEach(el => el.addEventListener('change', save));
+    });
+}
 
 // Removes a single ingredient from a main ingredient's group (the "×"
 // button): sets its alias back to itself (set_alias() deletes the
 // mapping when canonical_name == raw_name, see
 // services/ingredient_aliases.py) - exactly like retyping "Counts as"
-// back to the original name. Reloads on success: the removed ingredient
-// (and, if it was the group's last one, the group itself) needs to move
-// to/appear under "Everything else", which is simplest to get right by
+// back to the original name. Refreshes on success (see
+// refreshIngredientsContent() above): the removed ingredient (and, if it
+// was the group's last one, the group itself) needs to move to/appear
+// under "Everything else", which is simplest to get right by
 // re-rendering from the server rather than patching the DOM by hand.
 //
 // The raw name travels via a data-raw-name attribute (set with a plain,
@@ -277,38 +337,44 @@ document.querySelectorAll('.nutrition-block').forEach(block => {
 // SyntaxError: expected expression, got '}'" - reproduced locally, the
 // rendered attribute was literally onclick=removeAlias(this, followed by
 // an unescaped double quote right where the name started.
-document.querySelectorAll('.alias-remove-btn').forEach(button => {
-    button.addEventListener('click', () => {
-        const rawName = button.dataset.rawName;
-        button.disabled = true;
-        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
-            .then(({ ok }) => {
-                if (ok) { window.location.reload(); return; }
-                button.disabled = false;
-                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
-            })
-            .catch(() => {
-                button.disabled = false;
-                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
-            });
+function wireAliasRemoveButtons() {
+    document.querySelectorAll('.alias-remove-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const rawName = button.dataset.rawName;
+            button.disabled = true;
+            postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
+                .then(({ ok }) => {
+                    if (ok) { refreshIngredientsContent(); return; }
+                    button.disabled = false;
+                    alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+                })
+                .catch(() => {
+                    button.disabled = false;
+                    alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+                });
+        });
     });
-});
+}
 
-// "Counts as" field on an "everything else" row: reloads on success for
-// the same reason as removeAlias() above (the row may need to move
-// under "Main Ingredients", possibly creating a brand new group).
-document.querySelectorAll('.counts-as-input').forEach(input => {
-    const indicator = input.nextElementSibling;
-    input.addEventListener('change', () => {
-        const rawName = input.dataset.rawName;
-        const canonicalName = input.value.trim() || rawName;
-        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: canonicalName })
-            .then(({ ok }) => {
-                if (ok && canonicalName !== rawName) { window.location.reload(); return; }
-                showAutosaveResult(indicator, ok);
-            })
-            .catch(() => showAutosaveResult(indicator, false));
+// "Counts as" field on an "everything else" row: refreshes on success for
+// the same reason as wireAliasRemoveButtons() above (the row may need to
+// move under "Main Ingredients", possibly creating a brand new group).
+function wireCountsAsInputs() {
+    document.querySelectorAll('.counts-as-input').forEach(input => {
+        const indicator = input.nextElementSibling;
+        input.addEventListener('change', () => {
+            const rawName = input.dataset.rawName;
+            const canonicalName = input.value.trim() || rawName;
+            postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: canonicalName })
+                .then(({ ok }) => {
+                    if (ok && canonicalName !== rawName) { refreshIngredientsContent(); return; }
+                    showAutosaveResult(indicator, ok);
+                })
+                .catch(() => showAutosaveResult(indicator, false));
+        });
     });
-});
+}
+
+wireIngredientsPage();
 </script>
 {% endblock %}
