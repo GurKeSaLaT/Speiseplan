@@ -1,23 +1,7 @@
-{# Shared form for "create recipe" (routes/recipes/crud.py: recipe_create_view,
-   /manage/recipe/create) AND "edit recipe" (recipe_edit_view,
-   /manage/recipe/edit/<id>) - distinguished solely by the `recipe`
-   variable (None when creating, otherwise the Recipe object being
-   edited). Previously two fundamentally different views (a standalone
-   full page vs. an edit modal from recipe_edit_list.html per recipe) -
-   that felt inconsistent and was also the cause of a real performance
-   problem (50-100+ fully rendered modals, hidden only via CSS,
-   simultaneously in the DOM). Now ONE page per recipe (or one for "new"),
-   organized into clearly prioritized, partly collapsible sections (basic
-   info -> ingredients -> season/nutrition [optional, collapsed] ->
-   instructions) instead of one long, undifferentiated form - see the
-   mockup agreed with the user for this.
-
-   The ingredient rows deliberately keep their OLD, unprefixed class names
-   (.ingredient-row/.ing-name-display/.ing-name-input/
-   .ingredient-alias-hint) - static/ingredient_alias_hint.js knows exactly
-   these selectors (among others, the direct sibling relationship between
-   .ing-name-display and .ing-name-input). Only their visual arrangement
-   as a CSS grid is new (see static/style.css: .rform-*). #}
+{# One form for creating (recipe is None) and editing a recipe.
+   The ingredient row class names (.ingredient-row, .ing-name-display,
+   .ing-name-input, .ingredient-alias-hint and the display/input sibling
+   order) are what static/ingredient_alias_hint.js relies on. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="page-head">
@@ -31,10 +15,7 @@
 <div class="rform-layout">
     <div>
         {% if not recipe %}
-        {# Entry choice only when creating: import via link vs. entering
-           from scratch. Purely visual/UX (shows the import field by
-           default) - both "cards" lead to the same form below, nothing is
-           handled differently server-side because of this. #}
+        {# Create mode only: import from a link or enter by hand (UI only). #}
         <div class="rform-entry-choice">
             <div class="rform-entry-card active" id="entryCardImport" onclick="rformChooseEntry('import')">
                 <span class="ic">🔗</span>
@@ -55,12 +36,8 @@
         {% endif %}
 
         {% if recipe %}
-        {# "Add dish to another plan" - a REAL link (models/recipe.py:
-           RecipePlanLink), not a copy: the recipe stays the same database
-           row, but becomes additionally visible/editable for another
-           plan. Small, standalone <form> elements outside the main form
-           below (nested <form> tags aren't allowed in HTML) - each
-           delete/add here is its own, immediate action. #}
+        {# Links the same recipe into another plan (RecipePlanLink, not a copy).
+           Separate small forms, since forms can't nest inside the main form. #}
         <div class="rform-section">
             <div class="rform-section-head">
                 <h2>🔗 {{ _('In these plans') }}</h2>
@@ -120,12 +97,8 @@
                     {% if user_plans and user_plans|length > 1 %}
                     <div class="rform-mb">
                         <label class="rform-field-label">{{ _('Plan') }}</label>
-                        {# Reloads the page (instead of just switching the
-                           category list client-side), since categories/
-                           ingredient suggestions (ingredient_list) differ
-                           per plan - see routes/recipes/crud.py:
-                           recipe_create_view(). Preselected is the starred
-                           plan (services/auth.py: default_plan_id()). #}
+                        {# Reloads the page: categories and ingredient suggestions differ
+                           per plan. #}
                         <select name="plan_id" class="rform-field" style="max-width: 320px;" onchange="location.href = '{{ url_for('recipes.recipe_create_view') }}?plan_id=' + this.value;">
                             {% for membership in user_plans %}
                             <option value="{{ membership.plan_id }}" {% if membership.plan_id == plan_id %}selected{% endif %}>
@@ -181,17 +154,9 @@
                         <div class="ingredient-row">
                             <div class="ing-fields">
                                 <div class="ing-name-wrap">
-                                    {# Shows the canonical name (disp[2],
-                                       resolved via any existing alias
-                                       mapping) by default - only a click
-                                       reveals the real, editable field (see
-                                       static/ingredient_alias_hint.js:
-                                       openIngredientNameField).
-                                       DELIBERATELY WITHOUT
-                                       list="ingredients-datalist": that
-                                       made the browser noticeably stutter
-                                       on first focusing an already-named
-                                       ingredient (see the comment there). #}
+                                    {# Shows the canonical name; a click reveals the editable field.
+                                       No datalist here: it made the browser stutter when first
+                                       focusing a named ingredient. #}
                                     <span class="ing-name-display" tabindex="0" role="button" title="{{ _('Click to edit') }}">{{ disp[2] }}</span>
                                     <input type="text" name="ing_name[]" class="ing-name-input d-none" value="{{ ing.name }}" autocomplete="off">
                                 </div>
@@ -203,11 +168,8 @@
                                     <option value="{{ cat }}" {% if cat == ing.category %}selected{% endif %}>{{ cat }}</option>
                                     {% endfor %}
                                 </select>
-                                {# Hidden mirror input, not the checkbox itself, carries the
-                                   value to the server - see routes/recipes/crud.py: add_recipe()
-                                   docstring for why (an unchecked plain checkbox submits
-                                   nothing at all, which would shift the parallel-array
-                                   alignment of every row after it). #}
+                                {# The hidden input carries the value: an unchecked checkbox
+                                   submits nothing and would misalign the parallel arrays. #}
                                 <input type="hidden" name="ing_pantry[]" value="{{ '1' if ing.is_pantry else '0' }}">
                                 <input type="checkbox" class="ing-pantry-checkbox" title="{{ _('Pantry item (not on the weekly shopping list)') }}"
                                        {% if ing.is_pantry %}checked{% endif %}
@@ -353,15 +315,12 @@
 
 <div class="rform-action-bar">
     {% if recipe %}
-    {# Existing recipes autosave (see static/recipe_form.js:
-       rformWireAutosave()) - no Save button, just a small status
-       indicator, same pattern as templates/ingredient_aliases_manage.html. #}
+    {# Existing recipes autosave (recipe_form.js); just a status indicator. #}
     <a href="{{ url_for('recipes.recipe_edit_list_view', plan_id=plan_id) }}" class="rform-btn rform-btn-ghost">{{ _('← Back to list') }}</a>
     <span id="recipeAutosaveIndicator" class="rform-autosave-indicator"></span>
     {% else %}
-    {# A brand new recipe has no id to autosave into yet - one explicit
-       click creates it, then add_recipe() redirects straight into the
-       edit view above, where autosave takes over from here on. #}
+    {# A new recipe is created by one explicit click; the redirect to the
+       edit view then enables autosave. #}
     <a href="/manage/recipe/edit-list" class="rform-btn rform-btn-ghost">{{ _('Cancel') }}</a>
     <button type="submit" form="recipe-form" class="rform-btn rform-btn-primary">{{ _('Save recipe') }}</button>
     {% endif %}

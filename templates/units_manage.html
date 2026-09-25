@@ -1,9 +1,5 @@
-{# Unit settings (/manage/units): determines which unit ingredient
-   amounts are displayed in (mass: g/kg, volume: ml/l) - see
-   routes/settings.py and services/units.py. Internally, every amount is
-   always stored canonically in grams/milliliters; this page only changes
-   the display everywhere ingredient amounts are shown (shopping list,
-   recipe edit form, import preview). #}
+{# Display units for ingredient amounts. Amounts are always stored in
+   g/ml; this only changes how they are shown. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
