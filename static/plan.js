@@ -221,8 +221,8 @@ function renderOtherPlanMeals(dayIndex) {
 
     const rows = meals.map(meal => `
         <div class="small text-muted d-flex align-items-center gap-2">
-            <span class="badge bg-light text-dark border">${meal.planName}</span>
-            <span>${meal.recipeName}</span>
+            <span class="badge bg-light text-dark border">${escapeHtml(meal.planName)}</span>
+            <span>${escapeHtml(meal.recipeName)}</span>
         </div>
     `).join('');
     return `<div class="other-plan-meals mt-2 pt-2 border-top">${rows}</div>`;

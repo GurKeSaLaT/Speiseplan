@@ -24,8 +24,6 @@ function escapeHtml(text) {
 let assignedRecipeIds = new Set();
 let assignedSideRecipeIds = new Set();
 
-let excludedDays = new Set();
-
 // Matches the recipe name or its category name.
 searchInput.addEventListener('input', function() {
     const query = this.value.toLowerCase().trim();
@@ -219,7 +217,6 @@ function toggleExcludeDay(dayIndex) {
     if (isCurrentlyExcluded) {
       zone.classList.remove('excluded');
       excludedInput.value = '0';
-      excludedDays.delete(parseInt(dayIndex));
       statusText.textContent = window.I18N.day_fill_automatically;
       statusText.classList.remove('text-dark', 'fw-bold');
       statusText.classList.add('text-muted');
@@ -233,7 +230,6 @@ function toggleExcludeDay(dayIndex) {
       }
       zone.classList.add('excluded');
       excludedInput.value = '1';
-      excludedDays.add(parseInt(dayIndex));
       statusText.textContent = window.I18N.day_excluded;
       statusText.classList.remove('text-muted');
       statusText.classList.add('text-dark', 'fw-bold');
@@ -292,7 +288,7 @@ function drop(event) {
       // The source day becomes empty.
       sourceZone.querySelector('.recipe-slot-container').innerHTML = '';
       const sourceStatus = sourceZone.querySelector('.slot-status');
-      sourceStatus.textContent = "Fill automatically";
+      sourceStatus.textContent = window.I18N.day_fill_automatically;
       sourceStatus.classList.remove('text-dark', 'fw-bold');
       sourceStatus.classList.add('text-muted');
       const sourceInput = document.getElementById('day-recipe-input-' + sourceDayIndex);
