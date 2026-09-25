@@ -19,7 +19,7 @@ def test_sidebar_links_to_all_sections(client):
     assert resp.status_code == 200
     for href in (
         "/manage/recipe/create", "/manage/recipe/edit-list", "/manage/categories",
-        "/manage/units", "/manage/ingredient-aliases", "/manage/ingredient-nutrition",
+        "/manage/units", "/manage/ingredient-aliases",
     ):
         assert f'href="{href}"'.encode("utf-8") in resp.data
 

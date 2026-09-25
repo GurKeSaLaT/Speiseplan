@@ -40,10 +40,12 @@ get a consolidated shopping list at the end.
   management (⚙️ → 📏 Units) lets you set whether amounts are shown in
   g/kg or ml/l – applies everywhere amounts are shown (recipe editing,
   import preview, shopping list).
-- **Ingredient aliasing** – account management (⚙️ → 🔗 Merge Ingredients)
-  lets you set, for example, that "spaghetti" and "fusilli" are combined
-  as "pasta" on the shopping list. Only affects the shopping list –
-  recipes still show their own ingredient name.
+- **Ingredient aliasing & nutrition** – account management
+  (⚙️ → 🔗 Ingredients & Nutrition) lets you set, for example, that
+  "spaghetti" and "fusilli" are combined as "pasta" on the shopping
+  list (only affects the shopping list – recipes still show their own
+  ingredient name), and maintain the nutrition reference for the
+  result – or, for any other ingredient, directly for itself.
 - **Recipe import from nine German-language cooking sites** – chefkoch.de,
   lecker.de, essen-und-trinken.de, EAT SMARTER, Küchengötter,
   gutekueche.de/.at, DasKochrezept, BRIGITTE, and Emmikochteinfach. Just a
@@ -228,7 +230,7 @@ routes/
     links.py                    Link/unlink a recipe to/from another plan
   categories.py                Category CRUD (blueprint "categories")
   manage.py                    Management home page (blueprint "manage")
-  settings.py                  Unit + ingredient-aliasing settings (blueprint "settings")
+  settings.py                  Units + ingredients & nutrition (blueprint "settings")
 services/
   auth.py                      Identity from Authelia headers, active plan, tab-selection helpers
                                 (current_user(), current_plan(), selected_plan_id(), default_plan_id())

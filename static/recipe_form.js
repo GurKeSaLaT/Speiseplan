@@ -121,6 +121,11 @@ function rformUpdateIngredientCount() {
     const pvIngCount = document.getElementById('pvIngCount');
     if (pvIngCount) pvIngCount.textContent = n;
     rformUpdateChecklist();
+    // Called after BOTH adding and removing a row (see every caller
+    // above/below) - neither fires a native 'input'/'change' event on
+    // its own, so the delegated form listener wired in rformAutosave()'s
+    // DOMContentLoaded block below wouldn't otherwise notice.
+    rformScheduleAutosave();
 }
 
 // --- Import (create mode only): entry-choice cards + AJAX import ---
@@ -220,6 +225,55 @@ function rformUpdateChecklist() {
     ciInstr?.classList.toggle('done', !!instructions);
 }
 
+// --- Autosave (existing recipes only) ------------------------------------
+// Confirmed design: a brand new recipe needs one explicit click to create
+// it in the first place (there's no id to save into before that first
+// POST, see routes/recipes/crud.py: add_recipe(), which redirects
+// straight into the edit view above once created) - from then on, every
+// change anywhere in the form resubmits the WHOLE form via fetch() to the
+// same endpoint a traditional submit would use (edit_recipe()), just
+// debounced. The X-Requested-With header tells that endpoint to answer
+// with JSON instead of redirecting the page out from under whatever the
+// user is still typing.
+let rformAutosaveTimer = null;
+// Stays false until DOMContentLoaded's initial setup (which itself calls
+// rformUpdateIngredientCount(), which calls rformScheduleAutosave()) has
+// finished - otherwise just opening an existing recipe would schedule a
+// pointless autosave of completely unchanged data 800ms after load.
+let rformAutosaveReady = false;
+
+function rformScheduleAutosave() {
+    if (!window.RECIPE_ID || !rformAutosaveReady) return;
+    clearTimeout(rformAutosaveTimer);
+    rformAutosaveTimer = setTimeout(rformAutosave, 800);
+}
+
+function rformAutosave() {
+    const form = document.getElementById('recipe-form');
+    const indicator = document.getElementById('recipeAutosaveIndicator');
+    if (!form) return;
+
+    fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form),
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        if (ok) rformUpdateNutritionBadge(data.calories, data.protein, data.carbs, data.fat);
+        if (indicator) {
+            indicator.textContent = ok ? '✓' : '⚠️';
+            indicator.className = 'rform-autosave-indicator ' + (ok ? 'autosave-ok' : 'autosave-error');
+        }
+    })
+    .catch(() => {
+        if (indicator) {
+            indicator.textContent = '⚠️';
+            indicator.className = 'rform-autosave-indicator autosave-error';
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     rformWireNutrition();
     rformUpdateIngredientCount();
@@ -235,4 +289,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = window.RECIPE_NUTRITION;
         rformUpdateNutritionBadge(n.calories, n.protein, n.carbs, n.fat);
     }
+
+    // Event delegation on the form itself catches everything a plain
+    // 'input'/'change' event bubbles for: text/number/date fields,
+    // selects, checkboxes (side dish/favorite/pantry/nutrition override/
+    // season chips) - EXCEPT adding/removing an ingredient row, which
+    // doesn't fire either event on its own (see rformUpdateIngredientCount(),
+    // called from both rformAddIngredientRow() and each row's "x" button,
+    // triggering it there instead).
+    const form = document.getElementById('recipe-form');
+    if (form && window.RECIPE_ID) {
+        form.addEventListener('input', rformScheduleAutosave);
+        form.addEventListener('change', rformScheduleAutosave);
+    }
+    rformAutosaveReady = true;
 });

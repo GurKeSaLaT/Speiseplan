@@ -8,6 +8,8 @@ from services.ingredient_aliases import (
     list_known_ingredient_names,
     normalize_ingredient_name,
     normalize_name,
+    prune_orphaned_aliases,
+    recipes_by_ingredient_name,
     set_alias,
 )
 
@@ -109,3 +111,30 @@ def test_list_known_ingredient_names_ignores_other_plans_recipes(app, test_plan_
     make_recipe("Fremdes Gericht", plan_id=other_plan_id, ingredients=[{"name": "Reis", "amount": 200, "unit": "g"}])
     with app.app_context():
         assert list_known_ingredient_names(test_plan_id) == []
+
+
+def test_prune_orphaned_aliases_removes_a_raw_name_no_recipe_uses_anymore(app, test_plan_id, make_recipe):
+    """The exact scenario that prompted this function: an ingredient
+    originally named "Ananasstuecke" was retyped to a more precise name,
+    but the alias mapping for the old spelling was never cleaned up."""
+    make_recipe("Obstsalat", ingredients=[{"name": "Ananasstuecke (approx)", "amount": 200, "unit": "g"}])
+    with app.app_context():
+        set_alias(test_plan_id, "Ananasstuecke", "Ananas")
+
+        recipes_by_name = recipes_by_ingredient_name(test_plan_id)
+        removed = prune_orphaned_aliases(test_plan_id, recipes_by_name)
+
+        assert removed == ["Ananasstuecke"]
+        assert get_all_aliases(test_plan_id) == {}
+
+
+def test_prune_orphaned_aliases_keeps_a_raw_name_still_in_use(app, test_plan_id, make_recipe):
+    make_recipe("Nudelauflauf", ingredients=[{"name": "Spaghetti", "amount": 500, "unit": "g"}])
+    with app.app_context():
+        set_alias(test_plan_id, "Spaghetti", "Nudeln")
+
+        recipes_by_name = recipes_by_ingredient_name(test_plan_id)
+        removed = prune_orphaned_aliases(test_plan_id, recipes_by_name)
+
+        assert removed == []
+        assert get_all_aliases(test_plan_id) == {"Spaghetti": "Nudeln"}

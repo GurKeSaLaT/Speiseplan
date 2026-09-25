@@ -4,6 +4,179 @@ Backlog for future features - not yet implemented, just collected.
 
 ## Implemented
 
+- **Merged "Merge Ingredients" and "Nutrition" into one page, fully
+  autosaving, with a jump-to-recipe link.**
+  `/manage/ingredient-aliases` (routes/settings.py: ingredient_aliases_view(),
+  templates/ingredient_aliases_manage.html) now covers both what used to
+  be two separate pages: two sub-tabs, "Main Ingredients" (every
+  canonical name at least one other ingredient is aliased to, each with
+  its own nutrition editor and, nested underneath, every merged spelling
+  - removable via "×") and "Everything Else" (every other known
+  ingredient, ALSO with its own nutrition editor - previously only
+  settable via the recipe form's inline hint - plus a "Counts as" field
+  to promote it into a main ingredient). The former
+  `/manage/ingredient-nutrition` page/route is gone; its sidebar tile
+  and rail link were merged into one "🔗 Ingredients & Nutrition" entry.
+
+  Every field on the page saves itself immediately (`fetch()` on
+  change/blur, small "✓"/"⚠" `.autosave-indicator`) - there is no Save
+  button and no batch-submit endpoint anymore. Nutrition edits reuse
+  `/api/ingredient-nutrition/set`; alias removal ("×") and "Counts as"
+  reuse `/api/ingredient-alias/set` - the exact same AJAX endpoints the
+  recipe form's inline hint already called, now also accepting an
+  explicit `plan_id` in the request body (`routes/settings.py:
+  _resolve_ajax_plan_id()`), since this page's own plan tab-switcher may
+  be showing a plan other than the currently active one. Removing an
+  alias or changing "Counts as" to a genuinely different name reloads the
+  page (the row may need to move between sub-tabs, simplest to get right
+  server-side); pure nutrition edits never reload.
+
+  Clicking an ingredient or alias name jumps straight to a recipe it's
+  part of (`services/ingredient_aliases.py: recipes_by_ingredient_name()`,
+  one query in the whole view, not one per name - see the performance
+  note below): a name used in exactly one recipe links directly there, a
+  name used in several shows a small dropdown to pick one.
+
+  While merging the two pages' ingredient sets onto this one page, an
+  existing per-name query in `services/nutrition.py: infer_reference_unit()`
+  (previously only ever called for the small number of alias-target main
+  ingredients) started also running once per "Everything Else" row -
+  turning what used to be a handful of calls into one per known
+  ingredient (hundreds), each doing its own ingredient-table scan. Caused
+  a real production page load of 34.5 seconds. Fixed with a bulk
+  counterpart, `infer_reference_units_for_plan()`, that computes every
+  name's guess in a single pass over an already-fetched alias dict
+  instead of one query per name - reduced the same page to roughly
+  100ms. A regression test asserts the query count stays bounded
+  (`tests/test_services_nutrition.py`, via SQLAlchemy's
+  `before_cursor_execute` event) so a future per-name query creeping back
+  into a loop over all known ingredients gets caught before it reaches
+  production again.
+
+  Two more issues surfaced live once real production data hit this
+  rewrite. First, a main group's heading linked via `recipe_link()` only
+  looked itself up in `recipes_by_ingredient_name()`'s result - but a
+  canonical name is usually an invented umbrella (e.g. "Noodles" for
+  "Spaghetti"/"Fusilli") that was never itself typed as an ingredient
+  anywhere, so the heading came back with no recipe link at all even
+  though its merged aliases obviously belong to one; many main
+  ingredients appeared "unassigned". Fixed by linking to the union of
+  recipes across the canonical name AND every alias merged into it
+  (`routes/settings.py: _merged_recipes()`). Second, the alias-removal
+  "×" button broke for literally every alias (not just ones with special
+  characters) with `Uncaught SyntaxError: expected expression, got '}'`:
+  it built `onclick="removeAlias(this, {{ alias.name | tojson }})"`, but
+  Flask's `tojson` filter returns its result PRE-MARKED SAFE for a
+  `<script>` context - it does not escape the double quotes JSON itself
+  always wraps a string in, so that quote closed the `onclick="..."`
+  attribute early and corrupted the rest of the tag. Fixed by moving the
+  raw name into a plain, auto-escaped `data-raw-name` attribute and
+  wiring the click via `addEventListener` instead, the same pattern the
+  "Counts as" input on the same page already used safely - and a good
+  reminder that `tojson` is only safe inside `<script>...</script>`,
+  never inline in an HTML attribute.
+
+  A third issue was UX rather than a bug: removing an alias or
+  re-pointing "Counts as" used `window.location.reload()` to get a fresh
+  server render of which sub-tab/group a row now belongs to - a REAL page
+  navigation, which reset the scroll position to the top and lost
+  whichever sub-tab/search filter was active, defeating the point of
+  autosaving in the first place. An in-between fix (fetch the page in the
+  background and swap the WHOLE `.card-body` in place instead of
+  navigating) removed the scroll-jump but introduced a second live-
+  reported issue of its own: jumping from the field that triggered the
+  save into a completely unrelated NEXT field still lost focus/cursor
+  there, since replacing that much markup destroys and recreates every
+  row regardless of whether it actually changed.
+
+  Fixed properly with row-level reconciliation instead
+  (`reconcileIngredientSubtab()`): each `.ingredient-card` now carries a
+  stable `data-row-key` (`main:<canonical name>` / `other:<raw name>`);
+  `refreshIngredientsContent()` fetches the page, and for each sub-tab
+  compares every row's `outerHTML` between the current DOM and the fresh
+  fetch - a row that comes back byte-for-byte identical keeps its
+  EXISTING, already-wired DOM node completely untouched (so any field a
+  user has focused, cursor position included, survives if that row
+  itself didn't change), and only rows that are new, removed, or
+  genuinely different get swapped for the freshly rendered version and
+  re-wired. Since nothing here is an actual navigation either, scroll
+  position was never at risk in the first place, on top of now also
+  preserving focus in every row unrelated to whatever triggered the
+  save.
+
+  That row-level version STILL lost focus, though (reported live a
+  third time) - the bug wasn't in deciding which rows were unchanged,
+  it was in how that decision got applied: `currentList.replaceChildren(
+  ...finalRows)` was used to write the final row order back, but per
+  spec `replaceChildren()` first removes ALL of a parent's existing
+  children - even ones being passed straight back in completely
+  unchanged - before reinserting them. Detaching a focused element from
+  the document always blurs it in every browser, even if it's
+  immediately reattached, so every row still lost focus regardless of
+  whether its own content had changed. A follow-up that swapped
+  `replaceChildren()` for `insertBefore()` moves still lost focus (a
+  fourth live report): `insertBefore()` on an already-connected node
+  detaches it too - the reason browsers are adding a separate
+  `moveBefore()` API. Removing the stale row first made its unchanged
+  neighbour look "out of place", so it got moved - and blurred.
+
+  Final fix, verified this time in a real headless Firefox against an
+  isolated copy of the app (edit "Counts as" on one row, click into a
+  field of another row, keep typing): an unchanged row is never moved at
+  all. `reconcileIngredientSubtab()` removes stale rows first, which
+  leaves the surviving rows already in the right order (the lists are
+  name-sorted), then only replaces changed rows in place
+  (`replaceWith()`) and inserts brand-new rows after their predecessor -
+  neither touches any other row. Whether a row "changed" is decided
+  against the server markup it was last rendered from
+  (`serverHtmlByRow`), not the live `outerHTML`, so client-side state
+  (search-hidden class, autosave indicator, an opened dropdown) can't
+  cause a false replacement. As a safety net for the one unavoidable
+  case - the row being typed in was itself changed on the server -
+  `captureFocusedField()`/`restoreFocusedField()` put focus, unsaved
+  value and cursor back on the replacement field.
+
+- **Automatic cleanup of orphaned ingredient aliases.** An `IngredientAlias`
+  row is a plain string mapping (`raw_name` -> `canonical_name`),
+  independent of any `Ingredient` row - so once a recipe's ingredient line
+  is retyped/renamed or the recipe itself is edited/deleted, the old
+  mapping simply lingers forever with nothing to clean it up. Real case
+  that surfaced this: an alias "Ananasstücke" -> "Ananas" survived after
+  the ingredient was retyped to "Ananasstücke (ca. 200g Abtropfgewicht)",
+  so the old spelling no longer matched anything and the management page
+  showed it as an unlinkable, orphaned row (see the "jump to recipe" link
+  entry above). New `services/ingredient_aliases.py:
+  prune_orphaned_aliases()` deletes any alias whose `raw_name` isn't used
+  by any recipe currently visible to the plan - it reuses the
+  `recipes_by_name` dict `ingredient_aliases_view()` already computes for
+  the recipe links, so no extra query. Runs automatically on every view
+  of the page (self-healing, no separate maintenance step); a real
+  in-use alias is never touched.
+- **Autosave for the recipe form.** No more explicit "Save changes"
+  button for an EXISTING recipe: `static/recipe_form.js: rformAutosave()`
+  resubmits the whole form via `fetch()` to the same `edit_recipe()`
+  endpoint a traditional submit would use, debounced (800ms after the
+  last change) and delegated on the form itself so it catches every
+  field - name, category, servings, side dish/favorite/pantry toggles,
+  nutrition override + values, season chips/custom range, source link,
+  instructions. Ingredient rows added/removed via their own buttons don't
+  fire a native `input`/`change` event, so
+  `rformUpdateIngredientCount()` (already called after both) explicitly
+  schedules a save too. `edit_recipe()` tells autosave calls apart from a
+  traditional submit via an `X-Requested-With: XMLHttpRequest` header and
+  answers with JSON (recalculated calories/protein/carbs/fat) instead of
+  redirecting the page out from under whatever the user is still typing;
+  a real, non-JS form submit still gets the normal redirect.
+
+  Confirmed design for a brand NEW recipe: there's no id to autosave into
+  before it exists, so creating one still needs exactly one explicit
+  click ("Save recipe") - `add_recipe()` now redirects straight into
+  `recipe_edit_view()` for the freshly created recipe (previously back to
+  a blank create form, to enter the next recipe quickly) rather than the
+  overview list, so autosave takes over immediately from there. The
+  create-mode page keeps its Save button; the edit-mode page replaces it
+  with a small "✓"/"⚠" status indicator, matching the ingredients &
+  nutrition page's autosave pattern.
 - **Swap days on the finished plan.** Day cards on `plan.html` are now
   fully swappable via drag-and-drop (main dish, side dish, and exclusion
   status), purely client-side.
@@ -169,14 +342,10 @@ Backlog for future features - not yet implemented, just collected.
   `normalize_ingredient_name()` is called in `jsonify_recipe()` instead of
   the previous plain `.strip().title()` (still does that internally, plus
   alias replacement if present) - an ingredient name with no entry simply
-  stays itself, no grouping is the default case. Own management page
-  `/manage/ingredient-aliases` (blueprint `settings`, tile on `/manage`):
-  one row per ingredient name currently used in any recipe with an
-  editable "counts as" field, all savable at once via form (parallel
-  `raw_name[]`/`canonical_name[]` lists, analogous to the ingredient rows
-  of the recipe forms) instead of one round trip per row - impractical
-  otherwise with potentially hundreds of ingredients. A field left
-  unchanged (still counts only as itself) creates no alias record.
+  stays itself, no grouping is the default case. Management page: see
+  "Merged 'Merge Ingredients' and 'Nutrition' into one page, fully
+  autosaving, with a jump-to-recipe link" above for its current form -
+  superseded twice since this entry was first written.
 - **DE/EN localization.** Flask-Babel-based, with English as the default
   UI language and German as a fully translated second language,
   switchable per account under ⚙️ → 👤 Account (`User.language`, see

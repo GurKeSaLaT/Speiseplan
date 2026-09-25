@@ -18,7 +18,7 @@ def test_manage_page_sidebar_links_to_all_sections(client):
     assert resp.status_code == 200
     for path in (
         "/manage/recipe/create", "/manage/recipe/edit-list", "/manage/categories",
-        "/manage/units", "/manage/ingredient-aliases", "/manage/ingredient-nutrition",
+        "/manage/units", "/manage/ingredient-aliases",
     ):
         assert path.encode() in resp.data
 

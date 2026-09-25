@@ -1,18 +1,58 @@
-{# Ingredient aliasing (/manage/ingredient-aliases): one row per
-   ingredient name currently used in any recipe, with an editable
-   "counts as" field - see routes/settings.py:
-   ingredient_aliases_view()/update_ingredient_aliases() and
-   services/ingredient_aliases.py. If a user enters, say, "Noodles" for
-   "Fusilli", "Fusilli" and any other ingredient with "Noodles"
-   as its counts-as value are merged into ONE line item on the shopping
-   list - the ingredient list of an individual recipe still shows "Fusilli". #}
+{# Ingredients & nutrition (/manage/ingredient-aliases): combines what
+   used to be two separate pages (see IDEAS.md) - merging spellings for
+   the shopping list ("counts as") and maintaining the nutrition
+   reference per resulting canonical ingredient really is one editing
+   task, not two.
+
+   Two sub-tabs, both always rendered (only one shown at a time via CSS,
+   see the script below) so switching between them never loses in-flight
+   input:
+
+   - "Main ingredients" (main_groups, routes/settings.py:
+     ingredient_aliases_view()): every canonical name that at least one
+     other ingredient is aliased to, with its own nutrition reference and,
+     nested under it, every ingredient name currently merged into it -
+     each removable via "×" (see removeAlias() below).
+   - "Everything else" (other_rows): every other known ingredient name,
+     with its OWN nutrition reference (an ingredient with no alias is its
+     own canonical name) and a "counts as" field to merge it into a main
+     ingredient.
+
+   Everything autosaves (no Save button): nutrition fields call
+   /api/ingredient-nutrition/set on change, alias removal/"counts as"
+   call /api/ingredient-alias/set - the SAME AJAX endpoints the recipe
+   form's inline hint already uses (see static/ingredient_alias_hint.js),
+   just with an explicit plan_id now (routes/settings.py:
+   _resolve_ajax_plan_id()), since this page's OWN tab switcher may be
+   showing a plan that isn't the active one. A name/alias with exactly
+   one recipe using it links straight there; with several, a small
+   dropdown lists them (recipe_link() macro below, services/
+   ingredient_aliases.py: recipes_by_ingredient_name()). #}
 {% extends 'base.html' %}
+
+{% macro recipe_link(name, recipes, plan_id) %}
+{% if recipes|length == 1 %}
+<a href="{{ url_for('recipes.recipe_edit_view', id=recipes[0][0], plan_id=plan_id) }}" class="ingredient-recipe-link" title="{{ _('Open recipe') }}: {{ recipes[0][1] }}">{{ name }}</a>
+{% elif recipes|length > 1 %}
+<span class="dropdown">
+    <a href="#" class="ingredient-recipe-link dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Used in %(count)d recipes', count=recipes|length) }}">{{ name }}</a>
+    <ul class="dropdown-menu">
+        {% for recipe_id, recipe_name in recipes %}
+        <li><a class="dropdown-item" href="{{ url_for('recipes.recipe_edit_view', id=recipe_id, plan_id=plan_id) }}">{{ recipe_name }}</a></li>
+        {% endfor %}
+    </ul>
+</span>
+{% else %}
+{{ name }}
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="row justify-content-center">
-    <div class="col-12 col-md-8">
+    <div class="col-12 col-md-9">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                <h4 class="card-title mb-0 fw-bold">🔗 {{ _('Merge Ingredients') }}</h4>
+                <h4 class="card-title mb-0 fw-bold">🔗 {{ _('Ingredients & Nutrition') }}</h4>
                 <a href="/manage" class="btn btn-sm btn-outline-light fw-bold"><- {{ _('Back') }}</a>
             </div>
             <div class="card-body p-4">
@@ -27,37 +67,104 @@
                     {% endfor %}
                 </ul>
                 {% endif %}
+
                 <p class="text-muted">
-                    {{ _('Enter a common name under "Counts as" to merge several ingredients on the shopping list into one line item (e.g. "Spaghetti" and "Fusilli" → "Noodles", "Olive Oil" and "Sunflower Oil" → "Oil"). Without a change, an ingredient still only counts as itself. This only affects the shopping list - recipes still show the ingredient name as originally entered.') }}
+                    {{ _('A main ingredient merges several spellings into one line item on the shopping list (e.g. "Spaghetti" and "Fusilli" → "Noodles") and carries the nutrition reference for all of them together. Everything under "Everything else" only counts for itself so far - set "Counts as" there to merge it into a main ingredient. Click a name to jump to a recipe it belongs to. Everything here saves automatically.') }}
                 </p>
 
-                {% if rows %}
+                <div class="d-flex gap-2 mb-3 border-bottom" id="ingredientSubtabs">
+                    <button type="button" class="ingredient-subtab-btn active" data-subtab="main">
+                        {{ _('Main Ingredients') }} <span class="badge">{{ main_groups|length }}</span>
+                    </button>
+                    <button type="button" class="ingredient-subtab-btn" data-subtab="other">
+                        {{ _('Everything Else') }} <span class="badge">{{ other_rows|length }}</span>
+                    </button>
+                </div>
+
+                {% if not main_groups and not other_rows %}
+                <div class="text-center p-5 text-muted">{{ _('No ingredients yet.') }}</div>
+                {% else %}
                 <input type="text" id="ingredientFilter" class="form-control mb-3" placeholder="🔍 {{ _('Search ingredient...') }}" autocomplete="off">
 
-                <form action="/update-ingredient-aliases" method="POST">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="plan_id" value="{{ plan_id }}">
-                    <div class="row g-2 mb-2 fw-bold text-muted small text-uppercase px-2">
-                        <div class="col-6">{{ _('Ingredient') }}</div>
-                        <div class="col-6">{{ _('Counts As') }}</div>
-                    </div>
-                    <div id="ingredientRows">
-                        {% for row in rows %}
-                        <div class="row g-2 mb-1 ingredient-alias-row">
-                            <div class="col-6">
-                                <input type="hidden" name="raw_name[]" value="{{ row.raw_name }}">
-                                <input type="text" class="form-control form-control-sm" value="{{ row.raw_name }}" disabled>
+                <div id="mainSubtabContent" class="ingredient-subtab-content">
+                    {% if main_groups %}
+                    <div class="d-flex flex-column gap-3">
+                        {% for group in main_groups %}
+                        <div class="ingredient-card main-ingredient-row" data-row-key="main:{{ group.canonical_name }}" data-search="{{ group.canonical_name }} {{ group.aliases | map(attribute='name') | join(' ') }}">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="fw-bold fs-5">{{ recipe_link(group.canonical_name, group.recipes, plan_id) }}</div>
+                                <span class="badge-count">{{ group.aliases|length }} {{ _('ingredient') if group.aliases|length == 1 else _('ingredients') }}</span>
                             </div>
-                            <div class="col-6">
-                                <input type="text" name="canonical_name[]" class="form-control form-control-sm{% if row.canonical_name != row.raw_name %} border-success{% endif %}" value="{{ row.canonical_name }}">
+
+                            <div class="nutrition-block{% if not group.has_entry %} text-muted{% endif %}" data-nutrition-name="{{ group.canonical_name }}">
+                                <span class="nutrition-label">🍎 {{ _('Nutrition') }}</span>
+                                <select class="form-select form-select-sm nutrition-reference" style="width: auto;" title="{{ _('Reference basis') }}">
+                                    <option value="g" {% if group.reference_unit == 'g' %}selected{% endif %}>{{ _('per 100 g') }}</option>
+                                    <option value="ml" {% if group.reference_unit == 'ml' %}selected{% endif %}>{{ _('per 100 ml') }}</option>
+                                    <option value="Stk" {% if group.reference_unit == 'Stk' %}selected{% endif %}>{{ _('per 1 pc') }}</option>
+                                </select>
+                                <label class="nutrition-field">{{ _('Protein') }} <input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" value="{{ group.protein }}"> g</label>
+                                <label class="nutrition-field">{{ _('Carbs') }} <input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" value="{{ group.carbs }}"> g</label>
+                                <label class="nutrition-field">{{ _('Fat') }} <input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" value="{{ group.fat }}"> g</label>
+                                <span class="nutrition-kcal">
+                                    <span class="nutrition-calories-display">{{ group.calories }}</span> kcal
+                                    <span class="autosave-indicator"></span>
+                                </span>
+                            </div>
+
+                            <div class="d-flex flex-column gap-1">
+                                {% for alias in group.aliases %}
+                                <div class="alias-item">
+                                    <span class="alias-arrow">↳</span>
+                                    <span class="alias-name">{{ recipe_link(alias.name, alias.recipes, plan_id) }}</span>
+                                    <button type="button" class="alias-remove-btn" data-raw-name="{{ alias.name }}" aria-label="{{ _('Remove this ingredient from the group') }}">×</button>
+                                </div>
+                                {% endfor %}
                             </div>
                         </div>
                         {% endfor %}
                     </div>
-                    <button type="submit" class="btn btn-dark fw-bold mt-3">{{ _('Save') }}</button>
-                </form>
-                {% else %}
-                <div class="text-center p-5 text-muted">{{ _('No ingredients yet.') }}</div>
+                    {% else %}
+                    <div class="text-center p-4 text-muted">{{ _('No main ingredients yet - set "Counts as" under "Everything else" to create one.') }}</div>
+                    {% endif %}
+                </div>
+
+                <div id="otherSubtabContent" class="ingredient-subtab-content d-none">
+                    {% if other_rows %}
+                    <div class="d-flex flex-column gap-3">
+                        {% for row in other_rows %}
+                        <div class="ingredient-card other-ingredient-row" data-row-key="other:{{ row.raw_name }}" data-search="{{ row.raw_name }}">
+                            <div class="fw-bold fs-5 mb-2">{{ recipe_link(row.raw_name, row.recipes, plan_id) }}</div>
+
+                            <div class="nutrition-block{% if not row.has_entry %} text-muted{% endif %}" data-nutrition-name="{{ row.raw_name }}">
+                                <span class="nutrition-label">🍎 {{ _('Nutrition') }}</span>
+                                <select class="form-select form-select-sm nutrition-reference" style="width: auto;" title="{{ _('Reference basis') }}">
+                                    <option value="g" {% if row.reference_unit == 'g' %}selected{% endif %}>{{ _('per 100 g') }}</option>
+                                    <option value="ml" {% if row.reference_unit == 'ml' %}selected{% endif %}>{{ _('per 100 ml') }}</option>
+                                    <option value="Stk" {% if row.reference_unit == 'Stk' %}selected{% endif %}>{{ _('per 1 pc') }}</option>
+                                </select>
+                                <label class="nutrition-field">{{ _('Protein') }} <input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" value="{{ row.protein }}"> g</label>
+                                <label class="nutrition-field">{{ _('Carbs') }} <input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" value="{{ row.carbs }}"> g</label>
+                                <label class="nutrition-field">{{ _('Fat') }} <input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" value="{{ row.fat }}"> g</label>
+                                <span class="nutrition-kcal">
+                                    <span class="nutrition-calories-display">{{ row.calories }}</span> kcal
+                                    <span class="autosave-indicator"></span>
+                                </span>
+                            </div>
+
+                            <div class="alias-item">
+                                <span class="alias-arrow">↳</span>
+                                <span class="text-muted small">{{ _('Counts As') }}</span>
+                                <input type="text" class="form-control form-control-sm counts-as-input" style="max-width: 260px;" data-raw-name="{{ row.raw_name }}" value="{{ row.raw_name }}">
+                                <span class="autosave-indicator"></span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center p-4 text-muted">{{ _('No further ingredients.') }}</div>
+                    {% endif %}
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -66,12 +173,317 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Purely client-side fuzzy filter (see static/fuzzy_search.js) - no
-// server round-trip needed. With potentially hundreds of ingredients it
-// would otherwise be impractical to see them all at once.
+const INGREDIENTS_PLAN_ID = {{ plan_id | tojson }};
+
+/** Everything below autosaves - no Save button anywhere on this page.
+ * Reuses the exact same AJAX endpoints the recipe form's inline hint
+ * already calls (static/ingredient_alias_hint.js), just always with an
+ * explicit plan_id (this page's own tab switcher may be showing a plan
+ * that isn't the active one, see routes/settings.py:
+ * _resolve_ajax_plan_id()). */
+function postJson(url, body) {
+    return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.CSRF_TOKEN },
+        body: JSON.stringify({ ...body, plan_id: INGREDIENTS_PLAN_ID }),
+    }).then(response => response.json().then(data => ({ ok: response.ok, data })));
+}
+
+/** Briefly flashes a "✓"/"⚠" next to a field after an autosave attempt -
+ * the only feedback an autosave needs, no separate success page/redirect. */
+function showAutosaveResult(indicatorEl, ok) {
+    indicatorEl.textContent = ok ? '✓' : '⚠️';
+    indicatorEl.className = 'autosave-indicator ' + (ok ? 'autosave-ok' : 'autosave-error');
+    setTimeout(() => { indicatorEl.textContent = ''; indicatorEl.className = 'autosave-indicator'; }, 2000);
+}
+
+// Subtab switching and the search filter are wired ONCE, right here at
+// the bottom of this script - #ingredientFilter and the subtab buttons
+// themselves are never recreated (see refreshIngredientsContent() below,
+// which patches only the individual .ingredient-card rows that actually
+// changed, nothing outside them), so there is nothing to re-wire later.
+document.querySelectorAll('.ingredient-subtab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.ingredient-subtab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const isMain = btn.dataset.subtab === 'main';
+        document.getElementById('mainSubtabContent')?.classList.toggle('d-none', !isMain);
+        document.getElementById('otherSubtabContent')?.classList.toggle('d-none', isMain);
+    });
+});
 wireFuzzyFilter(
-    document.getElementById('ingredientFilter'), '.ingredient-alias-row',
-    row => row.querySelector('input[name="raw_name[]"]').value
+    document.getElementById('ingredientFilter'), '.ingredient-card',
+    row => row.dataset.search
 );
+
+// The server markup each live row was last rendered from, recorded before
+// any client-side change (typed values, search-hidden class, autosave
+// indicator, an opened dropdown) could touch it - refreshes compare a
+// fresh render against THIS, not the live outerHTML, so a row the user
+// merely interacted with isn't mistaken for one whose data changed.
+const serverHtmlByRow = new WeakMap();
+
+/** Wires the nutrition/alias-removal/"counts as" autosave handlers for
+ * ONE .ingredient-card - called once per row rendered on initial page
+ * load, and again for any row refreshIngredientsContent() below inserts
+ * or replaces. A row it decides is UNCHANGED keeps its existing,
+ * already-wired DOM node untouched (never passed back through here
+ * again), so this never double-attaches a listener to the same element. */
+function wireIngredientCard(card) {
+    serverHtmlByRow.set(card, card.outerHTML);
+
+    const block = card.querySelector('.nutrition-block');
+    if (block) wireNutritionBlock(block);
+
+    card.querySelectorAll('.alias-remove-btn').forEach(wireAliasRemoveButton);
+
+    const countsAsInput = card.querySelector('.counts-as-input');
+    if (countsAsInput) wireCountsAsInput(countsAsInput);
+}
+
+// Nutrition fields: save on change (blur/selection, not per keystroke),
+// live kcal display (Atwater rule of thumb 4/4/9 kcal per g, same
+// formula as services/nutrition.py: compute_calories()) either way.
+// Never needs refreshIngredientsContent() - editing nutrition never
+// changes which tab an ingredient belongs to.
+function wireNutritionBlock(block) {
+    const name = block.dataset.nutritionName;
+    const referenceSelect = block.querySelector('.nutrition-reference');
+    const proteinInput = block.querySelector('.nutrition-protein');
+    const carbsInput = block.querySelector('.nutrition-carbs');
+    const fatInput = block.querySelector('.nutrition-fat');
+    const caloriesDisplay = block.querySelector('.nutrition-calories-display');
+    const indicator = block.querySelector('.autosave-indicator');
+
+    function recalcCalories() {
+        const protein = parseFloat(proteinInput.value) || 0;
+        const carbs = parseFloat(carbsInput.value) || 0;
+        const fat = parseFloat(fatInput.value) || 0;
+        caloriesDisplay.textContent = Math.round(protein * 4 + carbs * 4 + fat * 9);
+    }
+
+    function save() {
+        recalcCalories();
+        postJson('/api/ingredient-nutrition/set', {
+            name: name,
+            reference_unit: referenceSelect.value,
+            protein: proteinInput.value,
+            carbs: carbsInput.value,
+            fat: fatInput.value,
+        }).then(({ ok }) => showAutosaveResult(indicator, ok))
+          .catch(() => showAutosaveResult(indicator, false));
+    }
+
+    proteinInput.addEventListener('input', recalcCalories);
+    carbsInput.addEventListener('input', recalcCalories);
+    fatInput.addEventListener('input', recalcCalories);
+    [referenceSelect, proteinInput, carbsInput, fatInput].forEach(el => el.addEventListener('change', save));
+}
+
+// Removes a single ingredient from a main ingredient's group (the "×"
+// button): sets its alias back to itself (set_alias() deletes the
+// mapping when canonical_name == raw_name, see
+// services/ingredient_aliases.py) - exactly like retyping "Counts as"
+// back to the original name. Refreshes on success (see
+// refreshIngredientsContent() below): the removed ingredient (and, if it
+// was the group's last one, the group itself) needs to move to/appear
+// under "Everything else", which is simplest to get right by
+// re-rendering from the server rather than patching the DOM by hand -
+// but note that this now only replaces the ROWS that actually changed
+// (this one, and whichever group it left/joined), not the whole page.
+//
+// The raw name travels via a data-raw-name attribute (set with a plain,
+// auto-escaped Jinja expression in the template) rather than being
+// interpolated straight into an inline onclick="..." via the tojson
+// filter - that looked tempting, but Flask's tojson filter returns its
+// result PRE-MARKED SAFE for a script context (it does NOT escape the
+// quotes JSON itself uses), so a name containing... well, ANY name at
+// all, since every JSON string is wrapped in double quotes, breaks
+// straight out of the surrounding onclick="..." attribute. Real bug hit
+// in production: clicking any alias's "x" button threw "Uncaught
+// SyntaxError: expected expression, got '}'" - reproduced locally, the
+// rendered attribute was literally onclick=removeAlias(this, followed by
+// an unescaped double quote right where the name started.
+function wireAliasRemoveButton(button) {
+    button.addEventListener('click', () => {
+        const rawName = button.dataset.rawName;
+        button.disabled = true;
+        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: rawName })
+            .then(({ ok }) => {
+                if (ok) { refreshIngredientsContent(); return; }
+                button.disabled = false;
+                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+            })
+            .catch(() => {
+                button.disabled = false;
+                alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias);
+            });
+    });
+}
+
+// "Counts as" field on an "everything else" row: refreshes on success for
+// the same reason as wireAliasRemoveButton() above (the row may need to
+// move under "Main Ingredients", possibly creating a brand new group).
+function wireCountsAsInput(input) {
+    const indicator = input.nextElementSibling;
+    input.addEventListener('change', () => {
+        const rawName = input.dataset.rawName;
+        const canonicalName = input.value.trim() || rawName;
+        postJson('/api/ingredient-alias/set', { raw_name: rawName, canonical_name: canonicalName })
+            .then(({ ok }) => {
+                if (ok && canonicalName !== rawName) { refreshIngredientsContent(); return; }
+                showAutosaveResult(indicator, ok);
+            })
+            .catch(() => showAutosaveResult(indicator, false));
+    });
+}
+
+/** Reconciles ONE sub-tab's rows against a freshly fetched version of
+ * this page (see refreshIngredientsContent() below): rows whose markup
+ * is byte-for-byte identical keep their EXISTING, live DOM node exactly
+ * as-is (so any field a user has focused/is mid-typing in stays
+ * completely untouched, cursor position included, if that row didn't
+ * change) - only rows that are new, removed, or actually changed get
+ * swapped for the freshly rendered version, which is also the only case
+ * wireIngredientCard() needs to run again for.
+ *
+ * If the row LIST container itself doesn't exist on one side (the
+ * "no ingredients / no main ingredients yet" placeholder text instead of
+ * the .d-flex.flex-column.gap-3 wrapper) - i.e. this sub-tab is
+ * transitioning between having some rows and having none - falls back to
+ * replacing the whole sub-tab content wholesale rather than reconciling
+ * row by row: there is nothing meaningful to preserve on the "empty"
+ * side anyway, and this transition is rare (a tab losing/gaining its
+ * very last row). */
+function reconcileIngredientSubtab(containerId, freshDoc) {
+    const currentContainer = document.getElementById(containerId);
+    const freshContainer = freshDoc.getElementById(containerId);
+    if (!currentContainer || !freshContainer) return;
+
+    const currentList = currentContainer.querySelector(':scope > .d-flex');
+    const freshList = freshContainer.querySelector(':scope > .d-flex');
+
+    if (!currentList || !freshList) {
+        currentContainer.innerHTML = freshContainer.innerHTML;
+        currentContainer.querySelectorAll('.ingredient-card').forEach(wireIngredientCard);
+        return;
+    }
+
+    const freshRows = Array.from(freshList.querySelectorAll(':scope > .ingredient-card'));
+    const freshKeys = new Set(freshRows.map(row => row.dataset.rowKey));
+    const currentRowsByKey = new Map();
+    currentList.querySelectorAll(':scope > .ingredient-card').forEach(row => {
+        if (freshKeys.has(row.dataset.rowKey)) currentRowsByKey.set(row.dataset.rowKey, row);
+        else row.remove();
+    });
+
+    // An unchanged row must never be MOVED: any DOM move - replaceChildren()
+    // and insertBefore() alike - detaches the node and blurs whatever has
+    // focus inside it (verified in a real browser; both earlier versions of
+    // this function lost focus exactly that way). Stale rows are removed
+    // first (above), which leaves the survivors already in the right order
+    // (the list is sorted by name), so from here on only changed rows are
+    // replaced in place and brand-new rows inserted after their
+    // predecessor - neither touches any other row.
+    let previous = null;
+    freshRows.forEach(freshRow => {
+        const existingRow = currentRowsByKey.get(freshRow.dataset.rowKey);
+        let node = existingRow;
+
+        if (!existingRow || serverHtmlByRow.get(existingRow) !== freshRow.outerHTML) {
+            wireIngredientCard(freshRow);
+            if (existingRow) existingRow.replaceWith(freshRow);
+            else if (previous) previous.after(freshRow);
+            else currentList.prepend(freshRow);
+            node = freshRow;
+        } else if (node.previousElementSibling !== previous) {
+            // Only reachable if the server's order changed without the row
+            // itself changing - never happens with name-sorted lists, but
+            // stay correct rather than silently misordered.
+            if (previous) previous.after(node);
+            else currentList.prepend(node);
+        }
+        previous = node;
+    });
+}
+
+const FOCUSABLE_FIELD_CLASSES = ['nutrition-reference', 'nutrition-protein', 'nutrition-carbs', 'nutrition-fat', 'counts-as-input'];
+
+/** Safety net for the one case reconcileIngredientSubtab() can't avoid:
+ * the row the user is currently typing in was itself changed on the
+ * server (e.g. a nutrition save for that very row landed just before), so
+ * its node had to be replaced. Remembers which field of which row had
+ * focus, plus its unsaved value and cursor, so they can be put back on the
+ * replacement field afterwards. */
+function captureFocusedField() {
+    const el = document.activeElement;
+    const row = el && el.closest ? el.closest('.ingredient-card') : null;
+    const fieldClass = el && FOCUSABLE_FIELD_CLASSES.find(cls => el.classList.contains(cls));
+    if (!row || !fieldClass) return null;
+    let selection = null;
+    try { selection = [el.selectionStart, el.selectionEnd]; } catch (e) { /* e.g. type="number" */ }
+    return { el, rowKey: row.dataset.rowKey, fieldClass, value: el.value, selection };
+}
+
+function restoreFocusedField(captured) {
+    if (!captured || (captured.el.isConnected && document.activeElement === captured.el)) return;
+    const row = document.querySelector(`.ingredient-card[data-row-key="${CSS.escape(captured.rowKey)}"]`);
+    const field = row && row.querySelector('.' + captured.fieldClass);
+    if (!field) return;
+    field.value = captured.value;
+    field.focus();
+    if (captured.selection && captured.selection[0] != null) {
+        try { field.setSelectionRange(captured.selection[0], captured.selection[1]); } catch (e) { /* not supported */ }
+    }
+}
+
+/** Re-fetches this same page in the background and reconciles both
+ * sub-tabs' rows against it (see reconcileIngredientSubtab() above) -
+ * removing an alias or re-pointing "Counts as" can move a row between
+ * sub-tabs (possibly creating/dissolving a whole group), which needs a
+ * fresh server render to get right, but a REAL page navigation
+ * (window.location.reload()) reset the scroll position to the top and
+ * lost whichever sub-tab/search filter was active, defeating the point
+ * of autosaving in the first place (reported live) - and even swapping
+ * the ENTIRE page content in one go (an earlier version of this
+ * function) still destroyed and recreated every row, losing focus/cursor
+ * in whatever OTHER, completely unrelated field the user had already
+ * clicked into next (reported live too). Reconciling row by row fixes
+ * both: nothing here is an actual navigation, so scroll position is
+ * simply never touched, and an unrelated row's DOM node - and thus its
+ * focus/cursor - is never touched either, since only rows that actually
+ * changed get swapped out. */
+function refreshIngredientsContent() {
+    return fetch(window.location.href)
+        .then(response => {
+            if (!response.ok) throw new Error('refresh failed');
+            return response.text();
+        })
+        .then(html => {
+            const freshDoc = new DOMParser().parseFromString(html, 'text/html');
+            const focused = captureFocusedField();
+            reconcileIngredientSubtab('mainSubtabContent', freshDoc);
+            reconcileIngredientSubtab('otherSubtabContent', freshDoc);
+            restoreFocusedField(focused);
+
+            // Re-apply the current search filter to any row that was just
+            // inserted/replaced (it only toggles a class on each row).
+            document.getElementById('ingredientFilter')?.dispatchEvent(new Event('input'));
+
+            const freshMainBadge = freshDoc.querySelector('.ingredient-subtab-btn[data-subtab="main"] .badge');
+            const freshOtherBadge = freshDoc.querySelector('.ingredient-subtab-btn[data-subtab="other"] .badge');
+            const mainBadge = document.querySelector('.ingredient-subtab-btn[data-subtab="main"] .badge');
+            const otherBadge = document.querySelector('.ingredient-subtab-btn[data-subtab="other"] .badge');
+            if (freshMainBadge && mainBadge) mainBadge.textContent = freshMainBadge.textContent;
+            if (freshOtherBadge && otherBadge) otherBadge.textContent = freshOtherBadge.textContent;
+        })
+        // A real error (network/server) is the one case an actual reload
+        // is still the right fallback - better a lost scroll position
+        // than a page stuck showing data that may no longer match the
+        // database.
+        .catch(() => window.location.reload());
+}
+
+document.querySelectorAll('.ingredient-card').forEach(wireIngredientCard);
 </script>
 {% endblock %}
