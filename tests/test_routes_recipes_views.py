@@ -135,7 +135,7 @@ def test_recipe_edit_list_view_persists_search_across_page_loads(client, make_re
 
 def test_recipe_detail_edit_link_points_to_dedicated_edit_page():
     """The plan page's recipe detail popup links to the recipe's edit page."""
-    content = (STATIC_DIR / "plan.js").read_text(encoding="utf-8")
+    content = (STATIC_DIR / "plan-detail.js").read_text(encoding="utf-8")
     assert "`/manage/recipe/edit/${recipe.id}`" in content
     assert "edit-list?edit=" not in content
 

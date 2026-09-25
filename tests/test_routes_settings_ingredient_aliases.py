@@ -1,4 +1,5 @@
 """The ingredients & nutrition page and the alias AJAX endpoint."""
+from pathlib import Path
 
 
 def test_ingredient_aliases_view_lists_unaliased_names_under_other(client, make_recipe):
@@ -7,7 +8,9 @@ def test_ingredient_aliases_view_lists_unaliased_names_under_other(client, make_
     assert resp.status_code == 200
     assert b"Spaghetti" in resp.data
     assert b"fuzzy_search.js" in resp.data
-    assert b"wireFuzzyFilter" in resp.data
+    assert b"ingredient_aliases.js" in resp.data
+    js = (Path(__file__).resolve().parent.parent / "static" / "ingredient_aliases.js").read_text(encoding="utf-8")
+    assert "wireFuzzyFilter" in js
 
 
 def test_ingredient_aliases_view_empty_state(client):

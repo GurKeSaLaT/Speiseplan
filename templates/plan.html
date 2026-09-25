@@ -138,7 +138,7 @@
     </div>
 </div>
 
-{# One shared read-only recipe modal, refilled on each open (plan.js:
+{# One shared read-only recipe modal, refilled on each open (plan-detail.js:
    openRecipeDetail). #}
 <div class="modal fade" id="recipeDetailModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable modal-md">
@@ -217,5 +217,6 @@ window.PLAN_DATA = {{ plan_data | tojson }};
 <script src="{{ url_for('static', filename='plan-manual-select.js') }}"></script>
 <script src="{{ url_for('static', filename='plan-sides.js') }}"></script>
 <script src="{{ url_for('static', filename='plan-shopping.js') }}"></script>
+<script src="{{ url_for('static', filename='plan-detail.js') }}"></script>
 {% endif %}
 {% endblock %}

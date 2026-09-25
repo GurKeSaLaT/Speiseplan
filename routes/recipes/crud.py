@@ -121,15 +121,53 @@ def recipe_edit_list_view():
     )
 
 
-@recipes_bp.route('/add-recipe', methods=['POST'])
-def add_recipe():
+def _parse_ingredient_rows(form):
     """Ingredients arrive as parallel ing_*[] lists; rows without a name are
     skipped. ing_pantry[] has exactly one entry per row (a hidden mirror
-    input), so unchecked boxes don't shift the alignment.
+    input), so unchecked boxes don't shift the alignment."""
+    ing_names = form.getlist('ing_name[]')
+    ing_amounts = form.getlist('ing_amount[]')
+    ing_units = form.getlist('ing_unit[]')
+    ing_categories = form.getlist('ing_category[]')
+    ing_pantry_flags = form.getlist('ing_pantry[]')
 
-    Nutrition is computed from the ingredients unless nutrition_override is
-    set; calories are always derived from protein/carbs/fat.
-    """
+    ingredients = []
+    for i in range(len(ing_names)):
+        if ing_names[i].strip():
+            amount = _parse_float(ing_amounts[i])
+            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
+            amount, unit = normalize_amount_unit(amount, ing_units[i])
+            ingredients.append({
+                "name": ing_names[i], "amount": amount, "unit": unit,
+                "category": category, "is_pantry": is_pantry,
+            })
+    return ingredients
+
+
+def _nutrition_from_form(form, plan_id, ingredients, servings, nutrition_override):
+    """Manual values if nutrition_override is set, otherwise computed from
+    the ingredients. Calories are always derived from protein/carbs/fat.
+    Returns (calories, protein, carbs, fat)."""
+    if nutrition_override:
+        protein = _parse_float(form.get('protein'))
+        carbs = _parse_float(form.get('carbs'))
+        fat = _parse_float(form.get('fat'))
+        return compute_calories(protein, carbs, fat), protein, carbs, fat
+    computed = compute_recipe_nutrition(plan_id, ingredients, servings)
+    return computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
+
+
+def _add_ingredients(recipe_id, ingredients):
+    for ing in ingredients:
+        db.session.add(Ingredient(
+            recipe_id=recipe_id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
+            category=ing["category"], is_pantry=ing["is_pantry"],
+        ))
+
+
+@recipes_bp.route('/add-recipe', methods=['POST'])
+def add_recipe():
     user = current_user()
     plan_id = default_plan_id(request.form, user)
     name = request.form.get('name')
@@ -141,32 +179,9 @@ def add_recipe():
     source_url = (request.form.get('source_url') or '').strip() or None
     instructions = (request.form.get('instructions') or '').strip() or None
 
-    ing_names = request.form.getlist('ing_name[]')
-    ing_amounts = request.form.getlist('ing_amount[]')
-    ing_units = request.form.getlist('ing_unit[]')
-    ing_categories = request.form.getlist('ing_category[]')
-    ing_pantry_flags = request.form.getlist('ing_pantry[]')
-
-    normalized_ingredients = []
-    for i in range(len(ing_names)):
-        if ing_names[i].strip():
-            amount = _parse_float(ing_amounts[i])
-            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
-            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
-            amount, unit = normalize_amount_unit(amount, ing_units[i])
-            normalized_ingredients.append({
-                "name": ing_names[i], "amount": amount, "unit": unit,
-                "category": category, "is_pantry": is_pantry,
-            })
-
-    if nutrition_override:
-        protein = _parse_float(request.form.get('protein'))
-        carbs = _parse_float(request.form.get('carbs'))
-        fat = _parse_float(request.form.get('fat'))
-        calories = compute_calories(protein, carbs, fat)
-    else:
-        computed = compute_recipe_nutrition(plan_id, normalized_ingredients, servings)
-        calories, protein, carbs, fat = computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
+    ingredients = _parse_ingredient_rows(request.form)
+    calories, protein, carbs, fat = _nutrition_from_form(
+        request.form, plan_id, ingredients, servings, nutrition_override)
 
     new_recipe = Recipe(
         name=name, owner_plan_id=plan_id, category_id=category_id,
@@ -178,12 +193,7 @@ def add_recipe():
     db.session.flush()
 
     save_recipe_seasons(new_recipe.id, request.form)
-
-    for ing in normalized_ingredients:
-        db.session.add(Ingredient(
-            recipe_id=new_recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
-            category=ing["category"], is_pantry=ing["is_pantry"],
-        ))
+    _add_ingredients(new_recipe.id, ingredients)
 
     db.session.commit()
     return redirect(url_for('recipes.recipe_edit_view', id=new_recipe.id, plan_id=plan_id))
@@ -214,40 +224,11 @@ def edit_recipe(id):
     save_recipe_seasons(recipe.id, request.form)
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
+    ingredients = _parse_ingredient_rows(request.form)
+    _add_ingredients(recipe.id, ingredients)
 
-    ing_names = request.form.getlist('ing_name[]')
-    ing_amounts = request.form.getlist('ing_amount[]')
-    ing_units = request.form.getlist('ing_unit[]')
-    ing_categories = request.form.getlist('ing_category[]')
-    ing_pantry_flags = request.form.getlist('ing_pantry[]')
-
-    normalized_ingredients = []
-    for i in range(len(ing_names)):
-        if ing_names[i].strip():
-            amount = _parse_float(ing_amounts[i])
-            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
-            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
-            amount, unit = normalize_amount_unit(amount, ing_units[i])
-            normalized_ingredients.append({
-                "name": ing_names[i], "amount": amount, "unit": unit,
-                "category": category, "is_pantry": is_pantry,
-            })
-
-    for ing in normalized_ingredients:
-        db.session.add(Ingredient(
-            recipe_id=recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
-            category=ing["category"], is_pantry=ing["is_pantry"],
-        ))
-
-    if recipe.nutrition_override:
-        recipe.protein = _parse_float(request.form.get('protein'))
-        recipe.carbs = _parse_float(request.form.get('carbs'))
-        recipe.fat = _parse_float(request.form.get('fat'))
-        recipe.calories = compute_calories(recipe.protein, recipe.carbs, recipe.fat)
-    else:
-        computed = compute_recipe_nutrition(plan_id, normalized_ingredients, recipe.servings)
-        recipe.calories, recipe.protein = computed["calories"], computed["protein"]
-        recipe.carbs, recipe.fat = computed["carbs"], computed["fat"]
+    recipe.calories, recipe.protein, recipe.carbs, recipe.fat = _nutrition_from_form(
+        request.form, plan_id, ingredients, recipe.servings, recipe.nutrition_override)
 
     db.session.commit()
 
