@@ -1,6 +1,4 @@
-"""Tests for routes/sharing.py (invite/remove/star) as well as plan
-isolation itself (data from one plan must not show up in another plan)
-and services/auth.py: current_plan()."""
+"""Sharing (invite/remove/star/leave), plan switching and plan isolation."""
 from datetime import date
 
 
@@ -17,8 +15,7 @@ def test_sharing_view_lists_owner_as_member(client):
 
 
 def test_invite_member_grants_full_access(app, client, make_user, login_as):
-    """An invited user immediately gets full access (without any
-    confirmation step) - can e.g. fill in a plan day right away."""
+    """No confirmation step: the invitee can edit the plan right away."""
     other_id, _ = make_user("Mitbewohner")
 
     resp = client.post("/manage/sharing/invite", data={"email": _email_for(app, other_id)})
@@ -43,22 +40,14 @@ def test_invite_is_not_starred_for_invitee(app, client, make_user):
     with app.app_context():
         membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=other_id).first()
         assert membership.is_starred is False
-        # The user's own plan stays starred regardless - see app.py:
-        # init_db() comment for the same principle with the seed accounts.
+        # Their own plan stays the starred one.
         own_membership = PlanMembership.query.filter_by(plan_id=own_plan_id, user_id=other_id).first()
         assert own_membership.is_starred is True
 
 
 def test_invite_stars_first_membership_for_user_with_no_plan_yet(app, client):
-    """A user who registered without an invite and never created their
-    own plan (the "zero-plan" state, see routes/auth.py: register()) has
-    NO memberships at all yet. Inviting such a user into another plan
-    must star that membership - otherwise default_plan_id()/current_plan()
-    (services/auth.py) have nothing to fall back to for them at all,
-    which showed up as e.g. an empty category dropdown when they tried to
-    create a recipe without an explicit ?plan_id= in the URL (was: always
-    is_starred=False, mirrors the is_first check in services/plans.py:
-    create_plan()/accept_pending_invites() now)."""
+    """Regression: a user without any plan got an unstarred membership, left
+    no default plan and saw e.g. an empty category dropdown."""
     from models import User, PlanMembership, db
 
     with app.app_context():
@@ -78,11 +67,7 @@ def test_invite_stars_first_membership_for_user_with_no_plan_yet(app, client):
 
 
 def test_migrate_ensure_starred_membership_repairs_existing_data(app, make_user):
-    """migrations.py: _migrate_ensure_starred_membership() repairs
-    memberships that already ended up unstarred-with-no-fallback before
-    the routes/sharing.py: invite_member() fix above existed - prefers
-    starring the plan the user themselves owns over an unrelated one
-    they were merely invited to."""
+    """Repairs data left by that bug, preferring the user's own plan."""
     from migrations import _migrate_ensure_starred_membership
     from models import Plan, PlanMembership, db
 
@@ -90,8 +75,7 @@ def test_migrate_ensure_starred_membership_repairs_existing_data(app, make_user)
     other_owner_id, other_plan_id = make_user("Andere Besitzerin")
 
     with app.app_context():
-        # Simulate the pre-fix bug: both memberships of "Besitzerin" end
-        # up unstarred (their own plan included).
+        # The buggy state: no starred membership at all.
         PlanMembership.query.filter_by(user_id=owner_id, plan_id=own_plan_id).update({"is_starred": False})
         db.session.add(PlanMembership(plan_id=other_plan_id, user_id=owner_id, is_starred=False))
         db.session.commit()
@@ -127,8 +111,7 @@ def test_remove_owner_is_rejected(client):
 
 
 def test_star_plan_switches_default_and_unstars_previous(app, client, make_user):
-    """Only ONE plan of the same user may be starred at a time -
-    star_plan() has to automatically remove the previous marking."""
+    """Only one plan per user may be starred."""
     other_owner_id, other_plan_id = make_user("Andere")
     with app.app_context():
         from models import PlanMembership, db
@@ -152,14 +135,10 @@ def test_star_plan_without_membership_returns_404(client, make_user):
 
 
 def test_switch_plan_requires_membership(app, client, make_user):
-    """/plan/switch/<id> may only set the active plan to a plan where a
-    membership actually exists (see routes/auth.py: switch_plan) -
-    otherwise the previously active plan remains in place."""
+    """Switching to a plan without membership keeps the current plan active."""
     _, other_plan_id = make_user("Fremd")
 
     client.post(f"/plan/switch/{other_plan_id}")
-    # Direct test via a real action: the active plan must NOT have
-    # changed to the foreign plan.
     resp = client.post("/day/2026-06-15/servings", json={"servings": 3})
     assert resp.status_code == 200
 
@@ -171,15 +150,9 @@ def test_switch_plan_requires_membership(app, client, make_user):
 
 
 def test_switch_plan_always_lands_on_interactive_week_view(app, client, make_user):
-    """Regression test (see BUGS.md history): switching plans via the
-    sidebar must land on that plan's own interactive week view for the
-    CURRENT week - regardless of request.referrer (routes/auth.py:
-    switch_plan()). An earlier fix tried to preserve the referrer (minus
-    a stale ?plan_id=), but "/" is now a separate, read-only cross-plan
-    summary page (routes/plan/pages.py: index()) - redirecting there, or
-    back to an arbitrary settings tab that still names the OLD plan,
-    would both silently fail to show the newly active plan's content even
-    though the sidebar highlight already changed."""
+    """Regression: switching must land on the new plan's current week, not
+    the referrer - which may still carry the old plan's ?plan_id= and keep
+    showing the old plan."""
     other_id, other_plan_id = make_user("Mitbewohner")
     from models import PlanMembership, db
     with app.app_context():
@@ -195,7 +168,6 @@ def test_switch_plan_always_lands_on_interactive_week_view(app, client, make_use
     assert resp.status_code == 302
     assert resp.headers["Location"] == f"/plan/{friday}?plan_id={other_plan_id}"
 
-    # Also true with no referrer at all (e.g. triggered outside the app).
     resp2 = client.post(f"/plan/switch/{client.plan_id}")
     assert resp2.status_code == 302
     assert resp2.headers["Location"] == f"/plan/{friday}?plan_id={client.plan_id}"
@@ -204,13 +176,8 @@ def test_switch_plan_always_lands_on_interactive_week_view(app, client, make_use
 # --- Plan isolation: data from one plan must not show up in another ---
 
 def test_week_view_does_not_show_other_plans_data(app, client, make_recipe, make_user):
-    """Recipes themselves are deliberately GLOBAL (shared cookbook, see
-    the models/plan.py comment on Plan) - "Fremdes Gericht" is therefore
-    still allowed to show up in the client-side recipe search
-    (window.PLAN_DATA.allRecipes). Only the actual PLANNING needs to be
-    isolated: this day must not show an assigned main dish in the
-    user's own plan just because an ANOTHER plan has one for the same
-    calendar day."""
+    """Another plan's dish on the same date must not appear in this plan's
+    calendar."""
     import json
     import re
 
@@ -232,12 +199,9 @@ def test_week_view_does_not_show_other_plans_data(app, client, make_recipe, make
 
 
 def test_reroll_repetition_weighting_ignores_other_plans_history(app, client, make_recipe, make_user):
-    """Only indirectly checkable via recent_usage_counts (see the unit
-    test for that in test_services_planning.py) - here additionally
-    making sure that a reroll in the user's own plan works at all,
-    independent of whether a foreign plan filled with the SAME-NAMED
-    entry exists (no cross-plan collision via the date column, see
-    models/calendar.py: PlanDay.__table_args__)."""
+    """Two plans may have a row for the same date (unique per plan, not
+    globally); the weighting itself is unit-tested in
+    test_services_planning.py."""
     from models import PlanDay, db
 
     recipe_a = make_recipe("Bei mir")
@@ -308,8 +272,7 @@ def test_invite_unknown_email_shows_up_as_pending_on_sharing_page(client):
     client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
     resp = client.get("/manage/sharing")
     assert b"neu@test.local" in resp.data
-    # No registration link anymore - just points at the app itself (see
-    # routes/sharing.py: invite_member()).
+    # The invite link is just the app itself; joining happens on first login.
     assert b'value="http://localhost/"' in resp.data
 
 
@@ -323,10 +286,7 @@ def test_invite_rejects_malformed_email(app, client):
 
 
 def test_first_authentication_with_invited_email_auto_joins_plan(app, client):
-    """The actual core of the invitation flow: if EXACTLY the invited
-    email later authenticates via Authelia for the first time, the
-    PlanMembership is created immediately - without the client having to
-    act again (see services/auth.py: current_user())."""
+    """The invited email's first login creates the membership."""
     client.post("/manage/sharing/invite", data={"email": "neu@test.local"})
 
     test_client = app.test_client()
@@ -338,15 +298,9 @@ def test_first_authentication_with_invited_email_auto_joins_plan(app, client):
         user = User.query.filter_by(email="neu@test.local").first()
         membership = PlanMembership.query.filter_by(plan_id=client.plan_id, user_id=user.id).first()
         assert membership is not None
-        # First (and only) membership of the new user -> starred,
-        # see services/plans.py: accept_pending_invites().
-        assert membership.is_starred is True
+        assert membership.is_starred is True  # their first membership
         assert PendingPlanInvite.query.filter_by(plan_id=client.plan_id, email="neu@test.local").first() is None
 
-    # Lands in the invited plan right away - "/" is the cross-plan
-    # summary now (routes/plan/pages.py: index()), reachable directly
-    # (200) rather than via a redirect, as long as the user has at least
-    # one plan (the invited one, in this case).
     assert "not a member of any plan".encode("utf-8") not in resp.data
 
 
@@ -393,7 +347,6 @@ def test_leave_plan_removes_own_membership_only(app, client, make_user):
     from models import Plan
     with app.app_context():
         assert PlanMembership.query.filter_by(plan_id=other_plan_id, user_id=client.user_id).first() is None
-        # The plan and the owner's membership stay untouched.
         assert db.session.get(Plan, other_plan_id) is not None
         assert PlanMembership.query.filter_by(plan_id=other_plan_id, user_id=other_user_id).first() is not None
 

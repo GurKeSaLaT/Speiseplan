@@ -1,9 +1,5 @@
-"""Tests for Authelia-header-based identity (services/auth.py:
-current_user()) and the global authentication requirement
-(app.py: require_login()). Deliberately does NOT use the client fixture
-from conftest.py (which already presents a valid header, see the comment
-there) for the "no/bad header" cases - these tests are specifically
-checking the not-authenticated state."""
+"""Header-based identity and the global auth gate. The unauthenticated
+cases use app.test_client() instead of the pre-authenticated client."""
 
 
 def test_protected_route_returns_401_without_identity_header(app):
@@ -29,11 +25,7 @@ def test_static_files_reachable_without_identity_header(app):
 def test_first_request_with_new_email_auto_provisions_a_user(app):
     from models import User
 
-    # zero-plan gate lands on the "no plan yet" page - follow_redirects
-    # since whether that's a direct 200 or one 302 hop first depends on
-    # whether today happens to already be a Friday (routes/plan/pages.py:
-    # index() -> week_view(), which redirects to the canonical Friday URL
-    # only when date.today() isn't already one).
+    # Lands on the "no plan yet" page, via a redirect unless today is a Friday.
     resp = app.test_client().get(
         "/", headers={"Remote-Email": "neu@test.local", "Remote-Name": "Neu"}, follow_redirects=True
     )
@@ -87,11 +79,7 @@ def test_display_name_resyncs_from_header_on_later_requests(app):
 
 
 def test_pending_invite_is_accepted_on_first_authentication(app, client):
-    """A plan invite to a not-yet-seen email (routes/sharing.py:
-    invite_member()) is applied the moment that email first authenticates
-    - previously done in routes/auth.py: register(), now the natural
-    place for it is current_user()'s auto-provisioning path (see
-    services/auth.py)."""
+    """An invite to an unknown email is applied on its first login."""
     from models import PlanMembership, User
 
     client.post("/manage/sharing/invite", data={"email": "invited@test.local"})

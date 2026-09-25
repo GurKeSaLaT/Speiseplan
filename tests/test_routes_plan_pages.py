@@ -1,5 +1,4 @@
-"""Tests for routes/plan/pages.py: page routes of the weekly plan calendar
-(overview, create form, automatic filling+saving)."""
+"""Plan pages: home summary, week view, week creation and generation."""
 import json
 import re
 from datetime import date, timedelta
@@ -17,20 +16,13 @@ def _extract_plan_data(resp):
 # --- index ---
 
 def test_index_shows_cross_plan_summary_for_current_week(client):
-    """"/" is the read-only cross-plan summary (routes/plan/pages.py:
-    index(), see services/plan_summary.py) - reachable directly (200),
-    not a redirect into the interactive single-plan view anymore (see
-    routes/auth.py: switch_plan() for how that's now reached instead)."""
     resp = client.get("/")
     assert resp.status_code == 200
     assert "Weekly Overview".encode("utf-8") in resp.data
 
 
 def test_index_has_no_dice_or_create_buttons(app, client, make_recipe):
-    """Regression test (see BUGS.md history): the summary page must have
-    NO way to roll/edit/create a plan from it, even when a dish IS shown
-    - it's purely read-only (routes/plan/pages.py: index(),
-    templates/plan_summary.html)."""
+    """Regression: the summary is read-only, even when dishes are shown."""
     from datetime import date as _date
     from models import PlanDay, db
     from services.planning import friday_of
@@ -116,11 +108,7 @@ def test_week_view_redirects_non_friday_to_friday(client):
 
 
 def test_week_view_non_friday_redirect_preserves_plan_id(client):
-    """Regression test (see BUGS.md history): the Friday-normalization
-    redirect must keep an explicit ?plan_id= - otherwise a shared/
-    bookmarked link for a non-Friday date belonging to a SPECIFIC plan
-    would silently drop that plan on the redirect (routes/plan/pages.py:
-    week_view())."""
+    """Regression: the redirect used to drop the plan from shared links."""
     wednesday = date(2026, 6, 17)
     resp = client.get(f"/plan/{wednesday.isoformat()}?plan_id={client.plan_id}")
     assert resp.status_code == 302
@@ -128,11 +116,9 @@ def test_week_view_non_friday_redirect_preserves_plan_id(client):
 
 
 def test_week_view_with_explicit_plan_id_shows_that_plans_data(app, client, make_user, make_recipe):
-    """Regression test (see BUGS.md history: "plans have no unique URL")
-    - /plan/<date>?plan_id=<id> must show THAT plan's data, uniquely and
-    reproducibly, regardless of which plan is the session's active one
-    (routes/plan/pages.py: _resolve_and_activate_plan(), see
-    services/auth.py: selected_plan_id())."""
+    """Regression ("plans have no unique URL"): ?plan_id= wins over the
+    session's active plan and then becomes the active plan, so the page's
+    AJAX actions hit the same plan."""
     other_id, other_plan_id = make_user("Mitbewohner")
     from models import PlanDay, PlanMembership, db
     with app.app_context():
@@ -145,23 +131,16 @@ def test_week_view_with_explicit_plan_id_shows_that_plans_data(app, client, make
         db.session.add(PlanDay(plan_id=other_plan_id, date=friday, main_recipe_id=recipe_id, servings=2))
         db.session.commit()
 
-    # Session's active plan is still the client's own - the query
-    # parameter must win regardless.
     resp = client.get(f"/plan/{friday.isoformat()}?plan_id={other_plan_id}")
     assert resp.status_code == 200
     assert "Anderes Gericht".encode("utf-8") in resp.data
 
-    # And it becomes the new active plan for subsequent requests too
-    # (so AJAX day actions on this page operate on the right plan).
     with client.session_transaction() as sess:
         assert sess["active_plan_id"] == other_plan_id
 
 
 def test_week_view_ignores_plan_id_for_plan_without_access(client, make_user):
-    """An explicit ?plan_id= for a plan the user is NOT a member of is
-    silently ignored (falls back to the session's active plan) - same
-    safeguard as services/auth.py: selected_plan_id() already provides
-    for the settings tabs."""
+    """A foreign ?plan_id= is ignored."""
     _, other_plan_id = make_user("Fremd")
     resp = client.get(f"/plan/2026-06-12?plan_id={other_plan_id}")
     assert resp.status_code == 200
@@ -171,9 +150,7 @@ def test_week_view_ignores_plan_id_for_plan_without_access(client, make_user):
 
 
 def test_week_view_prev_next_and_recreate_links_carry_plan_id(app, client, make_recipe):
-    """Every link the page generates itself carries its own ?plan_id=
-    forward, so copying ANY of them produces a fully self-describing,
-    shareable URL (see routes/plan/pages.py: week_view() docstring)."""
+    """Every generated link is a shareable URL for this plan."""
     friday = date(2026, 6, 12)
     recipe_id = make_recipe("Montagsgericht")
     with app.app_context():
@@ -214,19 +191,12 @@ def test_week_view_shows_full_plan_when_data_exists(client, app, make_recipe):
     assert "no plan for this week".encode("utf-8") not in resp.data
     assert "Your weekly plan".encode("utf-8") in resp.data
     assert b'"name": "Montagsgericht"' in resp.data or "Montagsgericht".encode("utf-8") in resp.data
-    # Recipe detail window (see static/plan.js: openRecipeDetail) must
-    # be present as markup, regardless of whether a plan already exists
-    # for this week.
     assert b'id="recipeDetailModal"' in resp.data
     assert b'id="recipeDetailCookedCheckbox"' in resp.data
 
 
 def test_week_view_has_pantry_list_panel(client, app, make_recipe):
-    """Ingredients flagged as pantry items (see models/recipe.py:
-    Ingredient.is_pantry) don't end up directly on the shopping list, but
-    on a separate "check pantry" list (see
-    static/plan-shopping.js: renderPantryList) - its empty shell must
-    always be present regardless of plan state, JS fills it in."""
+    """The empty "check pantry" panel is always rendered; JS fills it."""
     from models import PlanDay, db
 
     friday = date(2026, 6, 12)
@@ -311,11 +281,7 @@ def test_week_create_view_lists_recipes_with_category_badge(client, make_categor
     resp = client.get("/plan/2026-06-15/create")
     assert resp.status_code == 200
     assert b"Erstellbares Gericht" in resp.data
-    # "categories" is passed through to create_week.html, but NOT
-    # rendered separately there - the category name only shows up in the
-    # HTML via the data-category attribute/badge of each individual
-    # search result.
-    assert b"Vegan" in resp.data
+    assert b"Vegan" in resp.data  # via each result's category badge
 
 
 def test_week_create_view_invalid_date_returns_404(client):
@@ -325,7 +291,7 @@ def test_week_create_view_invalid_date_returns_404(client):
 
 def test_week_create_view_normalizes_non_friday_without_redirect(client):
     resp = client.get("/plan/2026-06-17/create")
-    assert resp.status_code == 200  # no redirect, see docstring in pages.py
+    assert resp.status_code == 200  # normalized without a redirect
 
 
 def test_week_create_view_uses_explicit_plan_id(app, client, make_user, make_recipe):
@@ -350,10 +316,7 @@ def test_week_generate_invalid_date_returns_404(client):
 
 
 def test_week_generate_with_explicit_plan_id_writes_to_that_plan(app, client, make_user, make_recipe, make_category):
-    """Regression test (see BUGS.md history: "plans have no unique URL")
-    - the generate form's own action URL (templates/create_week.html)
-    carries ?plan_id=, so the days get written to THAT plan even if it
-    isn't the session's active one."""
+    """Regression: the days are written to the form's plan, not the active one."""
     other_id, other_plan_id = make_user("Mitbewohner")
     from models import PlanDay, PlanMembership, db
     with app.app_context():
@@ -474,7 +437,6 @@ def test_other_plan_meals_shows_dish_from_second_plan_same_day(app, client, make
     assert len(other_meals_monday) == 1
     assert other_meals_monday[0]["recipeName"] == "Anderes Gericht"
     assert other_meals_monday[0]["planId"] == other_plan_id
-    # No other plan with a dish on the remaining days of this week.
     assert all(plan_data["otherPlanMeals"][i] == [] for i in range(1, 7))
 
 
@@ -493,10 +455,8 @@ def test_other_plan_meals_empty_when_no_other_plan_has_a_dish(app, client, make_
 
 
 def test_other_plan_meals_respects_per_membership_overview_flag(app, client, make_recipe, make_user, login_as):
-    """show_in_week_overview applies individually PER USER (models/plan.py:
-    PlanMembership) - if client turns off their own membership in a
-    shared plan from the overview, that has no effect on an OTHER
-    member of the same plan (whose flag remains unchanged/on)."""
+    """show_in_week_overview is per user: turning it off doesn't affect
+    other members of the same plan."""
     from models import PlanDay, PlanMembership, db
 
     friday = date(2026, 6, 12)

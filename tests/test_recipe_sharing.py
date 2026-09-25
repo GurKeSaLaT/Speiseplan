@@ -1,16 +1,10 @@
-"""Tests for the recipe-to-plan link (routes/recipes/crud.py:
-link_recipe_to_plan/unlink_recipe_from_plan, models/recipe.py: RecipePlanLink) -
-a recipe belongs to ONE plan (Recipe.owner_plan_id), but can additionally
-be linked into further plans. A real link, not a copy: changes take
-effect everywhere the recipe is linked."""
+"""Linking recipes into other plans (routes/recipes/links.py). A link shares
+the same recipe row, so edits show up in every linked plan."""
 from datetime import date
 
 
 def _login_as(login_as, user_id, plan_id):
-    """Like the shared login_as fixture (conftest.py), but also makes
-    plan_id the ACTIVE plan for this client - needed here since these
-    tests act as a user in a plan that isn't their own starred one (see
-    services/auth.py: current_plan())."""
+    """login_as plus making plan_id the client's active plan."""
     test_client = login_as(user_id)
     with test_client.session_transaction() as sess:
         sess['active_plan_id'] = plan_id
