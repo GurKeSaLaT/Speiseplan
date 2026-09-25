@@ -1,12 +1,5 @@
-"""Cross-plan weekly summary (routes/plan/pages.py: index(), the "/"
-landing page / templates/plan_summary.html) - a read-only overview of
-every main dish planned in ANY of the user's plans for one calendar
-week, with an aggregated nutrition total. Distinct from the fully
-interactive single-plan calendar at routes/plan/pages.py: week_view()
-(reached instead by picking a specific plan in the sidebar's "My Plans"
-list, see routes/auth.py: switch_plan()) - this page has no dice/edit/
-create controls at all, by design.
-"""
+"""Read-only overview of one week's main dishes across all of a user's plans
+(the "/" home page)."""
 
 from models import PlanDay
 from services.auth import user_plan_memberships
@@ -14,27 +7,13 @@ from services.planning import week_dates_for
 
 
 def build_week_summary(user, start):
-    """Builds the data for one week (start = the Friday of that week,
-    see services/planning.py: week_dates_for()), across EVERY plan the
-    user has access to - deliberately ALL of them, unlike the
-    show_in_week_overview-gated "other plans" row on the single-plan page
-    (models/plan.py: PlanMembership.show_in_week_overview), since a
-    cross-plan summary that silently omitted some of the user's own plans
-    would defeat its own purpose.
+    """{"days": 7 lists of {plan_id, plan_name, recipe_id, recipe_name,
+    date}, Friday first; "nutrition": None if nothing is planned, else
+    {"week": totals, "daily_avg": ...}}.
 
-    Only main dishes are considered (side dishes are left out here too,
-    matching the existing "other plans" row's precedent, see
-    routes/plan/pages.py: week_view()) - keeps the summary to one line
-    per dish instead of a nested per-day list.
-
-    Returns {"days": [7 lists of {plan_id, plan_name, recipe_id,
-    recipe_name, date} dicts, one list per weekday, Friday first],
-    "nutrition": None if nothing at all is planned this week, otherwise
-    {"week": {...totals}, "daily_avg": {...}} - both unscaled per-serving
-    sums (see static/plan-shopping.js: rebuildWeeklyNutritionSummary()
-    for the same "always per portion, never multiplied by servings"
-    convention), averaged only over days that actually have at least one
-    dish somewhere, not over all 7.}
+    Includes every plan (show_in_week_overview doesn't apply here) and only
+    main dishes. Values are per serving, and the daily average only counts
+    days that have a dish.
     """
     dates = week_dates_for(start)
     memberships = user_plan_memberships(user)

@@ -1,8 +1,5 @@
-"""Page routes of the weekly plan calendar: deliver whole HTML pages or
-redirect. Work with a "week-start date" (always a Friday) and a day
-index 0-6 within that week - unlike the day actions in day_actions.py,
-which work directly with concrete calendar days.
-"""
+"""Full-page plan routes: the cross-plan home summary, the week view and
+week creation. Weeks are addressed by their start date (always a Friday)."""
 
 from datetime import date, timedelta
 
@@ -22,22 +19,8 @@ from routes.plan import plan_bp
 
 @plan_bp.route('/')
 def index():
-    """The app's home page: a read-only, cross-plan summary of the
-    CURRENT calendar week across EVERY plan the logged-in user has
-    access to (services/plan_summary.py: build_week_summary()) - no
-    dice/edit/create controls, purely "what's cooking, and where".
-
-    The fully interactive single-plan calendar (roll, swap, manual
-    selection etc.) that used to live here now opens one click away: any
-    plan picked in the sidebar's "My Plans" list switches to it and
-    lands directly on its own /plan/<start_date> view (see
-    routes/auth.py: switch_plan()).
-
-    A user without any plan at all still needs the SAME "no plan yet"
-    landing as week_view() shows (this route stays on
-    ZERO_PLAN_ALLOWED_ENDPOINTS in app.py for exactly that reason) -
-    delegated to week_view() directly rather than duplicating that UI
-    here, since there's nothing to summarize across zero plans anyway."""
+    """Read-only summary of the current week across all of the user's
+    plans. Users without any plan get week_view()'s "create a plan" page."""
     if current_plan() is None:
         return week_view(date.today().isoformat())
 
@@ -50,14 +33,8 @@ def index():
 
 @plan_bp.route('/plan/summary/open', methods=['POST'])
 def summary_open_recipe():
-    """Behind clicking a dish on the cross-plan summary page above: since
-    that dish may belong to a DIFFERENT plan than the currently active
-    one, switches to its plan first (same effect as
-    routes/auth.py: switch_plan(), inlined here since it also needs to
-    redirect to a SPECIFIC day/recipe rather than just "the current
-    week") and then opens that plan's normal week view with the day's
-    recipe detail window pre-opened (?open_day=<date>, read by
-    static/plan.js on load - see the DOMContentLoaded handler there)."""
+    """Opens a dish clicked on the summary: switches to its plan, then shows
+    that week with the day's detail window open (?open_day, read by plan.js)."""
     user = current_user()
     plan_id = request.form.get('plan_id', type=int)
     day = parse_iso_date(request.form.get('date'))
@@ -72,16 +49,9 @@ def summary_open_recipe():
 
 
 def _resolve_and_activate_plan(user, request_args):
-    """Resolves which plan a /plan/... page request is FOR (see
-    services/auth.py: selected_plan_id() - an explicit ?plan_id= wins,
-    provided the user is actually a member, otherwise the session's
-    active plan) and, if that resolved to an EXPLICIT choice, makes it
-    the session's active plan too - so that a link carrying ?plan_id=
-    (bookmarked, shared, or a sidebar/summary click) doesn't just READ
-    the right plan's data, but also makes any further AJAX action on the
-    page (day_actions.py etc., which rely on current_plan()/the session,
-    not on a URL parameter) operate on that SAME plan. Returns the Plan
-    object, or None (no plan resolved, or the user has no plan at all)."""
+    """The plan a page is for (?plan_id= if the user is a member, else the
+    session's). Also makes it the session's active plan, because the page's
+    AJAX actions use current_plan() rather than a URL parameter."""
     plan_id = selected_plan_id(request_args, user)
     if plan_id is None:
         return None
@@ -91,54 +61,11 @@ def _resolve_and_activate_plan(user, request_args):
 
 @plan_bp.route('/plan/<start_date>')
 def week_view(start_date):
-    """Shows the weekly plan for the calendar week containing start_date,
-    for the plan resolved by _resolve_and_activate_plan() above (an
-    explicit ?plan_id= query parameter, falling back to the session's
-    active plan) - every generated link on this page (previous/next
-    week, "Recreate week", the date-jump field) carries this plan's ID
-    forward explicitly, so that /plan/<date>?plan_id=<id> is a complete,
-    shareable/bookmarkable address for a SPECIFIC plan's week, not just
-    "whichever plan happens to be active in this browser session" (a
-    bare /plan/<date> without ?plan_id= still works exactly as before,
-    for old links/bookmarks).
+    """Week containing start_date; any other date redirects to the week's
+    Friday so each week has exactly one URL. All links carry ?plan_id= so a
+    URL always identifies one plan's week.
 
-    start_date arrives as an arbitrary ISO date string from the URL
-    (e.g. from a link to a specific day or the date-jump field) and
-    doesn't necessarily have to be a Friday: normalized = friday_of(start)
-    converts it to the start of the week, and if the original date
-    doesn't already fall on it, a redirect is made to the normalized,
-    "canonical" URL (e.g. /plan/2026-06-17 (Wednesday) -> /plan/2026-06-12
-    (Friday of the same week)) - so every week always has exactly one
-    valid URL, no matter which date it's reached through.
-
-    Then loads the associated PlanDay rows for all 7 days of this week
-    (if present - ordered contains None at the respective position if
-    nothing has been planned for this day yet) and derives from that four
-    parallel lists sorted by day index (0=Friday...6=Thursday): plan (main
-    dishes), side_plan (a LIST of side dishes per day, see models/calendar.py:
-    PlanDay.sides - a day can have any number of them), excluded_days
-    (which day indices are marked "excluded") and servings_list (number
-    of servings per day, default 2 for still-unplanned days).
-
-    has_any_data distinguishes "this week has never been created" (any(ordered)
-    is False, all 7 entries are None) from "this week exists, but
-    individual days are e.g. excluded or empty" - only in the first case
-    does plan.html show the big "Create new weekly plan" button instead
-    of the day cards.
-
-    plan_data bundles all the data needed for the client-side live
-    interactions (see static/plan.js and the plan-*.js companion files)
-    into a single object safely embedded as JSON via the Jinja filter
-    `tojson` (window.PLAN_DATA) - the same Recipe objects are converted
-    into plain dicts for this via jsonify_recipe()/jsonify_side(),
-    exactly the same helper functions that the /day/...-AJAX endpoints in
-    day_actions.py also use for their responses, so the data format stays
-    consistent. allRecipes additionally contains ALL recipes (regardless
-    of the current plan) in a slim form - the basis for manual recipe
-    selection (search/select box, see static/plan-manual-select.js and
-    its use in static/plan.js and static/plan-sides.js). otherPlanMeals
-    contains, per weekday, the main dishes of the user's OTHER own plans
-    (read-only, see static/plan.js: renderOtherPlanMeals).
+    The day cards are rendered client-side from plan_data (window.PLAN_DATA).
     """
     start = parse_iso_date(start_date)
     if start is None:
@@ -150,13 +77,7 @@ def week_view(start_date):
         ))
 
     active_plan = _resolve_and_activate_plan(current_user(), request.args)
-    # Since plans were decoupled from accounts (services/plans.py), "no
-    # plan at all" is a normal, reachable state - e.g. right after
-    # deleting one's last remaining plan (routes/plans.py: delete()).
-    # Instead of the usual calendar data, plan.html then just shows a
-    # notice along with a form to create the first plan (templates/plan.html:
-    # {% if no_plan %}) - all remaining variables below would run into a
-    # dead end anyway (active_plan.id would crash immediately, for example).
+    # Having no plan at all is a normal state (e.g. after deleting the last one).
     if active_plan is None:
         return render_template('plan.html', no_plan=True)
 
@@ -165,30 +86,20 @@ def week_view(start_date):
         pd.date: pd for pd in PlanDay.query.filter(PlanDay.plan_id == active_plan.id, PlanDay.date.in_(dates)).all()
     }
     ordered = [plan_days_by_date.get(d) for d in dates]
+    # False = this week was never created (shows the "create week" button).
     has_any_data = any(ordered)
 
     plan = [pd.main_recipe if pd else None for pd in ordered]
     side_plan = [pd.sides if pd else [] for pd in ordered]
     excluded_days = {i for i, pd in enumerate(ordered) if pd and pd.excluded}
     servings_list = [pd.servings if pd else 2 for pd in ordered]
-    # Whether this day's main dish has already been marked as cooked
-    # (see models/calendar.py: PlanDay.cooked) - controls the "graying out" of the
-    # day card (static/plan.js: renderMainDisplay). Side dishes carry
-    # their own cooked field directly in the jsonify_side() dict, so they
-    # don't need their own parallel list here.
     cooked_main = [pd.cooked if pd else False for pd in ordered]
 
     today = date.today()
-    # Fully formatted weekday+date labels ("Friday, 12.06. (Today)"),
-    # which static/plan.js needs when re-rendering a day card after a day
-    # swap, without needing to know weekday names itself.
     day_labels = [
         f"{DAY_NAMES[i]}, {dates[i].strftime('%d.%m.')}" + (' ' + _('(Today)') if dates[i] == today else '')
         for i in range(7)
     ]
-    # Manually added shopping-list items for this week (see shopping.py:
-    # add_shopping_item) - loosely tied to the week via week_start, no
-    # foreign key to PlanDay or similar needed.
     extra_items = (
         ExtraShoppingItem.query.filter_by(plan_id=active_plan.id, week_start=normalized)
         .order_by(ExtraShoppingItem.id).all()
@@ -196,14 +107,8 @@ def week_view(start_date):
 
     all_recipes = visible_recipes_query(active_plan.id).all()
 
-    # Main dishes of the user's OTHER own plans for the same 7 calendar
-    # days - purely informational, not interactive (see static/plan.js:
-    # renderOtherPlanMeals). Only plans whose membership has
-    # show_in_week_overview set (models/plan.py: PlanMembership - individually
-    # toggleable per user, see routes/sharing.py: toggle_overview()), and
-    # never the active plan itself (that's already shown in the tile
-    # above). Side dishes are deliberately left out (only ONE dish per
-    # plan and day, as described by the user).
+    # Read-only main dishes of the user's other plans on the same days
+    # (only memberships with show_in_week_overview set).
     other_memberships = [
         m for m in user_plan_memberships(current_user())
         if m.plan_id != active_plan.id and m.show_in_week_overview
@@ -228,9 +133,6 @@ def week_view(start_date):
         other_plan_meals.append(meals_this_day)
 
     plan_data = {
-        # Read by the date-jump field's JS (static/plan.js) so navigating
-        # to a different week keeps addressing THIS plan explicitly,
-        # instead of silently falling back to the session's active plan.
         'planId': active_plan.id,
         'weekDates': [d.isoformat() for d in dates],
         'dayLabels': day_labels,
@@ -257,11 +159,6 @@ def week_view(start_date):
         'otherPlanMeals': other_plan_meals,
     }
 
-    # plan/side_plan/excluded_days/servings_list/days are NO LONGER passed
-    # to the template: the day cards are built entirely client-side from
-    # plan_data (see templates/plan.html - the comment there explains
-    # why). The template only needs week_dates/today (for data-date and
-    # the "today" marker) and has_any_data for the card shell.
     return render_template(
         'plan.html',
         week_dates=dates, start_date=normalized, has_any_data=has_any_data,
@@ -273,25 +170,8 @@ def week_view(start_date):
 
 @plan_bp.route('/plan/<start_date>/create')
 def week_create_view(start_date):
-    """Shows the form for (re-)creating a whole week
-    (templates/create_week.html): live search + drag-and-drop, to fix
-    individual days to a specific main/side dish or exclude them
-    entirely, before the rest is filled in automatically.
-
-    Only reached via the "Create new weekly plan" button (or "Recreate
-    week" for an already planned week) from the week view - unlike
-    before, this is no longer a standalone main page. start_date is
-    normalized to the week's Friday just like in week_view(), but
-    (unlike there) without a redirect on mismatch - this page is always
-    reached via an already-correct link, a redirect here would only cost
-    an unnecessary additional request.
-
-    Resolves its plan the same way week_view() does (see
-    _resolve_and_activate_plan() above) - the "Recreate week" link that
-    leads here already carries ?plan_id= explicitly (see templates/
-    plan.html), so this stays for the SAME plan even if it isn't the
-    session's active one.
-    """
+    """Form for (re)creating a week: pin or exclude days before the rest is
+    filled automatically."""
     start = parse_iso_date(start_date)
     if start is None:
         abort(404)
@@ -311,58 +191,20 @@ def week_create_view(start_date):
 
 @plan_bp.route('/plan/<start_date>/generate', methods=['POST'])
 def week_generate(start_date):
-    """Processes the form from week_create_view(): takes over the days
-    fixed by the user unchanged, rolls the remaining main dishes in a
-    balanced way to fill the rest, and writes the result permanently to
-    the database as PlanDay rows.
-
-    Flow in three steps (numbered in the code):
-
-    1. Read the form: for each of the 7 days (index 0=Friday...6=Thursday,
-       NOT the same as a calendar date - the form only knows the position
-       within the week), it is checked whether it's marked "excluded"
-       (day_excluded_i), otherwise whether a recipe ID has been fixed for
-       it (day_recipe_i). The side-dish IDs (day_side_recipes_i[], a
-       LIST - a day can get any number of side dishes) are ALWAYS read,
-       regardless of exclusion status - an excluded day (no main dish)
-       can still have fixed side dishes.
-
-    2. The actual balanced-category-assignment + recipe-selection
-       orchestration (looking up the fixed dishes, determining which
-       days still need automatic filling, assigning a category to each,
-       then rolling a concrete recipe per day) lives in
-       services/week_generation.py: generate_week() - see there for the
-       detailed step-by-step docstring. Side dishes are deliberately
-       NEVER rolled automatically - only fixed side dishes end up in the
-       plan at creation time; everything else runs via the dice/pencil
-       buttons on the finished plan page (see
-       routes/plan/day_actions_sides.py: add_side/reroll_one_side/
-       set_one_side).
-
-    3. Only now is anything persisted: for each of the 7 calendar days of
-       this week, the matching PlanDay row is fetched or newly created
-       (get-or-create) and overwritten with the result. For the side
-       dishes, ALL existing PlanDaySide rows of this day are deleted
-       first and then newly created from final_side_plan[i] - much
-       simpler than a diff of "changed/new/deleted", analogous to
-       ingredient replacement in edit_recipe() in routes/recipes/crud.py. This
-       covers both creating a week for the first time and recreating an
-       already existing week ("recreate week").
-    """
+    """Saves a week from the create form: pinned days stay, the remaining
+    main dishes are generated (services/week_generation.py). Side dishes are
+    never generated, only pinned ones are saved. Existing days are
+    overwritten, so this also handles "recreate week"."""
     start = parse_iso_date(start_date)
     if start is None:
         abort(404)
     start = friday_of(start)
     dates = week_dates_for(start)
-    # The form's own action URL (templates/create_week.html) carries
-    # ?plan_id= as a query-string parameter even though this is a POST,
-    # so the same plan stays addressed as on week_create_view() above -
-    # request.args (not request.form) is where a query string lands.
+    # plan_id comes in the form action's query string, even though this is a POST.
     plan = _resolve_and_activate_plan(current_user(), request.args)
     if plan is None:
         abort(404)
 
-    # 1. Read form data per day: fixed assignment + exclusion status
     excluded_days = set()
     day_recipe_ids = {}  # day index -> main dish recipe ID (string)
     day_side_recipe_ids = {}  # day index -> list of side dish recipe IDs (strings)
@@ -375,18 +217,13 @@ def week_generate(start_date):
             if rid:
                 day_recipe_ids[i] = rid
 
-        # dict.fromkeys() instead of set(): removes duplicates (e.g. from
-        # double-clicking in the form), while preserving the order in
-        # which the side dishes were assigned.
+        # Excluded days can still have pinned sides. dict.fromkeys dedupes, keeping order.
         side_rids = [rid.strip() for rid in request.form.getlist(f'day_side_recipes_{i}[]') if rid.strip()]
         if side_rids:
             day_side_recipe_ids[i] = list(dict.fromkeys(side_rids))
 
-    # 2. Balanced category assignment + recipe selection (see
-    # services/week_generation.py: generate_week()).
     final_plan, final_side_plan = generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids)
 
-    # 3. Save permanently: one PlanDay per real calendar day of this week
     for i in range(7):
         day_date = dates[i]
         plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=day_date).first()

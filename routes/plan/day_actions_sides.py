@@ -1,11 +1,5 @@
-"""AJAX endpoints called by the client-side static/plan-sides.js that
-return JSON - for the SIDE DISHES of individual calendar days
-(/day/<day_date>/side/...). Split out from routes/plan/day_actions.py
-(which covers the main-dish/whole-day actions) because these are
-additionally ITEM-specific (a day can have several side dishes, see
-models/calendar.py: PlanDaySide) - all but "add" therefore address one
-specific PlanDaySide row via <int:side_id>.
-"""
+"""JSON endpoints for side dishes (/day/<date>/side/...). A day can have any
+number of sides, so most endpoints address one PlanDaySide by id."""
 
 from flask import request
 from flask_babel import gettext as _
@@ -18,13 +12,7 @@ from routes.plan import plan_bp
 
 
 def _get_or_create_plan_day(target_date, plan_id):
-    """Get-or-create helper needed identically in several of the
-    side-dish endpoints below (add_side/reroll_one_side/set_one_side/
-    move_one_side all create a new, empty PlanDay row if needed, in case
-    no row exists yet for target_date - e.g. when a side dish is moved to
-    a day that wasn't previously part of the week at all).
-    db.session.flush() ensures that a newly created row immediately has a
-    real id before the caller points a PlanDaySide at it."""
+    """Flushes a new row so the caller can use its id right away."""
     plan_day = PlanDay.query.filter_by(plan_id=plan_id, date=target_date).first()
     if not plan_day:
         plan_day = PlanDay(plan_id=plan_id, date=target_date, servings=2)
@@ -35,22 +23,8 @@ def _get_or_create_plan_day(target_date, plan_id):
 
 @plan_bp.route('/day/<day_date>/side/add', methods=['POST'])
 def add_side(day_date):
-    """AJAX endpoint behind the side-dish "add" buttons at the end of a
-    day card's side-dish list: creates a NEW side dish for this day, in
-    addition to any already present (a day can have any number of them,
-    see models/calendar.py: PlanDaySide).
-
-    Expects a JSON body {"recipe_id": <id> or null}:
-    - If recipe_id is set (the picker button in
-      static/plan-sides.js: openSideManualSelect), EXACTLY this
-      user-chosen recipe is used - without any randomness/exclusion
-      logic, analogous to routes/plan/day_actions.py: set_main_day().
-    - If recipe_id is empty/null (the dice button), a random one is
-      rolled instead: choose_recipe() with week_side_recipe_ids() as the
-      exclusion set (prevents duplicates both with other days and with
-      side dishes already present on THIS day) and the soft repetition
-      weighting (reference_date).
-    """
+    """Adds a side: the given recipe_id as-is (manual pick), or without one
+    a random side not yet used in the week."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -83,16 +57,7 @@ def add_side(day_date):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/reroll', methods=['POST'])
 def reroll_one_side(day_date, side_id):
-    """AJAX endpoint behind the dice button of ONE specific side dish:
-    replaces exactly this side-dish slot with a newly rolled, different
-    recipe (as opposed to add_side above, which creates an ADDITIONAL
-    slot).
-
-    The PlanDaySide row is not deleted and recreated here, but its
-    recipe_id is overwritten directly - so its id (and thus e.g. a
-    currently open reference in the frontend) stays stable across the
-    reroll.
-    """
+    """Replaces this side's recipe in place, so its id stays stable."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -110,8 +75,6 @@ def reroll_one_side(day_date, side_id):
         return {"error": _("No more side dishes available in the database!")}, 400
 
     plan_day_side.recipe_id = chosen.id
-    # See routes/plan/day_actions.py: reroll_day() - a freshly rolled
-    # side dish is not yet cooked.
     plan_day_side.cooked = False
     db.session.commit()
     return jsonify_side(plan_day_side, plan.id)
@@ -119,11 +82,7 @@ def reroll_one_side(day_date, side_id):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/set', methods=['POST'])
 def set_one_side(day_date, side_id):
-    """AJAX endpoint behind the pencil button of ONE specific side dish:
-    replaces exactly this slot with a recipe explicitly chosen by the
-    user (the manual counterpart to reroll_one_side above - without
-    randomness/exclusion logic, analogous to
-    routes/plan/day_actions.py: set_main_day)."""
+    """Manual pick, no automatic rules."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -146,8 +105,6 @@ def set_one_side(day_date, side_id):
         return {"error": _("Recipe not found.")}, 400
 
     plan_day_side.recipe_id = recipe.id
-    # See routes/plan/day_actions.py: reroll_day() - a manually chosen
-    # side dish is not yet cooked.
     plan_day_side.cooked = False
     db.session.commit()
     return jsonify_side(plan_day_side, plan.id)
@@ -155,13 +112,7 @@ def set_one_side(day_date, side_id):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/remove', methods=['POST'])
 def remove_one_side(day_date, side_id):
-    """AJAX endpoint behind the X button of ONE specific side dish:
-    removes exactly this slot, without touching the rest of the day
-    (main dish, other side dishes, exclusion status, number of
-    servings). If side_id no longer belongs to this day, that's silently
-    acknowledged with {"ok": True} instead of an error - the end result
-    ("this side dish is no longer present on this day") is identical
-    either way."""
+    """Idempotent: an already missing side also returns ok."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -178,18 +129,7 @@ def remove_one_side(day_date, side_id):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/move/<target_date_str>', methods=['POST'])
 def move_one_side(day_date, side_id, target_date_str):
-    """AJAX endpoint behind drag-and-drop moving of ONE individual side
-    dish onto another day card (see static/plan-sides.js:
-    moveSideDish): simply reassigns the PlanDaySide row to a DIFFERENT
-    PlanDay row (change plan_day_id) - a one-way move, not a swap. Unlike
-    a full day swap (routes/plan/day_actions.py: swap_days, triggered by
-    dragging the whole day card including the main dish), everything else
-    on the source AND target day remains completely untouched.
-
-    If no PlanDay row exists yet for the target day (e.g. because
-    nothing has ever been planned there), it is created here instead of
-    raising an error - analogous to add_side/reroll_one_side.
-    """
+    """Moves one side to another day (one-way, nothing else changes)."""
     source_date = parse_iso_date(day_date)
     target_date = parse_iso_date(target_date_str)
     if source_date is None or target_date is None:
@@ -210,11 +150,7 @@ def move_one_side(day_date, side_id, target_date_str):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/cooked', methods=['POST'])
 def set_side_cooked(day_date, side_id):
-    """Like routes/plan/day_actions.py: set_day_cooked() above, but for
-    ONE specific side dish (a side dish's detail window opens with the
-    same checkbox, see static/plan-sides.js: renderSidesSection).
-
-    Expects a JSON body {"cooked": bool}."""
+    """Body: {"cooked": bool}."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400

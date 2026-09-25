@@ -1,12 +1,5 @@
-"""Self-service management of the logged-in user's own account
-(/manage/account): change the UI language, delete the account. Name/email
-are no longer editable here - they're synced from Authelia on every
-request (see services/auth.py: current_user()) - and there's no password
-to change or confirm anymore (see services/auth.py module docstring).
-
-No flash-messaging system in this app - success/error is passed directly
-into the re-render of account.html, instead of redirecting after the
-POST."""
+"""Account page (/manage/account): UI language and account deletion.
+Results are rendered directly (no flash messages)."""
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
@@ -30,18 +23,8 @@ def update_language_route():
 
 @account_bp.route('/manage/account/delete', methods=['POST'])
 def delete_account_route():
-    """Deletes the user's own Speiseplan data irrevocably
-    (services/accounts.py: delete_account()) - the confirmation modal
-    (templates/account.html) is the only safeguard now; there's no
-    password left to additionally require (Authelia already gated access
-    to this page in the first place).
-
-    Doesn't (and can't) actually log the person out: identity comes from
-    Authelia on every request (see services/auth.py module docstring), so
-    the very next request - including the redirect target below -
-    auto-provisions a brand new, empty User row for the same email again.
-    "Delete account" therefore really means "wipe my plans/recipes/
-    settings and start over", not "close my account" - closing the actual
-    account is Authelia's job, not this app's."""
+    """Wipes the user's data. The Authelia account stays, so the next request
+    provisions a fresh empty user for the same email - effectively "start
+    over", not "close account"."""
     delete_account(current_user())
     return redirect(url_for('plan.index'))

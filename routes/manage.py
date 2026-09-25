@@ -1,10 +1,5 @@
-"""Management home page: a dashboard overview with key figures and a
-sidebar navigation to the recipe/category/unit/ingredient/nutrition
-management pages (which each live in their own blueprints -
-routes/recipes/, routes/categories.py, routes/settings.py).
-Deliberately kept as its own, minimal blueprint instead of being packed
-into one of the other files, since it doesn't clearly belong to any one
-of the responsibilities."""
+"""Management dashboard (/manage): key figures and recently edited recipes
+for the active plan."""
 
 from datetime import datetime, timezone
 
@@ -18,17 +13,11 @@ from services.recipe_visibility import visible_recipes_query
 
 manage_bp = Blueprint('manage', __name__)
 
-# How many recently edited recipes the "recently edited" list shows
-# (see manage() below) - not a configuration value, since it only
-# affects this one spot.
 RECENT_RECIPES_LIMIT = 6
 
 
 def _format_relative_day(dt):
-    """Formats a point in time as a rough day distance from TODAY
-    ("Today"/"Yesterday"/"N days ago") for the "recently edited" list -
-    deliberately coarse (no time-of-day/hour granularity), since this
-    list is only meant to give a quick overview, not an exact history."""
+    """"Today" / "Yesterday" / "N days ago"."""
     days = (datetime.now(timezone.utc).replace(tzinfo=None).date() - dt.date()).days
     if days <= 0:
         return _("Today")
@@ -39,21 +28,6 @@ def _format_relative_day(dt):
 
 @manage_bp.route('/manage')
 def manage():
-    """Shows the management overview page (see templates/manage.html): a
-    fixed sidebar with grouped navigation (recipes/data) plus a display
-    toggle, and in the main area a small row of key figures as well as the
-    recently edited recipes (Recipe.updated_at, see models/recipe.py - updated on
-    every save in routes/recipes/crud.py: edit_recipe()).
-
-    "Ingredients merged" counts the actual alias TARGET names
-    (list_alias_canonical_names(), e.g. "pasta") - not the number of
-    individual spellings combined into them. "Nutrition entries maintained"
-    counts the number of existing IngredientNutrition reference entries.
-    Everything here refers to the currently ACTIVE plan (current_plan()) -
-    recipes to the ones visible to it (owner + linked, see
-    services/recipe_visibility.py), categories/aliases/nutrition to the
-    ones this plan itself maintains.
-    """
     plan = current_plan()
     recent_recipes = (
         visible_recipes_query(plan.id).filter(Recipe.updated_at.isnot(None))

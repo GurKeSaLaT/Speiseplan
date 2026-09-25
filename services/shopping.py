@@ -1,13 +1,8 @@
-"""Fixed category list for the shopping list (supermarket sections).
+"""Fixed shopping-list categories (supermarket sections) in shelf order,
+shared with the client via window.SHOPPING_CATEGORIES.
 
-Unlike Category (recipe categories such as "Fleisch"/"Vegetarisch", which
-the user freely creates/deletes via the category management page), this is
-a small, deliberately FIXED enumeration with a fixed order - hence a plain
-Python list instead of its own database table. Passed to ALL templates via
-the context processor inject_shopping_categories() (app.py) and also made
-available client-side via window.SHOPPING_CATEGORIES (base.html) for the
-client-side sorting/grouping of the shopping list (static/plan.js:
-rebuildShoppingList) - so both sides use exactly the same order.
+Ingredients marked is_pantry go to a separate "check pantry" list instead
+of the shopping list; manually added items always go on the shopping list.
 """
 
 SHOPPING_CATEGORIES = [
@@ -22,49 +17,14 @@ SHOPPING_CATEGORIES = [
     "Tiefkühlware",
 ]
 
-# Catch-all category for ingredients/items without a category (or with one
-# that has since been removed) - always sorts to the end of the shopping
-# list, see categorySortIndex() in static/plan.js.
+# For missing or removed categories; always sorted last.
 UNCATEGORIZED = "Sonstiges"
-
-# Whether an ingredient is, as a rule, already stocked at home (spices,
-# pantry baking ingredients/nuts/sauces, consumables like plastic wrap/
-# trash bags) is now its own per-ingredient checkbox (models/recipe.py:
-# Ingredient.is_pantry) rather than being derived from its shopping
-# category - two recipes can use the same ingredient differently, which a
-# fixed set of "pantry categories" couldn't express. A pantry item does
-# NOT automatically end up on the weekly shopping list, but on a separate
-# "check pantry" list instead (see static/plan-shopping.js:
-# rebuildShoppingList/rebuildPantryList), from which individual items can
-# still be pulled onto the shopping list via a dedicated button, e.g. if
-# the salt happens to have run out. This applies explicitly only to items
-# derived from recipes - a manually added item (even one that was just
-# pulled from the pantry list via said button) has thereby already
-# declared its "I really need to buy this" intent and always ends up
-# directly on the shopping list, regardless of is_pantry (see the isExtra
-# check in rebuildShoppingList()).
-#
-# "Vorratsschrank" and "Verbrauchsartikel" used to be dedicated shopping
-# categories that implied "pantry item" - removed now that is_pantry
-# covers that directly; their former ingredients were folded into
-# "Konserven" (see migrations.py: _migrate_remove_pantry_shopping_
-# categories()) and still count as pantry items via is_pantry.
 
 
 def infer_category(plan_id, canonical_name):
-    """Guesses the shopping-list category for a canonical ingredient based
-    on already existing ingredient rows VISIBLE for plan_id (see
-    services/recipe_visibility.py): the non-empty category assigned most
-    often under this name (after alias resolution) - or None, if not a
-    single row of this canonical ingredient is categorized yet.
-
-    Used when setting an alias in static/ingredient_alias_hint.js (see
-    routes/settings.py: api_set_ingredient_alias): this way, all ingredients
-    equated to the same name (e.g. "Spaghetti" and "Fusilli" -> "Nudeln")
-    automatically end up in the same category, instead of the same
-    canonical ingredient appearing in different groups on the shopping list
-    depending on the recipe - analogous to infer_reference_unit() in
-    services/nutrition.py for the nutrition reference unit."""
+    """Most common category among existing rows of this canonical ingredient
+    (None if none is categorized) - so merged spellings land in the same
+    shopping-list group."""
     from collections import Counter
     from models import Ingredient
     from services.ingredient_aliases import normalize_ingredient_name
@@ -81,14 +41,7 @@ def infer_category(plan_id, canonical_name):
 
 
 def infer_is_pantry(plan_id, canonical_name):
-    """Guesses whether a NEW ingredient row for canonical_name should
-    start out checked as a pantry item (models/recipe.py:
-    Ingredient.is_pantry): True if the majority of already existing rows
-    for this canonical ingredient (among the recipes VISIBLE for plan_id)
-    are marked as pantry items, otherwise False - analogous to
-    infer_category() above, and used the same way (set_alias(), see
-    routes/settings.py: api_set_ingredient_alias) so that equating an
-    ingredient to an already-known one also takes over its pantry status."""
+    """Majority pantry flag among existing rows of this canonical ingredient."""
     from collections import Counter
     from models import Ingredient
     from services.ingredient_aliases import normalize_ingredient_name
