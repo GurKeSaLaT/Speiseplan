@@ -113,14 +113,28 @@ Backlog for future features - not yet implemented, just collected.
   unchanged - before reinserting them. Detaching a focused element from
   the document always blurs it in every browser, even if it's
   immediately reattached, so every row still lost focus regardless of
-  whether its own content had changed. Fixed by never calling
-  `replaceChildren()` at all: `reconcileIngredientSubtab()` now walks
-  the desired row order and uses `insertBefore()` to MOVE an
-  already-connected, unchanged node into place (the same technique
-  virtual-DOM libraries rely on for keyed list diffing, since moving a
-  node this way does not detach-then-reattach it), only touching a row's
-  actual DOM node when it's genuinely new or content-changed, and
-  explicitly removing whichever original node ends up superseded.
+  whether its own content had changed. A follow-up that swapped
+  `replaceChildren()` for `insertBefore()` moves still lost focus (a
+  fourth live report): `insertBefore()` on an already-connected node
+  detaches it too - the reason browsers are adding a separate
+  `moveBefore()` API. Removing the stale row first made its unchanged
+  neighbour look "out of place", so it got moved - and blurred.
+
+  Final fix, verified this time in a real headless Firefox against an
+  isolated copy of the app (edit "Counts as" on one row, click into a
+  field of another row, keep typing): an unchanged row is never moved at
+  all. `reconcileIngredientSubtab()` removes stale rows first, which
+  leaves the surviving rows already in the right order (the lists are
+  name-sorted), then only replaces changed rows in place
+  (`replaceWith()`) and inserts brand-new rows after their predecessor -
+  neither touches any other row. Whether a row "changed" is decided
+  against the server markup it was last rendered from
+  (`serverHtmlByRow`), not the live `outerHTML`, so client-side state
+  (search-hidden class, autosave indicator, an opened dropdown) can't
+  cause a false replacement. As a safety net for the one unavoidable
+  case - the row being typed in was itself changed on the server -
+  `captureFocusedField()`/`restoreFocusedField()` put focus, unsaved
+  value and cursor back on the replacement field.
 
 - **Automatic cleanup of orphaned ingredient aliases.** An `IngredientAlias`
   row is a plain string mapping (`raw_name` -> `canonical_name`),

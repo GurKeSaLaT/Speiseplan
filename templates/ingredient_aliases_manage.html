@@ -216,6 +216,13 @@ wireFuzzyFilter(
     row => row.dataset.search
 );
 
+// The server markup each live row was last rendered from, recorded before
+// any client-side change (typed values, search-hidden class, autosave
+// indicator, an opened dropdown) could touch it - refreshes compare a
+// fresh render against THIS, not the live outerHTML, so a row the user
+// merely interacted with isn't mistaken for one whose data changed.
+const serverHtmlByRow = new WeakMap();
+
 /** Wires the nutrition/alias-removal/"counts as" autosave handlers for
  * ONE .ingredient-card - called once per row rendered on initial page
  * load, and again for any row refreshIngredientsContent() below inserts
@@ -223,6 +230,8 @@ wireFuzzyFilter(
  * already-wired DOM node untouched (never passed back through here
  * again), so this never double-attaches a listener to the same element. */
 function wireIngredientCard(card) {
+    serverHtmlByRow.set(card, card.outerHTML);
+
     const block = card.querySelector('.nutrition-block');
     if (block) wireNutritionBlock(block);
 
@@ -360,48 +369,72 @@ function reconcileIngredientSubtab(containerId, freshDoc) {
         return;
     }
 
+    const freshRows = Array.from(freshList.querySelectorAll(':scope > .ingredient-card'));
+    const freshKeys = new Set(freshRows.map(row => row.dataset.rowKey));
     const currentRowsByKey = new Map();
-    const originalRows = Array.from(currentList.querySelectorAll(':scope > .ingredient-card'));
-    originalRows.forEach(row => currentRowsByKey.set(row.dataset.rowKey, row));
+    currentList.querySelectorAll(':scope > .ingredient-card').forEach(row => {
+        if (freshKeys.has(row.dataset.rowKey)) currentRowsByKey.set(row.dataset.rowKey, row);
+        else row.remove();
+    });
 
-    // Deliberately NOT currentList.replaceChildren(...finalRows) here (an
-    // earlier version of this function did exactly that) - per spec,
-    // replaceChildren() first removes ALL existing children, even ones
-    // passed straight back in unchanged, before reinserting them.
-    // Detaching a focused element from the document always blurs it in
-    // every browser, even if it's immediately reattached - so that
-    // version still lost focus in a field whose OWN row never changed at
-    // all, just because SOME OTHER row's edit triggered this refresh
-    // (reported live, twice: once against the whole-page swap, again
-    // against this row-level version before this fix). insertBefore() on
-    // an already-connected node MOVES it in place instead - the same
-    // technique virtual-DOM libraries rely on to reorder lists without
-    // losing input focus.
-    const usedNodes = new Set();
-    let refNode = currentList.firstElementChild;
-
-    Array.from(freshList.querySelectorAll(':scope > .ingredient-card')).forEach(freshRow => {
+    // An unchanged row must never be MOVED: any DOM move - replaceChildren()
+    // and insertBefore() alike - detaches the node and blurs whatever has
+    // focus inside it (verified in a real browser; both earlier versions of
+    // this function lost focus exactly that way). Stale rows are removed
+    // first (above), which leaves the survivors already in the right order
+    // (the list is sorted by name), so from here on only changed rows are
+    // replaced in place and brand-new rows inserted after their
+    // predecessor - neither touches any other row.
+    let previous = null;
+    freshRows.forEach(freshRow => {
         const existingRow = currentRowsByKey.get(freshRow.dataset.rowKey);
-        const unchanged = existingRow && existingRow.outerHTML === freshRow.outerHTML;
-        const node = unchanged ? existingRow : freshRow;
+        let node = existingRow;
 
-        if (!unchanged) wireIngredientCard(node);
-        usedNodes.add(node);
-
-        if (node === refNode) {
-            refNode = refNode.nextElementSibling;
-        } else {
-            currentList.insertBefore(node, refNode);
+        if (!existingRow || serverHtmlByRow.get(existingRow) !== freshRow.outerHTML) {
+            wireIngredientCard(freshRow);
+            if (existingRow) existingRow.replaceWith(freshRow);
+            else if (previous) previous.after(freshRow);
+            else currentList.prepend(freshRow);
+            node = freshRow;
+        } else if (node.previousElementSibling !== previous) {
+            // Only reachable if the server's order changed without the row
+            // itself changing - never happens with name-sorted lists, but
+            // stay correct rather than silently misordered.
+            if (previous) previous.after(node);
+            else currentList.prepend(node);
         }
+        previous = node;
     });
+}
 
-    // Whatever's left from the original list wasn't reused - either
-    // superseded by a changed version of its own row (see "unchanged"
-    // above), or gone from this sub-tab entirely. A targeted single-node
-    // removal, never touching any node still in use.
-    originalRows.forEach(row => {
-        if (!usedNodes.has(row) && row.isConnected) row.remove();
-    });
+const FOCUSABLE_FIELD_CLASSES = ['nutrition-reference', 'nutrition-protein', 'nutrition-carbs', 'nutrition-fat', 'counts-as-input'];
+
+/** Safety net for the one case reconcileIngredientSubtab() can't avoid:
+ * the row the user is currently typing in was itself changed on the
+ * server (e.g. a nutrition save for that very row landed just before), so
+ * its node had to be replaced. Remembers which field of which row had
+ * focus, plus its unsaved value and cursor, so they can be put back on the
+ * replacement field afterwards. */
+function captureFocusedField() {
+    const el = document.activeElement;
+    const row = el && el.closest ? el.closest('.ingredient-card') : null;
+    const fieldClass = el && FOCUSABLE_FIELD_CLASSES.find(cls => el.classList.contains(cls));
+    if (!row || !fieldClass) return null;
+    let selection = null;
+    try { selection = [el.selectionStart, el.selectionEnd]; } catch (e) { /* e.g. type="number" */ }
+    return { el, rowKey: row.dataset.rowKey, fieldClass, value: el.value, selection };
+}
+
+function restoreFocusedField(captured) {
+    if (!captured || (captured.el.isConnected && document.activeElement === captured.el)) return;
+    const row = document.querySelector(`.ingredient-card[data-row-key="${CSS.escape(captured.rowKey)}"]`);
+    const field = row && row.querySelector('.' + captured.fieldClass);
+    if (!field) return;
+    field.value = captured.value;
+    field.focus();
+    if (captured.selection && captured.selection[0] != null) {
+        try { field.setSelectionRange(captured.selection[0], captured.selection[1]); } catch (e) { /* not supported */ }
+    }
 }
 
 /** Re-fetches this same page in the background and reconciles both
@@ -428,8 +461,14 @@ function refreshIngredientsContent() {
         })
         .then(html => {
             const freshDoc = new DOMParser().parseFromString(html, 'text/html');
+            const focused = captureFocusedField();
             reconcileIngredientSubtab('mainSubtabContent', freshDoc);
             reconcileIngredientSubtab('otherSubtabContent', freshDoc);
+            restoreFocusedField(focused);
+
+            // Re-apply the current search filter to any row that was just
+            // inserted/replaced (it only toggles a class on each row).
+            document.getElementById('ingredientFilter')?.dispatchEvent(new Event('input'));
 
             const freshMainBadge = freshDoc.querySelector('.ingredient-subtab-btn[data-subtab="main"] .badge');
             const freshOtherBadge = freshDoc.querySelector('.ingredient-subtab-btn[data-subtab="other"] .badge');
