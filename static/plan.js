@@ -1,125 +1,45 @@
 /**
- * plan.js - Core of the plan page (templates/plan.html): global state,
- * day-card construction (including the initial build when the page loads -
- * Jinja now only delivers empty card shells), rolling or manually picking
- * the main dish, changing the number of servings, and the complete
- * day-swap via drag-and-drop.
+ * Plan page core: shared state, day cards, main dish actions and day
+ * swapping. plan-manual-select.js, plan-sides.js, plan-shopping.js and
+ * plan-detail.js build on this state; all are classic scripts sharing
+ * the global scope, and only the DOMContentLoaded handler calls across
+ * files, so load order doesn't matter.
  *
- * This file is the "base" that three companion files build on (they use
- * its global state variables/functions, see below) - together they
- * replace the formerly single plan.js, which had grown to over 1000
- * lines:
- * - static/plan-manual-select.js: the reusable recipe-search box used
- *   both here (main dish) and in plan-sides.js (side dishes).
- * - static/plan-sides.js: everything related to side dishes (any number
- *   per day, add/roll/select/remove/move).
- * - static/plan-shopping.js: weekly nutrition overview, shopping list,
- *   manual shopping-list items.
- *
- * Since all four files are classic <script> tags (not loaded as
- * type="module"), they share the same global scope - the order in which
- * they're loaded in plan.html doesn't matter for correctness: none of
- * these files CALLS functions from another one while loading itself
- * (only the DOMContentLoaded handler below does that, and it only fires
- * after all scripts have fully loaded).
- *
- * Every action that changes the plan first sends a fetch() request to
- * the server (see routes/plan/), which persists the change in the
- * database - only once the response succeeds is the local JavaScript
- * state and the DOM updated. A failure (e.g. "no alternative available")
- * does NOT lead to an optimistic UI change that then gets rolled back,
- * but to an alert() and nothing else - the previous state remains
- * visible unchanged.
- *
- * Expects that window.PLAN_DATA (see plan.html, produced safely from
- * Python data via Jinja's tojson filter) has been set in the DOM BEFORE
- * this script.
+ * Changes are sent to the server first; local state and DOM only update
+ * after a successful response (no optimistic updates, except servings).
  */
 
-// Weekday labels ("Friday", "Saturday", ...) and the corresponding ISO
-// date strings (e.g. "2026-08-31") - both arrays are linked to each
-// other and to the other arrays below via their index (0 = first day of
-// the week) and no longer change after the initial load (only their
-// content at the respective indices does, via dayServings/
-// weeklyPlanRecipes/... - a day swap e.g. does NOT swap dayDates, but
-// swaps the recipes at the existing date indices). dayDates is also used
-// by the companion files (plan-sides.js, plan-shopping.js) for their
-// own fetch() URLs.
+// Index = day of the week (0 = Friday). dayDates never changes: a day swap
+// swaps the contents at two indices, not the dates.
 const dayLabels = window.PLAN_DATA.dayLabels;
 const dayDates = window.PLAN_DATA.weekDates;
 
-// ALL recipes (independent of the current plan) in a lean form
-// ({id, name, category_name, is_side_dish}) - the basis for the manual
-// recipe-selection search (see static/plan-manual-select.js). Doesn't
-// change after the page loads; a newly created recipe only shows up
-// there after a reload.
+// Slim list of all visible recipes for the manual-selection search.
 const allRecipes = window.PLAN_DATA.allRecipes || [];
 
-// Whether a day was deliberately excluded from automatic planning
-// (checkbox on the create page). Gets swapped along with a day swap,
-// since an "excluded day" is a property of the calendar day (e.g. "we
-// always eat out on Tuesdays"), not of the dish that happened to land
-// there.
+// excluded and cooked move with the dish on a swap; servings belong to the
+// weekday and stay.
 let dayExcluded = window.PLAN_DATA.excludedDays;
-
-// How many people to shop for on each weekday (index = weekday,
-// pre-filled from the database). Stays bound to the weekday, not to the
-// dish - so it does NOT move along with a day swap.
 let dayServings = window.PLAN_DATA.servingsList;
-
-// Whether a day's main dish has already been marked as cooked
-// (index = weekday) - controls the "graying out" of the day card (see
-// renderMainDisplay) and the pre-filled checkbox in the recipe detail
-// window (see openRecipeDetail). Side dishes carry their own cooked
-// field directly on the recipe object in weeklySideRecipes (see
-// jsonify_side in services/planning.py), so they don't need a
-// separate parallel array.
 let dayCooked = window.PLAN_DATA.cookedMain;
 
-// Recipes in JavaScript memory (index = weekday, null = no recipe).
-// This is the "source of truth" for everything computed client-side
-// from the plan (nutrition totals, shopping list, see
-// static/plan-shopping.js) - after every successful server-side change
-// this array is updated so these computations stay consistent without
-// a page reload.
+// The source of truth for everything computed client-side (nutrition,
+// shopping list); updated after every successful server change.
 let weeklyPlanRecipes = window.PLAN_DATA.plan;
 
-// Extra dishes/side dishes (index = weekday, value = LIST of recipe
-// objects - a day can have any number of side dishes at once, see
-// models.py: PlanDaySide). In addition to the normal recipe fields,
-// each side-dish object has a side_id field: the ID of the
-// PlanDaySide row itself (NOT of the recipe), used to specifically
-// re-roll/replace/remove/move a single side dish - see
-// static/plan-sides.js.
+// A list of side dishes per day. Each carries side_id (the PlanDaySide id,
+// used to address that slot) and its own cooked flag.
 let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 
-// Items manually added to this week's shopping list that don't belong
-// to any recipe (e.g. toiletries) - each entry is an object
-// {id, name, amount, unit, category} and has already been persisted
-// server-side (see routes/plan/shopping.py: add_shopping_item). Unlike
-// weeklyPlanRecipes/weeklySideRecipes, NOT indexed by weekday, but a
-// flat list - a manual item belongs to the week as a whole, not to any
-// particular day. Managed in static/plan-shopping.js.
+// Manual shopping-list items for the whole week (not per day).
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
-// Main dishes of the USER'S OTHER plans (index = weekday, value = LIST
-// of {planId, planName, recipeId, recipeName}) - purely informational,
-// see renderOtherPlanMeals() further below. Bound to this day's fixed
-// calendar date, not to weeklyPlanRecipes[dayIndex] - so it NEVER
-// changes on a day swap (daySwap only swaps weeklyPlanRecipes/
-// weeklySideRecipes between two indices; this array is left untouched).
+// Read-only dishes of the user's other plans; tied to the date, so they
+// never move on a swap.
 let otherPlanMeals = window.PLAN_DATA.otherPlanMeals || [[], [], [], [], [], [], []];
 
-// On the first page load, build all 7 day cards (see renderDayCardBody
-// further below - Jinja now only delivers empty card shells in
-// plan.html) as well as the shopping list (and via that, the weekly
-// nutrition overview, see static/plan-shopping.js: rebuildShoppingList)
-// from the data already delivered by the server - from then on, each
-// individual action takes over recomputing things on every change.
-// refreshDayCard/rebuildShoppingList themselves bail out early if the
-// respective containers don't exist in the DOM at all (e.g. because
-// this week doesn't have a plan yet) - so this call is safe in that
-// case too.
+// The server renders empty card shells; everything is built here. Both
+// functions are no-ops when the week has no plan yet.
 document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < 7; i++) {
         refreshDayCard(i);
@@ -128,16 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     openRecipeDetailFromQueryParam();
 });
 
-/**
- * Arriving from the cross-plan summary page (templates/plan_summary.html,
- * routes/plan/pages.py: summary_open_recipe()) with ?open_day=<date> in
- * the URL: finds that date's index in dayDates and, if it still has a
- * main dish assigned (the plan could in principle have changed between
- * the summary being rendered and this page loading), opens its read-only
- * detail window right away - the same window a normal click on the dish
- * would open (see openRecipeDetail below). Does nothing if the parameter
- * is absent (the normal case, a plain visit to this page).
- */
+/** ?open_day=<date> (from the home summary) opens that day's dish details. */
 function openRecipeDetailFromQueryParam() {
     const openDay = new URLSearchParams(window.location.search).get('open_day');
     if (!openDay) return;
@@ -146,16 +57,7 @@ function openRecipeDetailFromQueryParam() {
     openRecipeDetail(dayIndex, null);
 }
 
-/**
- * Performs a POST fetch() request and automatically adds the
- * X-CSRFToken header (from window.CSRF_TOKEN, see base.html) - all
- * write endpoints are protected server-side via Flask-WTF CSRFProtect
- * (see app.py) and reject POSTs without a valid token. Additional
- * fetch() options (e.g. a JSON body with its own Content-Type header)
- * can be added via extraOptions, without having to write out the CSRF
- * header by hand each time. Also used by the plan-*.js companion files
- * for their own fetch() calls.
- */
+/** fetch() POST with the CSRF header; also used by the companion files. */
 function postWithCsrf(url, extraOptions = {}) {
     return fetch(url, {
         method: 'POST',
@@ -167,18 +69,6 @@ function postWithCsrf(url, extraOptions = {}) {
     });
 }
 
-/**
- * Re-rolls the main dish of a single day (calls
- * routes/plan/day_actions.py: reroll_day() server-side, which picks a
- * random alternative from the same category that doesn't already
- * appear elsewhere this week or on category-neighboring days). On
- * success, both the day card in the DOM (via refreshDayCard - a
- * newly-rolled dish is automatically no longer "cooked" server-side,
- * see reroll_day() there, and that must be reflected in the card's
- * grayed-out state too) and the local weeklyPlanRecipes state plus the
- * shopping list are updated; on failure (no alternative available)
- * everything stays unchanged and the user gets an error message.
- */
 function rerollSingleDay(dayIndex) {
     const dayCard = document.getElementById(`day-card-${dayIndex}`);
     if (!dayCard) return;
@@ -200,20 +90,11 @@ function rerollSingleDay(dayIndex) {
 }
 
 /**
- * Builds the main-dish display area of a day card: either the assigned
- * recipe with 🎲 (re-roll) + ✏️ (manually select), or placeholder text
- * (excluded, or no matching recipe found) with its own "Select recipe"
- * button - manual selection stays reachable even when automatic
- * planning found nothing for this day or the day was excluded (the
- * selection automatically lifts an exclusion, see
- * routes/plan/day_actions.py: set_main_day).
+ * The main dish area of a day card: the dish with its action buttons, or a
+ * placeholder (excluded / nothing found) that still offers manual
+ * selection and the exclude toggle.
  */
 function renderMainDisplay(dayIndex) {
-    // Top right next to the dish instead of its own full-width row (see
-    // renderServingsHtml() further below for the reason) - this way
-    // date/dish name keep starting at the very top left, without the
-    // number of servings ending up between the nutrition row and the
-    // side dishes instead.
     const servingsHtml = renderServingsHtml(dayIndex);
 
     const recipe = weeklyPlanRecipes[dayIndex];
@@ -243,18 +124,7 @@ function renderMainDisplay(dayIndex) {
             </div>
         `;
     }
-    // Two possible reasons for an empty main dish: the day was
-    // deliberately excluded (checkbox), or automatic planning simply
-    // found no matching recipe (e.g. category exhausted) - both cases
-    // get their own, distinguishable hint text instead of an
-    // uninformatively empty card.
     const placeholderText = dayExcluded[dayIndex] ? window.I18N.excluded_from_planning : window.I18N.no_matching_recipe_available;
-    // The exclude/include toggle stays reachable here too (not just when
-    // a main dish is already assigned, see above) - previously the only
-    // way to exclude/re-include a day at all was while first creating the
-    // week (static/create_week.js), with no way back once the week
-    // already existed (see routes/plan/day_actions.py:
-    // toggle_day_exclusion()).
     const excludeBtnClass = dayExcluded[dayIndex] ? 'btn-danger' : 'btn-outline-secondary';
     const excludeBtnTitle = dayExcluded[dayIndex] ? window.I18N.include_day_title : window.I18N.exclude_day_title;
     return `
@@ -270,17 +140,7 @@ function renderMainDisplay(dayIndex) {
     `;
 }
 
-/**
- * Toggles PlanDay.excluded for a single, ALREADY-CREATED day (calls
- * routes/plan/day_actions.py: toggle_day_exclusion() server-side) -
- * previously only settable while first creating the week
- * (static/create_week.js), with no way to exclude or re-include a day
- * afterward. Excluding clears the main dish (mirrored here from the
- * server's response instead of assumed client-side, in case the day
- * didn't have one to begin with); re-including simply leaves the day
- * without one, ready to be rolled/manually picked via the now-visible
- * buttons.
- */
+/** Excluding also clears the main dish (taken from the server's answer). */
 function toggleDayExclusion(dayIndex) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/toggle-exclude`)
     .then(response => {
@@ -301,10 +161,6 @@ function toggleDayExclusion(dayIndex) {
     });
 }
 
-/** Servings input field for a day card - its own function instead of a
- * fixed HTML block in renderDayCardBody, since it's now embedded
- * directly in renderMainDisplay() (see the comment there), but looks
- * identical for BOTH branches (recipe present/placeholder). */
 function renderServingsHtml(dayIndex) {
     return `
         <div class="d-flex align-items-center justify-content-end gap-1">
@@ -314,13 +170,7 @@ function renderServingsHtml(dayIndex) {
     `;
 }
 
-/**
- * Opens the manual recipe-selection box (see
- * static/plan-manual-select.js) in place of the current main-dish
- * display (main-dish-display-<dayIndex>, see renderDayCardBody).
- * previousHtml is remembered so that "Cancel" can restore exactly the
- * previous state, without needing an extra server round-trip.
- */
+/** Swaps the main dish display for the search box; Cancel restores it. */
 function openMainManualSelect(dayIndex) {
     const area = document.getElementById(`main-dish-display-${dayIndex}`);
     if (!area) return;
@@ -333,13 +183,7 @@ function openMainManualSelect(dayIndex) {
     );
 }
 
-/**
- * Sets a day's main dish to a recipe manually chosen by the user (calls
- * routes/plan/day_actions.py: set_main_day() server-side - NONE of
- * rerollSingleDay's balance/neighbor/repeat rules apply here, see its
- * docstring). Also resets dayExcluded locally, since a manual
- * assignment automatically lifts the exclusion server-side.
- */
+/** A manual pick also un-excludes the day (server does the same). */
 function setMainRecipe(dayIndex, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/set-main`, {
         headers: { 'Content-Type': 'application/json' },
@@ -361,23 +205,8 @@ function setMainRecipe(dayIndex, recipeId) {
     });
 }
 
-/**
- * Builds the complete inner area of a day card: the main-dish display
- * area (in its own main-dish-display-<i> div, which openMainManualSelect
- * specifically replaces - also contains the servings input, see
- * renderMainDisplay) and the side-dish area (renderSidesSection, see
- * static/plan-sides.js). Reads exclusively from the current JavaScript
- * state (weeklyPlanRecipes/weeklySideRecipes/dayServings/dayExcluded),
- * not from the DOM - called completely fresh for both days involved
- * after a day swap, instead of updating individual DOM nodes
- * selectively, because potentially every field changes in a swap.
- */
+/** Full card content, built only from state (never read back from the DOM). */
 function renderDayCardBody(dayIndex) {
-    // The servings input is part of renderMainDisplay() itself (top
-    // right next to the dish) instead of its own row here - this way
-    // date/dish name start at the very top left of the card, without
-    // the number of servings ending up between the nutrition row and
-    // the side dishes (see the comment there).
     const mainDisplayHtml = `<div class="main-dish-display" id="main-dish-display-${dayIndex}">${renderMainDisplay(dayIndex)}</div>`;
     const sidesHtml = `<div class="side-dish-row mt-2 pt-2 border-top" id="side-row-${dayIndex}">${renderSidesSection(dayIndex)}</div>`;
     const otherPlansHtml = renderOtherPlanMeals(dayIndex);
@@ -385,39 +214,22 @@ function renderDayCardBody(dayIndex) {
     return mainDisplayHtml + sidesHtml + otherPlansHtml;
 }
 
-/**
- * Purely read-only extra row below the side dishes: what's being cooked
- * on this day in the USER'S OTHER plans (see otherPlanMeals above,
- * routes/plan/pages.py: week_view()) - one badge with the plan name plus
- * the dish name per entry, WITHOUT roll/edit/drag/cooked-toggle (the
- * active plan's main dish above remains the card's only interactive
- * spot). Returns an empty string for this day if no other plan has a
- * dish on that day - the tile then stays exactly as it was before this
- * function ran.
- */
+/** Read-only row with the user's other plans' dishes for this day. */
 function renderOtherPlanMeals(dayIndex) {
     const meals = otherPlanMeals[dayIndex] || [];
     if (meals.length === 0) return '';
 
     const rows = meals.map(meal => `
         <div class="small text-muted d-flex align-items-center gap-2">
-            <span class="badge bg-light text-dark border">${meal.planName}</span>
-            <span>${meal.recipeName}</span>
+            <span class="badge bg-light text-dark border">${escapeHtml(meal.planName)}</span>
+            <span>${escapeHtml(meal.recipeName)}</span>
         </div>
     `).join('');
     return `<div class="other-plan-meals mt-2 pt-2 border-top">${rows}</div>`;
 }
 
-/**
- * Applies a changed servings count for a weekday immediately to the
- * local display (optimistic, for a snappy feel while typing) and sends
- * it to the server in parallel for permanent storage. Unlike the
- * roll/swap actions, this does NOT wait for the server response before
- * the UI reacts - a failure only results in a subsequent error message,
- * but the input value stays as entered (rolling back the number in the
- * input field would be more confusing for the user than a brief error
- * message for a rare network failure).
- */
+/** Optimistic: updates the shopping list right away and only reports a
+ * failed save, without resetting the typed value. */
 function updateDayServings(dayIndex, value) {
     const n = parseInt(value);
     const servings = (isNaN(n) || n < 1) ? 1 : n;
@@ -432,15 +244,6 @@ function updateDayServings(dayIndex, value) {
     });
 }
 
-/**
- * Rewrites the data-* attributes and the complete content of a day card
- * from the current JavaScript state (see renderDayCardBody). Called for
- * both affected days after a day swap, since potentially all fields
- * change at once there and selectively updating individual DOM nodes
- * (as rerollSingleDay does) would be needlessly error-prone here. Also
- * called for all 7 days on the initial page load (see DOMContentLoaded
- * above).
- */
 function refreshDayCard(dayIndex) {
     const card = document.getElementById(`day-card-${dayIndex}`);
     if (!card) return;
@@ -451,50 +254,24 @@ function refreshDayCard(dayIndex) {
     card.innerHTML = renderDayCardBody(dayIndex);
 }
 
-// --- SWAP DAYS / MOVE SIDE DISHES VIA DRAG-AND-DROP ---
-// Uses the native HTML5 drag-and-drop API. TWO different things can be
-// dragged on this page, both ending at the same drop handler
-// (dayCardDrop) on the day card:
-//
-// 1. The whole day card (draggable="true" on the outer
-//    .recipe-day-card element, see plan.html) - swaps the main dish,
-//    ALL side dishes, and exclusion status of two days completely with
-//    each other (daySwap). "If the main dish moves, the side dishes
-//    come along."
-//
-// 2. A single side-dish row (draggable="true" on .side-dish-card,
-//    see static/plan-sides.js: renderSidesSection) - moves ONLY that
-//    one side dish to the target day, without touching the rest of the
-//    source or target day (moveSideDish, see static/plan-sides.js).
-//
-// Since a side-dish row is nested INSIDE a day card and both have
-// draggable="true", the browser automatically picks the innermost
-// draggable element under the cursor when dragging starts - so dragging
-// from a side-dish row only drags it, not the whole card, with no
-// conflict handling of our own needed. Which of the two cases applies
-// is stored as a JSON-encoded {type: 'day'|'side', ...} object in the
-// DataTransfer (see dayCardDragStart here and sideDragStart in
-// static/plan-sides.js).
+// --- Drag and drop ---
+// Dragging a whole day card swaps two days (main dish, sides, excluded,
+// cooked); dragging a single side row (plan-sides.js) moves just that side.
+// The browser drags the innermost draggable element, so the two don't
+// conflict. The payload is JSON: {type: 'day'|'side', ...}.
 
-/** Remembers the index of a WHOLE day card in the DataTransfer when dragging starts. */
 function dayCardDragStart(event) {
     const dayIndex = parseInt(event.currentTarget.getAttribute('data-day-index'));
     event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'day', dayIndex: dayIndex }));
 }
 
-/** Allows dropping on this card (otherwise the browser ignores drop events by default) and highlights it visually. */
+/** preventDefault is required, or the browser ignores the drop. */
 function dayCardAllowDrop(event) {
     event.preventDefault();
     event.currentTarget.classList.add('drag-over');
 }
 
-/**
- * Shared drop handler for both drag kinds (see explanation above):
- * reads the JSON-encoded payload from the DataTransfer and dispatches
- * to daySwap() (whole card, below) or moveSideDish() (a single side
- * dish, see static/plan-sides.js) depending on "type". Invalid/missing
- * payloads (e.g. a drag from outside this page) are silently ignored.
- */
+/** Shared drop handler; payloads from outside the page are ignored. */
 function dayCardDrop(event) {
     event.preventDefault();
     const targetCard = event.currentTarget;
@@ -518,13 +295,6 @@ function dayCardDrop(event) {
     }
 }
 
-/**
- * Swaps two whole day cards completely with each other (calls
- * routes/plan/day_actions.py: swap_days() server-side) and only swaps
- * the three affected arrays (weeklyPlanRecipes, weeklySideRecipes,
- * dayExcluded) via destructuring swap after its confirmation, before
- * both cards are re-rendered.
- */
 function daySwap(i, j) {
     if (i === j) return;
 
@@ -548,14 +318,8 @@ function daySwap(i, j) {
     });
 }
 
-// Date display/jump: a dedicated dd.mm.yyyy text field instead of the
-// browser-localized <input type="date"> display text (which, in Chrome
-// for instance, can show mm/dd/yyyy depending on system language). The
-// native picker is kept for the calendar popup, but is invisible (see
-// CSS in plan.html) and is opened programmatically (showPicker()) by
-// clicking the visible text field. When the user picks a date in the
-// popup, the change event navigates directly to the plan page of the
-// week that date falls in.
+// Week jump: a dd.mm.yyyy text field that opens the hidden native date
+// picker (whose own display format depends on the browser language).
 (function() {
     const display = document.getElementById('weekDateDisplay');
     const picker = document.getElementById('weekDatePicker');
@@ -565,167 +329,20 @@ function daySwap(i, j) {
         if (picker.showPicker) {
             picker.showPicker();
         } else {
-            // Fallback for browsers without showPicker() support: focus
-            // the (invisible) native field so that at least keyboard
-            // input/native operation remains possible.
             picker.focus();
         }
     });
 
     picker.addEventListener('change', () => {
         if (picker.value) {
-            // Carries planId along explicitly (see PLAN_DATA.planId
-            // above, routes/plan/pages.py: week_view()) so jumping to a
-            // different week keeps addressing THIS plan, instead of
-            // silently falling back to whichever plan is active in the
-            // session.
             location.href = '/plan/' + picker.value + '?plan_id=' + window.PLAN_DATA.planId;
         }
     });
 })();
 
-// --- RECIPE DETAIL WINDOW ---
-// A single, reused modal (#recipeDetailModal, see plan.html) instead of
-// one per dish: it always shows exactly ONE dish at a time, its content
-// is refilled via JS every time it opens. Opened by clicking a main
-// dish (dish-clickable in renderMainDisplay above) or a side dish
-// (dish-clickable in static/plan-sides.js: renderSidesSection) - in
-// both cases reads from the weeklyPlanRecipes/weeklySideRecipes objects
-// already present in the frontend, no separate server round-trip needed
-// (see services/planning.py: jsonify_recipe() docstring for the
-// additional fields is_favorite/source_url/instructions delivered for
-// exactly this purpose).
-
-// Remembers which day/side dish the detail window is currently open
-// for - toggleDetailCooked() below needs this to know where the
-// checkbox change should be saved server-side, without every caller
-// having to pass that through itself.
-let detailDayIndex = null;
-let detailSideId = null;
-
-/** Escapes text for safe embedding in innerHTML (prevents, e.g., a
- * recipe name containing "<"/"&" from breaking a card's markup or
- * executing injected HTML) - used everywhere a recipe/category/side-dish
- * name from window.PLAN_DATA or an AJAX response ends up in a template
- * literal assigned to innerHTML (renderMainDisplay/
- * static/plan-sides.js: renderSidesSection, and this detail window,
- * which additionally displays longer free text like the instructions). */
+/** Use for every user-provided string that goes into innerHTML. */
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text ?? '';
     return div.innerHTML;
-}
-
-/**
- * Opens the recipe detail window for a day's main dish (sideId null) or
- * a specific side dish (sideId set) - builds the complete, purely
- * read-only content from the recipe object already available and shows
- * the Bootstrap modal.
- */
-function openRecipeDetail(dayIndex, sideId) {
-    const recipe = sideId
-        ? (weeklySideRecipes[dayIndex] || []).find(s => s.side_id === sideId)
-        : weeklyPlanRecipes[dayIndex];
-    if (!recipe) return;
-
-    detailDayIndex = dayIndex;
-    detailSideId = sideId;
-    const cooked = sideId ? !!recipe.cooked : !!dayCooked[dayIndex];
-
-    document.getElementById('recipeDetailTitle').textContent = (recipe.is_favorite ? '⭐ ' : '') + recipe.name;
-    document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit/${recipe.id}`;
-    document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(recipe, dayServings[dayIndex]);
-
-    const checkbox = document.getElementById('recipeDetailCookedCheckbox');
-    checkbox.checked = cooked;
-    checkbox.onchange = () => toggleDetailCooked(checkbox.checked);
-
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('recipeDetailModal')).show();
-}
-
-/** Builds the read-only content of the detail window (category/servings,
- * nutrition, ingredient list, instructions/source if present) from a
- * recipe object - deliberately a different, more compact presentation
- * than the create/edit form, showing everything at a glance instead of
- * individual form fields.
- *
- * targetServings is the number of servings set for THIS day
- * (dayServings[dayIndex], see openRecipeDetail) - ingredient amounts are
- * scaled to it (instead of showing the base amount laid out for
- * recipe.servings unchanged, as before), using exactly the same ratio
- * the shopping list uses (see static/plan-shopping.js:
- * rebuildShoppingList - roundedAmount() from there is reused here for
- * the same round-up-rather-than-truncate rounding). Nutrition values are
- * deliberately left untouched by this: they always apply PER SERVING,
- * regardless of the planned number of servings. */
-function renderRecipeDetailBody(recipe, targetServings) {
-    const factor = recipe.servings ? targetServings / recipe.servings : 1;
-    const ingredientsHtml = recipe.ingredients.length
-        ? `<ul class="mb-0 ps-3">${recipe.ingredients.map(ing =>
-            `<li>${escapeHtml(roundedAmount({ amount: ing.amount * factor }))} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}</li>`
-          ).join('')}</ul>`
-        : `<span class="text-muted">${escapeHtml(window.I18N.no_ingredients_on_file)}</span>`;
-
-    const instructionsHtml = recipe.instructions
-        ? `<h6 class="fw-bold text-dark mt-3 mb-1">${escapeHtml(window.I18N.instructions_heading)}</h6><p class="mb-0" style="white-space: pre-line;">${escapeHtml(recipe.instructions)}</p>`
-        : '';
-
-    const sourceHtml = recipe.source_url
-        ? `<a href="${escapeHtml(recipe.source_url)}" target="_blank" rel="noopener noreferrer" class="badge bg-light text-dark border px-2 py-1 text-decoration-none mt-2 d-inline-block">${escapeHtml(window.I18N.open_source_link)}</a>`
-        : '';
-
-    return `
-        <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-            <span class="badge badge-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
-            <span class="text-muted small">👥 ${targetServings} ${escapeHtml(window.I18N.servings_word)}</span>
-        </div>
-        <div class="text-muted small font-monospace bg-light p-2 rounded mb-3">
-            📊 ${recipe.calories} kcal | P: ${recipe.protein}g | C: ${recipe.carbs}g | F: ${recipe.fat}g <span class="text-muted">${escapeHtml(window.I18N.per_serving)}</span>
-        </div>
-        <h6 class="fw-bold text-dark mb-1">🛒 ${escapeHtml(window.I18N.ingredients_word)}</h6>
-        ${ingredientsHtml}
-        ${instructionsHtml}
-        ${sourceHtml}
-    `;
-}
-
-/**
- * Saves the changed "cooked" checkbox of the currently open detail
- * window server-side (routes/plan/day_actions.py: set_day_cooked()/
- * routes/plan/day_actions_sides.py: set_side_cooked()) and, on success, updates both the local state
- * (dayCooked, or the cooked field directly on the side-dish object) and
- * - via refreshDayCard()/refreshSidesSection() - the grayed-out state of
- * the affected day card, without closing the detail window for it.
- */
-function toggleDetailCooked(cooked) {
-    const dayIndex = detailDayIndex;
-    const sideId = detailSideId;
-    const url = sideId
-        ? `/day/${dayDates[dayIndex]}/side/${sideId}/cooked`
-        : `/day/${dayDates[dayIndex]}/cooked`;
-
-    postWithCsrf(url, {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cooked: cooked }),
-    })
-    .then(response => {
-        if (!response.ok) throw new Error(window.I18N.could_not_be_saved);
-        return response.json();
-    })
-    .then(data => {
-        if (sideId) {
-            const side = (weeklySideRecipes[dayIndex] || []).find(s => s.side_id === sideId);
-            if (side) side.cooked = data.cooked;
-            refreshSidesSection(dayIndex);
-        } else {
-            dayCooked[dayIndex] = data.cooked;
-            refreshDayCard(dayIndex);
-        }
-    })
-    .catch(err => {
-        alert(window.I18N.note_prefix + ' ' + err.message);
-        // Reset the checkbox to its last known state, since the change
-        // was not applied server-side.
-        document.getElementById('recipeDetailCookedCheckbox').checked = !cooked;
-    });
 }

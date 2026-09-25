@@ -1,20 +1,9 @@
-"""Database migrations, run once on every app startup (see app.py:
-`with app.app_context(): init_db()`).
+"""Schema migrations, run by init_db() on every app start.
 
-This project deliberately has no migration framework (like Alembic/
-Flask-Migrate) - the app is too small and changes too infrequent for
-that. Instead, init_db() checks via PRAGMA table_info on EVERY startup
-which columns/tables already exist, and adds/rebuilds any that are
-missing once. Every migration step is thereby idempotent: running it
-again on an already up to date database does nothing more.
-
-Broken into one named function per logical migration step (below),
-called in sequence from init_db() at the bottom of this file - same SQL/
-logic as before, just organized instead of one long function body. Several
-of the later steps need to know the "legacy plan" (the plan that inherits
-all pre-existing, not-yet-plan-scoped data) - _seed_demo_accounts() at the
-top returns seeded_plans_by_username, threaded through as a parameter to
-every step that needs it.
+No migration framework: each step inspects the schema via PRAGMA
+table_info and only acts if its change is missing, so every step is
+idempotent. SQLite can't drop constrained/foreign-key columns or add
+constraints via ALTER TABLE, hence the occasional table rebuild.
 """
 
 import re
@@ -27,66 +16,33 @@ from services.planning import friday_of
 from services.seasons import SEASON_PRESETS
 from services.units import renormalize_existing_ingredients
 
-# _add_plan_id_column()/_add_plan_id_with_rebuild() below take a table/
-# column name as a plain Python parameter and interpolate it into raw SQL
-# via an f-string, since SQLite's DDL statements don't support bind
-# parameters for identifiers (only for values). Every CALL site in this
-# file passes a hardcoded literal, never anything derived from user
-# input - but that's an invariant of how the functions happen to be used
-# today, not something enforced by the functions themselves. _identifier()
-# below is a cheap, permanent guardrail against that assumption quietly
-# becoming false later (a copy-pasted call site, a future refactor that
-# threads a variable through) - it fails loudly at startup instead of
-# silently building unexpected SQL.
+# SQLite DDL can't bind identifiers, so the helpers below interpolate
+# table/column names into SQL - only ever allow plain snake_case names.
 _VALID_IDENTIFIER = re.compile(r'^[a-z_][a-z0-9_]*$')
 
 
 def _identifier(name):
-    """Validates a single table/column name against a strict snake_case
-    allowlist before it's allowed into an f-string SQL fragment - raises
-    ValueError instead of proceeding if it doesn't match exactly (no
-    quoting/escaping attempted, since a legitimate identifier here never
-    needs any)."""
     if not _VALID_IDENTIFIER.match(name):
         raise ValueError(f"Refusing to build SQL with unsafe identifier: {name!r}")
     return name
 
 
 def _identifier_list(csv_names):
-    """Like _identifier() above, but for a comma-separated list of column
-    names (see _add_plan_id_with_rebuild(): copy_columns) - validates each
-    one individually."""
     for part in csv_names.split(','):
         _identifier(part.strip())
     return csv_names
 
 
 def _legacy_plan(seeded_plans_by_username):
-    """The plan that inherits all pre-existing, not-yet-plan-scoped data.
-    seeded_plans_by_username is always {} now (this app no longer seeds
-    any demo accounts of its own, see init_db() below) - kept as a
-    parameter purely so the plan-scoping migration steps below don't need
-    to change, since they were written for it. In practice this always
-    resolves to the oldest existing plan on a database that already had
-    data before plans existed at all; on a genuinely fresh, empty database
-    there is nothing to migrate and every caller here already bails out
-    when this returns None."""
+    """The plan that inherits data from before plans existed: the oldest
+    plan (seeded_plans_by_username is always {} now)."""
     return seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
 
 
 def _rebuild_user_table_for_email_login():
-    """user.username -> user.name (purely a display name, from now on NOT
-    unique) + new, unique user.email column (email became the identity
-    key - later still true once identity moved to Authelia, see
-    services/auth.py: current_user(), which matches its header against
-    exactly this column). The old inline UNIQUE on username (from the
-    original CREATE TABLE) can't be removed via ALTER TABLE - as with the
-    later category/ingredient_alias migrations, this requires a one-time
-    table rebuild. Placeholder email for each existing account follows the
-    pattern <lowercase-name>@example.com (e.g. "Nutzer1" ->
-    nutzer1@example.com) - derived automatically from the previous
-    username, no special handling of individual names needed.
-    """
+    """username -> name (no longer unique) plus a unique email column, the
+    identity key Authelia's header is matched against. Placeholder emails
+    are <lowercase-name>@example.com."""
     existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
     if 'email' in existing_user_columns:
         return
@@ -110,15 +66,8 @@ def _rebuild_user_table_for_email_login():
 
 
 def _migrate_user_language_column():
-    """user.language: didn't exist in an earlier version - add the missing
-    column. The SQLite default ('en') applies automatically to all
-    existing accounts too (see models/user.py: User.language). Must run
-    here, immediately after _rebuild_user_table_for_email_login() gives
-    the user table its final shape and BEFORE any ORM-level User.query
-    call (e.g. the account-seeding check in _seed_demo_accounts() below) -
-    SQLAlchemy includes every mapped column, including this new one, in
-    every User query, so it would fail with "no such column: user.
-    language" if this migration ran any later."""
+    """Must run before any ORM User query - SQLAlchemy selects every mapped
+    column, so a missing user.language would break it."""
     existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
     if 'language' not in existing_user_columns:
         db.session.execute(text("ALTER TABLE user ADD COLUMN language VARCHAR(5) NOT NULL DEFAULT 'en'"))
@@ -126,10 +75,6 @@ def _migrate_user_language_column():
 
 
 def _migrate_recipe_columns():
-    """Adds every recipe column that didn't exist in earlier versions of
-    the app (is_side_dish, servings, is_favorite, source_url,
-    instructions, nutrition_override, updated_at) - one ALTER TABLE per
-    missing column, each committed separately."""
     existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}
     if 'is_side_dish' not in existing_columns:
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN is_side_dish BOOLEAN NOT NULL DEFAULT 0"))
@@ -150,23 +95,13 @@ def _migrate_recipe_columns():
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN nutrition_override BOOLEAN NOT NULL DEFAULT 0"))
         db.session.commit()
     if 'updated_at' not in existing_columns:
-        # SQLite refuses "DEFAULT CURRENT_TIMESTAMP" directly in ALTER
-        # TABLE ("Cannot add a column with non-constant default") - so the
-        # column is created without a default and existing rows are set
-        # to the migration timestamp via a separate UPDATE (a sensible
-        # starting value for the "recently edited" list in
-        # routes/manage.py, even without real history for older recipes).
+        # SQLite rejects a non-constant DEFAULT in ALTER TABLE, so backfill separately.
         db.session.execute(text("ALTER TABLE recipe ADD COLUMN updated_at DATETIME"))
         db.session.execute(text("UPDATE recipe SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
         db.session.commit()
 
 
 def _migrate_ingredient_category_column():
-    """Shopping-list category of an ingredient (see services/shopping.py) -
-    only added with the grouped/sorted shopping list. Existing ingredients
-    stay NULL (land in the shopping list's catch-all "miscellaneous" group
-    for now, until the respective recipe is saved again) - an automatic
-    assignment isn't reliably possible without user input."""
     existing_ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
     if 'category' not in existing_ingredient_columns:
         db.session.execute(text("ALTER TABLE ingredient ADD COLUMN category VARCHAR(50)"))
@@ -174,17 +109,10 @@ def _migrate_ingredient_category_column():
 
 
 def _migrate_ingredient_pantry_flag():
-    """Adds Ingredient.is_pantry (see services/shopping.py module
-    docstring) - replaces the previous derivation of "is this a pantry
-    item" from the ingredient's shopping category (the now-removed
-    PANTRY_CATEGORIES = {"Gewürze", "Vorratsschrank", "Verbrauchsartikel"})
-    with an explicit per-ingredient checkbox. Existing rows are backfilled
-    ONCE from exactly those three categories - this must run BEFORE
-    _migrate_remove_pantry_shopping_categories() below renames two of them
-    away, or the backfill would no longer find them. Only runs the
-    backfill the one time the column is actually created, so a user who
-    later unchecks the box for a specific spice doesn't get overridden
-    again on the next app start."""
+    """Adds Ingredient.is_pantry, backfilled once from the former pantry
+    categories. Must run before _migrate_remove_pantry_shopping_categories()
+    renames those categories away; the backfill only runs when the column is
+    created, so later manual unchecks stick."""
     existing_ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
     if 'is_pantry' not in existing_ingredient_columns:
         db.session.execute(text("ALTER TABLE ingredient ADD COLUMN is_pantry BOOLEAN NOT NULL DEFAULT 0"))
@@ -196,17 +124,7 @@ def _migrate_ingredient_pantry_flag():
 
 
 def _migrate_remove_pantry_shopping_categories():
-    """"Vorratsschrank" and "Verbrauchsartikel" were removed from
-    services/shopping.py: SHOPPING_CATEGORIES once "pantry item" became
-    its own checkbox (see _migrate_ingredient_pantry_flag() above, which
-    must run first) instead of being implied by the category. Existing
-    ingredient rows still carrying either string in their free-text
-    category column are moved to "Konserven" - the closest remaining
-    shelf-stable-goods category - so they don't silently fall into the
-    "Sonstiges" catch-all; their is_pantry flag already preserves that
-    they're pantry items regardless of this reassignment. Naturally
-    idempotent (no rows left to match after the first run), so unlike the
-    ALTER TABLE steps above this doesn't need a one-time guard."""
+    """Moves ingredients from the removed pantry categories to "Konserven"."""
     db.session.execute(text(
         "UPDATE ingredient SET category = 'Konserven' WHERE category IN ('Vorratsschrank', 'Verbrauchsartikel')"
     ))
@@ -214,12 +132,7 @@ def _migrate_remove_pantry_shopping_categories():
 
 
 def _migrate_recipe_season_table():
-    """Column RESTRUCTURING rather than a mere addition: earlier versions
-    had a single season text column directly on Recipe; that was later
-    replaced by the separate recipe_season table, which allows MULTIPLE
-    date ranges per recipe. Existing values are transferred once into the
-    new table via SEASON_PRESETS (season name -> date-range tuple), then
-    the old column is dropped."""
+    """Old single recipe.season text column -> recipe_season rows."""
     existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(recipe)"))}
     if 'season' not in existing_columns:
         return
@@ -238,13 +151,7 @@ def _migrate_recipe_season_table():
 
 
 def _migrate_plan_day_side_table():
-    """Any number of side dishes per day instead of exactly one: earlier
-    versions had a single side_recipe_id column directly on PlanDay; that
-    was replaced by the separate PlanDaySide table (see
-    models/calendar.py). The new table already exists thanks to
-    db.create_all() in init_db() - here only the existing single value (if
-    set) is transferred once into a PlanDaySide row, then the old column
-    is dropped."""
+    """Old single plan_day.side_recipe_id -> plan_day_side rows."""
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'side_recipe_id' not in existing_plan_day_columns:
         return
@@ -255,15 +162,8 @@ def _migrate_plan_day_side_table():
         db.session.add(PlanDaySide(plan_day_id=plan_day_id, recipe_id=side_recipe_id))
     db.session.commit()
 
-    # SQLite refuses a direct ALTER TABLE ... DROP COLUMN for
-    # side_recipe_id ("unknown column ... in foreign key definition"),
-    # because the column is part of a FOREIGN KEY definition of the table
-    # itself - a known SQLite limitation, unlike the season migration
-    # above (there the column wasn't a foreign key). Instead, the table is
-    # rebuilt following the pattern recommended by the SQLite docs: create
-    # a copy without the column, copy the data across (including IDs, so
-    # the PlanDaySide rows just created keep pointing to the right days),
-    # replace the old table with the new one.
+    # side_recipe_id is a foreign key, which SQLite can't DROP COLUMN - rebuild,
+    # keeping ids so the new plan_day_side rows still point at the right days.
     db.session.execute(text("""
         CREATE TABLE plan_day_new (
             id INTEGER NOT NULL PRIMARY KEY,
@@ -284,9 +184,6 @@ def _migrate_plan_day_side_table():
 
 
 def _migrate_plan_day_cooked_columns():
-    """"Cooked" checkbox in the recipe detail window (see
-    models/calendar.py: PlanDay.cooked/PlanDaySide.cooked) - added only
-    later, for both the plan_day and plan_day_side tables."""
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'cooked' not in existing_plan_day_columns:
         db.session.execute(text("ALTER TABLE plan_day ADD COLUMN cooked BOOLEAN NOT NULL DEFAULT 0"))
@@ -299,13 +196,7 @@ def _migrate_plan_day_cooked_columns():
 
 
 def _migrate_drop_user_password_hash_column():
-    """user.password_hash removed: authentication no longer happens in
-    this app at all (see services/auth.py module docstring) - Authelia,
-    in front of the reverse proxy, owns the password entirely, and this
-    app never sees or checks one anymore. Not a foreign key and not part
-    of any constraint, so a direct DROP COLUMN works without the
-    table-rebuild detour used elsewhere in this file (analogous to
-    _migrate_drop_ingredient_nutrition_calories() below)."""
+    """Passwords are Authelia's job now."""
     existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
     if 'password_hash' in existing_user_columns:
         db.session.execute(text("ALTER TABLE user DROP COLUMN password_hash"))
@@ -313,10 +204,6 @@ def _migrate_drop_user_password_hash_column():
 
 
 def _migrate_plan_membership_overview_column():
-    """show_in_week_overview on PlanMembership: didn't exist in an earlier
-    version - add the missing column. The SQLite default (1) applies
-    automatically to all already-existing memberships too (see
-    models/plan.py: PlanMembership.show_in_week_overview)."""
     existing_plan_membership_columns = {
         row[1] for row in db.session.execute(text("PRAGMA table_info(plan_membership)"))
     }
@@ -326,14 +213,8 @@ def _migrate_plan_membership_overview_column():
 
 
 def _migrate_plan_day_plan_scoping(seeded_plans_by_username):
-    """plan_id on PlanDay: didn't exist in earlier versions of the app
-    (the calendar was global, a single plan shared by everyone) - if the
-    column is missing, it's added and ALL existing rows (the entire prior
-    planning history) are assigned to Nutzer1's newly created plan;
-    Nutzer2 is additionally entered (starred) as a member of this plan -
-    this way, after this one-time migration, BOTH see exactly the same,
-    already existing plan, without anyone having to manually invite the
-    other."""
+    """The formerly global calendar becomes the legacy plan's; "Nutzer2" is
+    made a starred member of it so both original users keep seeing it."""
     existing_plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
     if 'plan_id' in existing_plan_day_columns:
         return
@@ -352,11 +233,7 @@ def _migrate_plan_day_plan_scoping(seeded_plans_by_username):
     )
     db.session.commit()
 
-    # SQLite can neither add a NOT NULL constraint nor a composite UNIQUE
-    # constraint retroactively via ALTER TABLE - as with the earlier
-    # side_recipe_id migration above, the table is therefore rebuilt once
-    # with the complete target schema (copy including IDs, so PlanDaySide
-    # rows keep pointing to the right days).
+    # NOT NULL and UNIQUE(plan_id, date) need a rebuild (ids kept for plan_day_side).
     db.session.execute(text("""
         CREATE TABLE plan_day_new (
             id INTEGER NOT NULL PRIMARY KEY,
@@ -381,11 +258,6 @@ def _migrate_plan_day_plan_scoping(seeded_plans_by_username):
 
 
 def _migrate_extra_shopping_item_plan_scoping(seeded_plans_by_username):
-    """plan_id on ExtraShoppingItem, analogous to
-    _migrate_plan_day_plan_scoping() above (all pre-existing rows get
-    assigned to the legacy plan), but without the accompanying table
-    rebuild - extra_shopping_item never had a conflicting old constraint,
-    so a plain ALTER TABLE ADD COLUMN is enough here."""
     existing_extra_item_columns = {
         row[1] for row in db.session.execute(text("PRAGMA table_info(extra_shopping_item)"))
     }
@@ -402,18 +274,9 @@ def _migrate_extra_shopping_item_plan_scoping(seeded_plans_by_username):
 
 
 def _add_plan_id_column(table, column, seeded_plans_by_username, unique_index_sql=None):
-    """--- Recipes/categories/ingredient-alias mapping/nutrition/units:
-    likewise bound to ONE plan instead of (as before) shared globally -
-    each plan maintains its own cookbook and its own settings (see
-    models/plan.py: Plan docstring).
-
-    Small helper used for tables WITHOUT an old constraint that would
-    collide with plan_id (recipe/app_settings previously had no unique
-    condition that would get in the way of a new composite index) - add
-    the column, assign existing rows to the legacy plan, optionally a
-    standalone "CREATE UNIQUE INDEX" (SQLite doesn't allow a retroactive
-    ALTER TABLE ... ADD CONSTRAINT, but does allow an independently
-    created unique index with the same effect, without any table copy)."""
+    """Adds a plan id column assigned to the legacy plan, for tables with no
+    conflicting old constraint. A standalone unique index stands in for the
+    constraint SQLite can't add retroactively."""
     table, column = _identifier(table), _identifier(column)
     existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
     if column in existing_columns:
@@ -440,16 +303,9 @@ def _migrate_recipe_and_settings_plan_scoping(seeded_plans_by_username):
 
 
 def _add_plan_id_with_rebuild(table, create_new_table_sql, copy_columns, seeded_plans_by_username):
-    """category/ingredient_alias/ingredient_nutrition PREVIOUSLY each had a
-    single global UNIQUE on exactly the column that should now only be
-    unique together with plan_id (name/raw_name/canonical_name) - the old
-    constraint, hard-wired into the table itself, could NOT be gotten rid
-    of with the simple ADD-COLUMN+INDEX trick in _add_plan_id_column()
-    above (a second, new index changes nothing about the old one, which
-    would still remain). As with the earlier side_recipe_id/plan_id
-    migration for plan_day, the table is therefore rebuilt once with the
-    complete target schema (including IDs, which e.g. recipe.category_id
-    still depends on)."""
+    """Like _add_plan_id_column(), for tables whose old global UNIQUE must
+    become unique per plan - that needs a rebuild (ids kept, other tables
+    reference them)."""
     table, copy_columns = _identifier(table), _identifier_list(copy_columns)
     existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
     if 'plan_id' in existing_columns:
@@ -520,12 +376,7 @@ def _migrate_category_alias_nutrition_plan_scoping(seeded_plans_by_username):
 
 
 def _migrate_drop_ingredient_nutrition_calories():
-    """IngredientNutrition.calories removed: calories can be computed from
-    protein/carbs/fat (see services/nutrition.py: compute_calories()) and
-    would only be redundant as a separately maintained value. Unlike
-    plan_day/side_recipe_id (see above), calories is NOT a foreign key
-    here - a direct DROP COLUMN therefore works without the table-rebuild
-    detour used there."""
+    """Calories are always computed from protein/carbs/fat now."""
     existing_ingredient_nutrition_columns = {
         row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient_nutrition)"))
     }
@@ -535,37 +386,17 @@ def _migrate_drop_ingredient_nutrition_calories():
 
 
 def _seed_default_categories_for_all_plans():
-    """A sensible base set of categories for EVERY plan that doesn't yet
-    have a single one of its own, so a new plan doesn't start with an
-    empty category list (and thus unusable automatic planning) - this
-    covers both a completely fresh first start and, since categories
-    became plan-bound, every newly created plan without its own
-    categories (see services/plans.py: seed_default_categories(), the
-    same function is also used by routes/plans.py: create_plan() for
-    plans created in the future). Custom categories added or renamed later
-    are thereby never overwritten or recreated - the check is per plan."""
+    """Default categories for every plan that has none yet (never touches
+    plans that already have their own)."""
     for plan in Plan.query.all():
         seed_default_categories(plan.id)
     db.session.commit()
 
 
 def _migrate_extra_shopping_item_week_start_to_friday():
-    """The calendar week now runs Friday-Thursday instead of Monday-
-    Sunday (see services/planning.py: friday_of()) - ExtraShoppingItem.
-    week_start (the only place a "week start" is actually STORED, see
-    the model docstring) needs re-anchoring to match, or an item added
-    under the old convention would silently stop showing up on the week
-    it was meant for (routes/plan/pages.py: week_view() looks it up by
-    exact week_start match against the now-Friday-based normalized date).
-
-    friday_of() applied to an OLD week_start (always a Monday under the
-    previous convention) lands on the Friday 3 days earlier - the new
-    week that shares the most days (Mon-Thu, 4 of 7) with the old
-    Monday-Sunday week, the most reasonable single choice given
-    ExtraShoppingItem has no specific day of its own to disambiguate by.
-    Naturally idempotent: friday_of() applied to an already-Friday
-    week_start returns it unchanged, so this is safe to run on every
-    startup, not just once."""
+    """Re-anchors stored week starts after the switch from Monday-Sunday to
+    Friday-Thursday weeks. An old Monday maps to the Friday before it (the
+    new week sharing the most days); already-Friday values are unchanged."""
     changed = False
     for item in ExtraShoppingItem.query.all():
         new_week_start = friday_of(item.week_start)
@@ -577,19 +408,9 @@ def _migrate_extra_shopping_item_week_start_to_friday():
 
 
 def _migrate_ensure_starred_membership():
-    """Every user needs exactly one starred plan to fall back to
-    (services/auth.py: default_plan_id()/current_plan()) - without one,
-    default_plan_id() returns None, which e.g. showed up as an empty
-    category dropdown when such a user tried to create a recipe without
-    an explicit ?plan_id= in the URL. routes/sharing.py: invite_member()
-    used to unconditionally create a new membership as NOT starred, even
-    for an existing user with zero memberships of their own - fixed there
-    now (mirrors the is_first check in services/plans.py: create_plan()/
-    accept_pending_invites()), but this repairs any membership that
-    already ended up in that broken state before the fix. For each
-    affected user, stars the plan they themselves own if they have one,
-    otherwise their first (lowest id) membership. Naturally idempotent:
-    a user who already has a starred membership is left untouched."""
+    """Every user needs one starred plan to fall back to. Repairs users left
+    without one by an old invite bug: stars their own plan, else their first
+    membership."""
     starred_user_ids = {
         row[0] for row in db.session.execute(text("SELECT DISTINCT user_id FROM plan_membership WHERE is_starred = 1"))
     }
@@ -613,11 +434,6 @@ def _migrate_ensure_starred_membership():
 
 
 def init_db():
-    """Creates missing tables on app startup (db.create_all() - covers
-    e.g. a completely new, empty database or a newly added table like
-    plan_day) and migrates existing databases from older app versions to
-    the current schema by running each named migration step above in
-    sequence. See this module's docstring for the general approach."""
     db.create_all()
 
     _rebuild_user_table_for_email_login()
@@ -631,12 +447,6 @@ def init_db():
     _migrate_plan_day_side_table()
     _migrate_plan_day_cooked_columns()
 
-    # No demo accounts to seed anymore (see services/auth.py module
-    # docstring: identity now comes from Authelia, auto-provisioned on
-    # first sight by current_user()) - {} makes _legacy_plan() below fall
-    # straight back to "the oldest existing plan", which is exactly what
-    # every already-deployed database (with real, pre-existing data) still
-    # needs for the plan-scoping migrations that follow.
     seeded_plans_by_username = {}
 
     _migrate_plan_membership_overview_column()
@@ -649,9 +459,4 @@ def init_db():
     _migrate_ensure_starred_membership()
     _migrate_extra_shopping_item_week_start_to_friday()
 
-    # Bring existing ingredient amounts/units (e.g. "Gramm", "kg", "gr" as
-    # plain text from before unit unification) once into their canonical
-    # form (see services/units.py). Idempotent like the migration steps
-    # above: on an already fully canonical database, calling this again
-    # changes nothing further.
     renormalize_existing_ingredients()

@@ -1,43 +1,22 @@
-{# Base layout, included by EVERY other template via
-   {% extends 'base.html' %}. Defines the header area (CSS includes, meta
-   tags), navigation bar and footer (Bootstrap JS bundle) once - the
-   individual pages only fill in the {% block content %} area. #}
+{# Base layout: head, sidebar and scripts shared by every page. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🍽️ Speiseplanhelfer</title>
-    {# Emoji favicon via an inline SVG data URI - no separate image asset
-       to vendor/maintain, and browsers otherwise request /favicon.ico by
-       convention even with no <link> at all, which 404s without this
-       (harmless, but shows up as console/network noise). #}
+    {# Inline emoji favicon; without it browsers request /favicon.ico (404). #}
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍽️</text></svg>">
 
 
-    {# Light/dark mode: deliberately runs as the VERY FIRST thing in <head>,
-       even before the CSS links further down, so that data-bs-theme is set
-       on <html> BEFORE the browser applies the stylesheets - otherwise the
-       wrong theme would briefly flash on load. Three possible settings
-       (stored in localStorage, per browser/device - see
-       templates/manage.html for the toggle):
-       "system" (default, follows the OS setting),
-       "light", "dark". Bootstrap 5.3 itself reacts to the same
-       data-bs-theme attribute and automatically adapts almost all of its
-       own components (cards, forms, modals, navbar, ...) accordingly -
-       the project's own color tokens in style.css follow the same
-       attribute via [data-bs-theme="dark"], plus a few targeted
-       corrections for the Bootstrap classes that interpret "dark"/"light"
-       as a plain color name rather than "adapt to the environment" (see
-       the comments there). #}
+    {# Theme (system/light/dark, per device in localStorage) is applied
+       before the stylesheets load, so the wrong theme never flashes.
+       Bootstrap and style.css both follow data-bs-theme. #}
     <script>
     (function() {
         var STORAGE_KEY = 'speiseplan-theme';
 
-        // localStorage can, in rare cases (private window, website data
-        // blocked by the user), throw an error instead of returning null -
-        // in that case "system" is assumed instead of letting the page
-        // fail with an error.
+        // localStorage throws in some private/blocked modes.
         function getPreference() {
             try {
                 return localStorage.getItem(STORAGE_KEY) || 'system';
@@ -46,9 +25,7 @@
             }
         }
 
-        // "system" is immediately resolved into "light" or "dark" based on
-        // the OS/browser setting - data-bs-theme only knows these two
-        // concrete values, not "system" itself.
+        // data-bs-theme only knows light/dark, so resolve "system" here.
         function applyTheme(preference) {
             var resolved = preference === 'system'
                 ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
@@ -56,61 +33,40 @@
             document.documentElement.setAttribute('data-bs-theme', resolved);
         }
 
-        // Made globally available so the toggle on the management page
-        // (templates/manage.html) can use the same logic instead of
-        // duplicating it.
+        // Used by the appearance switch at the bottom of this template.
         window.speiseplanGetThemePreference = getPreference;
         window.speiseplanApplyTheme = applyTheme;
         window.speiseplanSetThemePreference = function(preference) {
             try {
                 localStorage.setItem(STORAGE_KEY, preference);
             } catch (e) {
-                // localStorage not available - the choice then only
-                // applies to the current page view, with no error message
-                // for the user (not a critical operation).
+                // Not persisted; still applies to this page view.
             }
             applyTheme(preference);
         };
 
         applyTheme(getPreference());
 
-        // If the system setting changes while the page is already open
-        // (e.g. automatic switch at sunset) AND the user has chosen
-        // "System" (no explicit override), the change is applied
-        // immediately.
+        // Follow OS theme changes while the page is open.
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
             if (getPreference() === 'system') applyTheme('system');
         });
     })();
     </script>
 
-    {# CSRF token for the POST requests sent via fetch() in
-       static/plan.js (forms get their token as their own hidden
-       field directly inside the respective <form>, see there - fetch()
-       calls have no form and instead read the token from window.CSRF_TOKEN
-       below, set as the X-CSRFToken header). #}
+    {# For fetch() calls, sent as X-CSRFToken (forms use a hidden field). #}
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <script>window.CSRF_TOKEN = {{ csrf_token() | tojson }};</script>
 
-    {# Fixed shopping-list category order (see services/shopping.py,
-       app.py: inject_shopping_categories) - static/plan.js sorts/groups
-       the shopping list by this, regardless of which page is currently
-       loaded (the category dropdowns for entering ingredients also get
-       the same list rendered directly server-side, see
-       recipe_form.html). #}
+    {# Shopping-list category order for the client-side list. #}
     <script>
         window.SHOPPING_CATEGORIES = {{ shopping_categories | tojson }};
         window.SHOPPING_UNCATEGORIZED = {{ shopping_uncategorized | tojson }};
     </script>
 
-    {# User-facing strings referenced from static/*.js (alert()/confirm()
-       text, status labels, button titles) - Flask-Babel only extracts
-       msgids from .py/.html files (see babel.cfg), so these are routed
-       through this one JSON blob instead of being hardcoded English in
-       the JS itself (see IDEAS.md: "Known gaps" - this closes that gap).
-       Keyed by a short, stable name rather than the English text itself,
-       so a later wording tweak here doesn't silently orphan the German
-       translation. #}
+    {# Translated strings for static/*.js (Babel only extracts from .py and
+       .html). Keyed by a stable name so rewording doesn't orphan
+       translations. #}
     <script>
         window.I18N = {
             note_prefix: {{ _('Note:') | tojson }},
@@ -189,16 +145,10 @@
         };
     </script>
 
-    {# 1. Local Bootstrap CSS (as a file in the static folder, not loaded
-       via CDN) - the app should also work entirely without internet
-       access on the home network. #}
+    {# Bootstrap is vendored, so the app works without internet access. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap.min.css') }}" type="text/css">
 
-    {# 2. Own CSS with cache-busting: the ?v=...  query parameter comes
-       from app.py (inject_css_version, see there) and changes
-       automatically with the file's modification time, so that browsers
-       don't accidentally keep using an old, cached style.css after a
-       deployment. #}
+    {# ?v= is the file's mtime, so deploys bust the browser cache. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ css_version }}" type="text/css">
 
     <style>
@@ -210,20 +160,8 @@
 </head>
 <body>
 
-    {# Persistent sidebar replacing the former green top navbar with
-       hover dropdown - identical on EVERY page (site-wide app shell,
-       see static/style.css: .app-shell/.app-rail). Two fixed
-       main destinations at the top (weekly plan/overview), below that
-       direct shortcut links to the individual management areas - this
-       replaces both the former "Weekly Planner" link and the
-       "Settings" dropdown menu, neither of which needed their own
-       open/close logic any more, since all destinations are permanently
-       visible anyway. Active marker purely server-side via
-       request.path (no JS needed). On narrow screens the bar collapses
-       into a horizontally scrollable tab bar (see
-       @media in static/style.css) - the brand/group titles/appearance
-       toggle are hidden there to leave room for the actual link
-       destinations. #}
+    {# Sidebar on every page; becomes a scrollable tab bar on narrow
+       screens (see style.css). The active link is marked server-side. #}
     <div class="app-shell">
         <aside class="app-rail">
             <a class="rail-brand" href="/">
@@ -231,30 +169,15 @@
                 <span class="name">Speiseplan</span>
             </a>
 
-            {# "Weekly Plan" (nav-primary) links to "/", the read-only
-               cross-plan summary (routes/plan/pages.py: index(), see
-               templates/plan_summary.html) - a DIFFERENT page from the
-               interactive single-plan calendar at /plan/<date>, which is
-               only reached via a specific plan below. Only "/" itself
-               marks this link active; a /plan/<date> page instead marks
-               its own entry in "My Plans" below as active. #}
+            {# "Weekly Plan" is the read-only cross-plan summary; a plan's
+               own calendar is opened via "My Plans" below. #}
             <div class="nav-primary">
                 <a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/"><span class="ic">🗓️</span>{{ _('Weekly Plan') }}</a>
                 <a class="nav-link {% if request.path == '/manage' %}active{% endif %}" href="/manage"><span class="ic">⚙️</span>{{ _('Overview') }}</a>
             </div>
 
-            {# Own plans (own + invited, see models/plan.py:
-               PlanMembership) - clicking switches the active plan and
-               ALWAYS opens its own interactive week view for the current
-               week (routes/auth.py: switch_plan()), regardless of which
-               page the click happened from. The starred one is always
-               listed first (see app.py: inject_current_user_and_plans)
-               and is additionally visually marked as "active" when it is
-               currently the actually active plan. Ever since plans were
-               decoupled from accounts (services/plans.py), ALWAYS visible
-               (even with only a single plan or none at all) - the
-               "+ New Plan" entry always belongs in there too, not just the
-               switcher. #}
+            {# Clicking a plan makes it active and opens its current week.
+               Starred plan first. #}
             <div class="rail-section">
                 <div class="rail-label">{{ _('My Plans') }}</div>
                 {% for membership in nav_user_plans %}
@@ -293,12 +216,8 @@
                 {% if nav_current_user %}
                 <div class="theme-row d-flex justify-content-between align-items-center">
                     <span class="lbl">👤 {{ nav_current_user.name }}</span>
-                    {# This app no longer manages its own login session (see
-                       services/auth.py module docstring) - "logging out"
-                       can only mean ending the Authelia session itself, so
-                       this link only appears when AUTHELIA_LOGOUT_URL is
-                       actually configured (see app.py:
-                       inject_current_user_and_plans()). #}
+                    {# Logging out means ending the Authelia session;
+                       shown only when AUTHELIA_LOGOUT_URL is set. #}
                     {% if nav_authelia_logout_url %}
                     <a href="{{ nav_authelia_logout_url }}" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">{{ _('Log Out') }}</a>
                     {% endif %}
@@ -314,29 +233,15 @@
         </aside>
 
         <div class="app-content">
-            {# Main content: filled in by each subpage via {% block content %}...{% endblock %} #}
             <div class="container pb-5">
                 {% block content %}{% endblock %}
             </div>
         </div>
     </div>
 
-    {# Modal for creating another own plan - reachable from any page
-       (which is why it lives here in base.html instead of in a single
-       subpage; see the trigger button above in .app-rail), same pattern
-       as the recipe detail window in templates/plan.html. Successful
-       submission immediately switches to the new plan (see
-       routes/plans.py: create()).
-
-       DELIBERATELY placed outside .app-shell/.app-rail, as a direct
-       child of <body>: .app-rail is position:sticky (see static/
-       style.css) - any position:fixed descendant of such an element
-       (like this Bootstrap modal) would otherwise end up in ITS local
-       stacking context instead of above the entire page, and would be
-       visually obscured/undermined by .app-content even though it is
-       actually positioned "fixed" via CSS (see data-bs-target above -
-       works independently of DOM position, since it's addressed purely
-       via the ID). #}
+    {# "New plan" modal. Must stay outside the sticky .app-rail: a fixed
+       element inside it would be trapped in the rail's stacking context
+       and covered by the page content. #}
     <div class="modal fade" id="createPlanModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-sm">
             <div class="modal-content border-0 shadow">
@@ -359,16 +264,9 @@
         </div>
     </div>
 
-    {# 3. Local Bootstrap JS bundle (incl. Popper) - needed for, among
-       other things, the edit modals (recipe_edit_list.html) and the
-       recipe detail window (templates/plan.html). #}
     <script src="{{ url_for('static', filename='bootstrap.bundle.min.js') }}"></script>
 
-    {# Appearance segmented control in the sidebar: uses the global
-       logic defined earlier in this template
-       (window.speiseplanGetThemePreference/speiseplanSetThemePreference) -
-       identical on every page, since the sidebar is now global
-       (previously only on /manage, see templates/manage.html). #}
+    {# Appearance switch in the sidebar. #}
     <script>
     document.addEventListener('DOMContentLoaded', () => {
         var buttons = document.querySelectorAll('#themeSwitcher button');

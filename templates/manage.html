@@ -1,10 +1,4 @@
-{# Management overview page (/manage): dashboard header with metrics,
-   tile overview of the areas, and recently edited recipes (see
-   routes/manage.py for stats/recent). The navigation itself (sidebar)
-   now comes globally from templates/base.html - this page only
-   supplies its content, no longer its own shell (see the comment there for
-   the history: /manage originally had its own, isolated
-   sidebar, which has since been rolled out site-wide). #}
+{# Management dashboard: metrics, area tiles, recently edited recipes. #}
 {% extends 'base.html' %}
 {% block content %}
 <div style="max-width: 980px;">

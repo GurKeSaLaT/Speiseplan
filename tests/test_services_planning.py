@@ -410,10 +410,8 @@ def test_jsonify_side_includes_cooked_flag(app, test_plan_id, make_recipe):
 
 
 def shared_category(app, plan_id, name="Testkategorie"):
-    """Small, local helper (not a pytest fixture, deliberately given an
-    unmistakable name prefix) for tests that need several recipes in the
-    SAME category - without category_id, make_recipe otherwise creates a
-    new category of its own for each recipe."""
+    """One category for several recipes (make_recipe otherwise creates a new
+    category per recipe)."""
     from models import Category, db
 
     with app.app_context():

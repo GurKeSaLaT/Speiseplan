@@ -1,15 +1,5 @@
-"""Tests for routes/settings.py: the AJAX endpoint for the inline hint
-when entering an ingredient (/api/ingredient-nutrition/set). The page
-that used to live here (/manage/ingredient-nutrition,
-/update-ingredient-nutrition) was merged into the combined ingredients &
-nutrition page - see tests/test_routes_settings_ingredient_aliases.py and
-IDEAS.md.
-
-The reference base is always 100g/100ml/1pc (services/nutrition.py:
-REFERENCE_BASES) - so there is deliberately NO reference_amount form
-field/property anymore, only reference_unit. Likewise NO calories field:
-calories are never entered directly, but always computed from
-protein/carbs/fat (compute_calories())."""
+"""/api/ingredient-nutrition/set. There is no reference_amount or calories
+input: the amount follows from the unit, calories are computed."""
 
 
 def test_api_set_ingredient_nutrition_creates_entry(client, app):

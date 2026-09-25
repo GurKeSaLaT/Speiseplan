@@ -1,12 +1,5 @@
-{# Plain recipe overview (/manage/recipe/edit-list): search/filter, badges,
-   edit/delete link. Since the form overhaul, the actual edit form lives on
-   its own page PER recipe (see routes/recipes/crud.py: recipe_edit_view(),
-   /manage/recipe/edit/<id>, templates/recipe_form.html) - before that, a
-   full edit form for EVERY recipe sat here, kept inert only via
-   <template> (see the former static/recipe_edit_modal.js), and was only
-   cloned into a shared modal when actually opened. A dedicated page per
-   recipe doesn't need this whole cloning mechanism in the first place:
-   there is never more than ONE recipe form in the DOM at a time anyway. #}
+{# Recipe overview (/manage/recipe/edit-list); each recipe is edited on
+   its own page (recipe_form.html). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -31,13 +24,6 @@
                 {% if recipes %}
                 <input type="text" id="recipeFilter" class="form-control mb-3" placeholder="{{ _('🔍 Search recipe or category...') }}" autocomplete="off">
                 {% endif %}
-                {# Tile grid instead of the previous .list-group rows -
-                   uniform tag "chips" (.chip, see static/style.css) instead
-                   of mixed bg-secondary/bg-info/bg-light badges, buttons
-                   always share the card width equally via
-                   .rc-actions/flex:1, and .rc-spacer pushes them to the
-                   bottom edge regardless of the tag count - mockup agreed
-                   with the user. #}
                 {% if recipes %}
                 <div class="recipe-grid" id="recipeList">
                     {% for recipe in recipes %}
@@ -94,20 +80,11 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Purely client-side fuzzy filter over the recipe list (see
-// static/fuzzy_search.js) - no server roundtrip needed.
-// row.dataset.search contains both name AND category (see data-search
-// above) - so a search for "side dishes" also finds recipes whose name
-// itself doesn't contain "side dishes".
+// data-search holds name and category, so a category search matches too.
 const recipeFilterInput = document.getElementById('recipeFilter');
 wireFuzzyFilter(recipeFilterInput, '.recipe-list-row', row => row.dataset.search);
 
-// Remember the search term across an actual page load: the edit form now
-// lives on its own page (see routes/recipes/crud.py: recipe_edit_view()) - a
-// save then fully reloads this list via the redirect(url_for(...)) in
-// edit_recipe(), without this a typed search term would be lost in the
-// process. sessionStorage instead of localStorage, since the search term
-// only makes sense for the current session, not permanently.
+// Keep the search term across the reload after saving (session only).
 if (recipeFilterInput) {
     const FILTER_STORAGE_KEY = 'speiseplan.recipeEditFilter';
     const savedFilter = sessionStorage.getItem(FILTER_STORAGE_KEY);
@@ -120,19 +97,13 @@ if (recipeFilterInput) {
     });
 }
 
-// Deletes a recipe via a dynamically created, immediately submitted POST
-// form (the Delete button itself is not a <button type="submit"> inside a
-// real form, since it sits outside any <form> in the list row - see above
-// "Delete 🗑️"). recipeName is currently unused (no confirmation prompt
-// before deleting), but is part of the signature in case a confirmation
-// dialog is added later.
+// The Delete button sits outside any form, so post a generated one.
+// recipeName is unused (no confirmation yet).
 function deleteRecipeSafely(recipeId, recipeName) {
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/delete-recipe/' + recipeId;
-    // CSRF token from the <meta> tag in base.html - this form only exists
-    // in the DOM at runtime (see above), so it needs the token just like
-    // any server-rendered <form>.
+    // Generated forms need the CSRF token too.
     const tokenInput = document.createElement('input');
     tokenInput.type = 'hidden';
     tokenInput.name = 'csrf_token';

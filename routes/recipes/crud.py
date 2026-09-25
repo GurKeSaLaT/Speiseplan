@@ -1,33 +1,9 @@
-"""Create/edit/delete/list views for recipes, plus the chefkoch.de
-import-preview AJAX endpoint (see routes/recipes/__init__.py for how this
-fits into the recipes_bp package).
+"""Recipe create/edit/delete/list views and the import-preview endpoint.
 
-recipe_create_view() and recipe_edit_view() both render the same form
-template (templates/recipe_form.html), once with recipe=None (create) and
-once with a loaded Recipe (edit) - recipe_edit_list_view() now only shows
-the plain overview list that links there. Three POST handlers (add_recipe,
-edit_recipe, delete_recipe) process the submission. import_recipe_preview()
-is a fourth, JSON-based POST handler for the AJAX import button on the
-create page - it saves NOTHING, but only returns the recipe data read from
-a chefkoch.de URL, with which recipe_form.html pre-fills the normal form
-(see services/recipe_import.py for the reason: the user has to choose the
-category themselves anyway, a direct save without review would be
-riskier).
-
-Autosave (confirmed design: one explicit click to CREATE a recipe, full
-autosave from then on): add_recipe() redirects straight into
-recipe_edit_view() for the new recipe instead of back to a blank create
-form - from that point on, static/recipe_form.js resubmits the whole form
-to edit_recipe() via fetch() on every change (debounced), which responds
-with JSON instead of redirecting when it detects that AJAX call (see the
-X-Requested-With check there). A traditional (non-JS) submit to either
-endpoint still works exactly as before.
-
-The actual season form logic (parsing checkboxes + custom date range,
-pre-filling for the edit view) deliberately does NOT live here, but in
-services/seasons.py - this file stays focused on "create, change, delete
-Recipe/Ingredient". See routes/recipes/links.py for linking a recipe into
-another plan.
+Creating a recipe takes one explicit submit; add_recipe() then redirects
+into the edit view, where static/recipe_form.js autosaves every change
+by resubmitting the whole form to edit_recipe() (which answers JSON for
+those requests).
 """
 
 from datetime import datetime, timezone
@@ -50,13 +26,7 @@ from services.units import convert_for_display, normalize_amount_unit
 
 
 def _parse_float(raw, default=0.0):
-    """Like float(raw or default), but also swallows a value that ISN'T a
-    number at all (e.g. a locale that sends "1,5" with a comma, a stray
-    non-numeric value from a manipulated request) instead of raising and
-    turning into an unhandled 500 - same "invalid input silently falls
-    back to a safe default" philosophy already used throughout
-    services/recipe_import.py (_parse_amount_value, _parse_nutrition_value)
-    for the same reason."""
+    """float(raw), falling back to default for missing/non-numeric input."""
     try:
         return float(raw)
     except (TypeError, ValueError):
@@ -64,7 +34,6 @@ def _parse_float(raw, default=0.0):
 
 
 def _parse_int(raw, default):
-    """Int-valued counterpart to _parse_float() above (see there)."""
     try:
         return int(raw)
     except (TypeError, ValueError):
@@ -72,19 +41,8 @@ def _parse_int(raw, default):
 
 
 def _canonical_ingredient_list(plan_id):
-    """Alphabetically sorted list, UNIQUE across all recipes VISIBLE for
-    plan_id, of canonical (resolved via any alias mapping THIS plan may
-    have, see services/ingredient_aliases.py) ingredient names - fills a
-    <datalist> element in the recipe forms (autocomplete while typing an
-    ingredient), so that e.g. "onion" doesn't end up as "onions" in one
-    recipe and "Onion" in the next.
-
-    Deliberately the CANONICAL names rather than the raw, actually stored
-    ones: this way it suggests the already-merged name from the outset,
-    instead of introducing further variants that would later have to be
-    merged again. Side effect: an <input list="..."> with noticeably fewer
-    options is also noticeably faster for the browser to build when it
-    gains focus."""
+    """Sorted, alias-resolved ingredient names for the form's autocomplete,
+    so new entries reuse the already-merged spelling."""
     from services.recipe_visibility import visible_recipe_ids_subquery
 
     existing_ingredients = (
@@ -98,17 +56,8 @@ def _canonical_ingredient_list(plan_id):
 
 @recipes_bp.route('/manage/recipe/create')
 def recipe_create_view():
-    """Shows the form for creating a new recipe - the same template as
-    recipe_edit_view() below (templates/recipe_form.html), just with
-    recipe=None (see the comment there). Which plan the new recipe should
-    belong to is chosen explicitly by the user via a select field when
-    they have multiple memberships (see templates/recipe_form.html) -
-    the default is ALWAYS the starred plan (services/auth.py:
-    default_plan_id(), deliberately NOT current_plan(), which could
-    instead return a plan previously switched to via tab/sidebar that
-    isn't necessarily starred). The "link into other plans" form doesn't
-    exist here (a recipe must exist first before it can be linked - see
-    recipe_edit_view)."""
+    """The target plan defaults to the starred one (default_plan_id), not
+    the last viewed one."""
     user = current_user()
     plan_id = default_plan_id(request.args, user)
     categories = Category.query.filter_by(plan_id=plan_id).order_by(Category.name).all()
@@ -123,26 +72,9 @@ def recipe_create_view():
 
 @recipes_bp.route('/manage/recipe/edit/<int:id>')
 def recipe_edit_view(id):
-    """Shows the form for editing ONE existing recipe - the same template
-    as recipe_create_view() above, just with recipe set. Only reachable if
-    the recipe is VISIBLE for the SELECTED plan (see services/auth.py:
-    selected_plan_id - usually the tab that recipe_edit_list.html linked
-    from, otherwise the active plan; see owner OR linked via
-    RecipePlanLink, services/recipe_visibility.py) - anything else is to
-    be treated as "doesn't exist", a 404 instead of a 403 doesn't even
-    reveal whether the ID belongs to a real recipe at all.
-
-    Categories deliberately come from the recipe's OWNER plan
-    (recipe.owner_plan_id), not from the selected plan: Recipe.
-    category_id always points to a category of the owner (see models/recipe.py:
-    Recipe docstring) - for a merely linked-in recipe, no matching
-    category could otherwise be shown/changed at all.
-    linkable_plans/linked_plan_ids feed the "link into another plan"
-    control (see templates/recipe_form.html). plan_id travels as a hidden
-    field into the form (see there) and from there into
-    edit_recipe()/link_recipe_to_plan()/unlink_recipe_from_plan() - the
-    same point of view is preserved across the entire editing process,
-    independent of the otherwise active plan (current_plan())."""
+    """404 unless the recipe is visible to the selected plan. Categories come
+    from the owner plan (category_id always points there); aliases and
+    display units from the selected plan."""
     user = current_user()
     plan_id = selected_plan_id(request.args, user)
     recipe = visible_recipes_query(plan_id).filter(Recipe.id == id).first()
@@ -150,13 +82,6 @@ def recipe_edit_view(id):
         abort(404)
     categories = Category.query.filter_by(plan_id=recipe.owner_plan_id).order_by(Category.name).all()
 
-    # See the former recipe_edit_list_view() further below for the same
-    # conversion/preparation step, here now only for EXACTLY ONE recipe
-    # instead of for all at once. The alias/units context is deliberately
-    # that of the SELECTED plan (not the owner) - someone editing a
-    # merely linked-in recipe should see their OWN alias mappings/display
-    # units, see services/planning.py: jsonify_recipe docstring for the
-    # same principle on the plan page.
     selected_presets, custom_range = describe_recipe_seasons(recipe)
     display_units = get_display_units(plan_id)
     ingredient_display = {}
@@ -184,19 +109,8 @@ def recipe_edit_view(id):
 
 @recipes_bp.route('/manage/recipe/edit-list')
 def recipe_edit_list_view():
-    """Shows the plain overview list of all recipes VISIBLE for the
-    selected plan (search/filter, badges, edit/delete link) - the actual
-    editing form has, since recipe_edit_view() above, lived on its own
-    page per recipe; this list now only links there (see
-    templates/recipe_edit_list.html: "Edit ✏️" button).
-
-    If a user has access to more than one plan (own + shared), the page
-    shows a tab switcher (see services/auth.py:
-    selected_plan_id/user_plan_memberships, analogous to
-    routes/categories.py) - own_plan_id is the currently selected plan
-    (tab), not necessarily the otherwise active one (current_plan()):
-    determines which recipes count as "own" (deletable) rather than
-    merely "linked" (only removable)."""
+    """own_plan_id decides which recipes are deletable (owned) vs. only
+    unlinkable (linked in from another plan)."""
     user = current_user()
     plan_id = selected_plan_id(request.args, user)
     recipes = visible_recipes_query(plan_id).all()
@@ -207,49 +121,53 @@ def recipe_edit_list_view():
     )
 
 
+def _parse_ingredient_rows(form):
+    """Ingredients arrive as parallel ing_*[] lists; rows without a name are
+    skipped. ing_pantry[] has exactly one entry per row (a hidden mirror
+    input), so unchecked boxes don't shift the alignment."""
+    ing_names = form.getlist('ing_name[]')
+    ing_amounts = form.getlist('ing_amount[]')
+    ing_units = form.getlist('ing_unit[]')
+    ing_categories = form.getlist('ing_category[]')
+    ing_pantry_flags = form.getlist('ing_pantry[]')
+
+    ingredients = []
+    for i in range(len(ing_names)):
+        if ing_names[i].strip():
+            amount = _parse_float(ing_amounts[i])
+            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
+            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
+            amount, unit = normalize_amount_unit(amount, ing_units[i])
+            ingredients.append({
+                "name": ing_names[i], "amount": amount, "unit": unit,
+                "category": category, "is_pantry": is_pantry,
+            })
+    return ingredients
+
+
+def _nutrition_from_form(form, plan_id, ingredients, servings, nutrition_override):
+    """Manual values if nutrition_override is set, otherwise computed from
+    the ingredients. Calories are always derived from protein/carbs/fat.
+    Returns (calories, protein, carbs, fat)."""
+    if nutrition_override:
+        protein = _parse_float(form.get('protein'))
+        carbs = _parse_float(form.get('carbs'))
+        fat = _parse_float(form.get('fat'))
+        return compute_calories(protein, carbs, fat), protein, carbs, fat
+    computed = compute_recipe_nutrition(plan_id, ingredients, servings)
+    return computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
+
+
+def _add_ingredients(recipe_id, ingredients):
+    for ing in ingredients:
+        db.session.add(Ingredient(
+            recipe_id=recipe_id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
+            category=ing["category"], is_pantry=ing["is_pantry"],
+        ))
+
+
 @recipes_bp.route('/add-recipe', methods=['POST'])
 def add_recipe():
-    """Creates a new recipe along with its ingredients and season
-    assignment, as the property of the currently active plan
-    (Recipe.owner_plan_id).
-
-    Flow: first the Recipe object is created and written to the database
-    via db.session.flush() (instead of commit()) - flush() already
-    assigns an ID WITHOUT closing out the transaction, so that this ID can
-    be used directly for the dependent RecipeSeason and Ingredient rows.
-    Only the final commit() makes everything durable together (if an
-    error occurred in between, everything would be rolled back).
-
-    The ingredients come as five parallel lists from the form
-    (ing_name[], ing_amount[], ing_unit[], ing_category[], ing_pantry[] -
-    an HTML form with rows added dynamically via JavaScript, see
-    recipe_form.html), are merged pairwise via the shared index, and rows
-    with an empty name are skipped (e.g. an unused trailing empty row in
-    the form). ing_category[]/ing_pantry[] are the only ones of the five
-    that are optional (also missing entirely in older/test form posts):
-    an empty category string becomes None (see services/shopping.py:
-    UNCATEGORIZED - None ends up in the shopping list's miscellaneous
-    catch-all group, with no extra special case needed here), a missing
-    pantry entry defaults to False. ing_pantry[] itself is always exactly
-    one entry per row regardless of checked state (see recipe_form.html:
-    the hidden mirror input next to the actual checkbox) - so, unlike a
-    plain HTML checkbox, an unchecked box doesn't shift the parallel-list
-    alignment of the rows after it.
-
-    Nutrition: is by default calculated from the ingredients (see
-    services/nutrition.py: compute_recipe_nutrition(), based on the
-    nutrition references OF THE ACTIVE PLAN) instead of taking the form
-    fields unchecked - only when the nutrition_override checkbox is set
-    (fields disabled via JS in the form, but still submitted) do the
-    entered protein/carbs/fat values apply directly. calories is NEVER
-    taken from the form, not even in the override case - it always
-    results from protein/carbs/fat (services/nutrition.py:
-    compute_calories()), so as not to allow a redundant, potentially
-    contradictory calorie value. For this, the ingredient rows are
-    normalized (amount/unit) BEFORE the Recipe object is created, so that
-    both the calculation and the later Ingredient rows use the same,
-    already canonical values.
-    """
     user = current_user()
     plan_id = default_plan_id(request.form, user)
     name = request.form.get('name')
@@ -257,42 +175,13 @@ def add_recipe():
     is_side_dish = request.form.get('is_side_dish') == '1'
     is_favorite = request.form.get('is_favorite') == '1'
     nutrition_override = request.form.get('nutrition_override') == '1'
-    # At least 1 serving, even if the form field is empty/invalid.
     servings = max(1, _parse_int(request.form.get('servings'), 2))
     source_url = (request.form.get('source_url') or '').strip() or None
     instructions = (request.form.get('instructions') or '').strip() or None
 
-    ing_names = request.form.getlist('ing_name[]')
-    ing_amounts = request.form.getlist('ing_amount[]')
-    ing_units = request.form.getlist('ing_unit[]')
-    ing_categories = request.form.getlist('ing_category[]')
-    ing_pantry_flags = request.form.getlist('ing_pantry[]')
-
-    normalized_ingredients = []
-    for i in range(len(ing_names)):
-        if ing_names[i].strip():
-            amount = _parse_float(ing_amounts[i])
-            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
-            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
-            # Bring amount+unit into canonical form (always g/ml within
-            # their family, see services/units.py) - regardless of
-            # whether the user typed "1kg"/"1 kilo"/"2 tbsp" or left an
-            # import/edit row already pre-filled in the display unit
-            # unchanged.
-            amount, unit = normalize_amount_unit(amount, ing_units[i])
-            normalized_ingredients.append({
-                "name": ing_names[i], "amount": amount, "unit": unit,
-                "category": category, "is_pantry": is_pantry,
-            })
-
-    if nutrition_override:
-        protein = _parse_float(request.form.get('protein'))
-        carbs = _parse_float(request.form.get('carbs'))
-        fat = _parse_float(request.form.get('fat'))
-        calories = compute_calories(protein, carbs, fat)
-    else:
-        computed = compute_recipe_nutrition(plan_id, normalized_ingredients, servings)
-        calories, protein, carbs, fat = computed["calories"], computed["protein"], computed["carbs"], computed["fat"]
+    ingredients = _parse_ingredient_rows(request.form)
+    calories, protein, carbs, fat = _nutrition_from_form(
+        request.form, plan_id, ingredients, servings, nutrition_override)
 
     new_recipe = Recipe(
         name=name, owner_plan_id=plan_id, category_id=category_id,
@@ -304,42 +193,17 @@ def add_recipe():
     db.session.flush()
 
     save_recipe_seasons(new_recipe.id, request.form)
-
-    for ing in normalized_ingredients:
-        db.session.add(Ingredient(
-            recipe_id=new_recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
-            category=ing["category"], is_pantry=ing["is_pantry"],
-        ))
+    _add_ingredients(new_recipe.id, ingredients)
 
     db.session.commit()
-    # Straight into editing the just-created recipe (not back to a blank
-    # create form) - see edit_recipe() below for why: from here on every
-    # further change autosaves, so this one submit is the ONLY explicit
-    # "Save" click this recipe will ever need (confirmed design: one click
-    # to create, full autosave after).
     return redirect(url_for('recipes.recipe_edit_view', id=new_recipe.id, plan_id=plan_id))
 
 
 @recipes_bp.route('/edit-recipe/<int:id>', methods=['POST'])
 def edit_recipe(id):
-    """Fully overwrites an existing recipe with the form data. Only
-    allowed if the recipe is visible for the active plan (see
-    recipe_edit_view) - ANY member of a plan that owns the recipe OR that
-    it's linked into may fully edit it (no distinction between owner and
-    merely linked, see models/recipe.py: RecipePlanLink docstring).
-
-    The ingredients are not reconciled one by one here (no diff of
-    "changed/new/deleted"), but completely deleted and recreated from the
-    form content - considerably simpler than a merge, and since the form
-    always submits ALL current ingredients anyway (including unchanged
-    ones), this approach loses no data. save_recipe_seasons() handles the
-    season date ranges the same way.
-
-    Nutrition: see add_recipe() - by default recalculated from the (new)
-    ingredients (based on the references OF THE ACTIVE PLAN) instead of
-    taking the form fields, except when the nutrition_override checkbox
-    is set.
-    """
+    """Overwrites the recipe with the full form (also used by autosave).
+    Ingredients are deleted and recreated rather than diffed - the form
+    always submits all of them."""
     user = current_user()
     plan_id = selected_plan_id(request.form, user)
     recipe = visible_recipes_query(plan_id).filter(Recipe.id == id).first()
@@ -354,63 +218,20 @@ def edit_recipe(id):
     recipe.servings = max(1, _parse_int(request.form.get('servings'), 2))
     recipe.source_url = (request.form.get('source_url') or '').strip() or None
     recipe.instructions = (request.form.get('instructions') or '').strip() or None
-    # Explicit rather than via an onupdate=... on the column (see
-    # models/recipe.py: Recipe.updated_at) - that would only trigger if at least
-    # one column value actually changes, but here EVERY save should
-    # count, even one with unchanged content.
+    # Set explicitly: onupdate only fires when a column value changes.
     recipe.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     save_recipe_seasons(recipe.id, request.form)
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
+    ingredients = _parse_ingredient_rows(request.form)
+    _add_ingredients(recipe.id, ingredients)
 
-    ing_names = request.form.getlist('ing_name[]')
-    ing_amounts = request.form.getlist('ing_amount[]')
-    ing_units = request.form.getlist('ing_unit[]')
-    ing_categories = request.form.getlist('ing_category[]')
-    ing_pantry_flags = request.form.getlist('ing_pantry[]')
-
-    normalized_ingredients = []
-    for i in range(len(ing_names)):
-        if ing_names[i].strip():
-            amount = _parse_float(ing_amounts[i])
-            category = ing_categories[i].strip() or None if i < len(ing_categories) else None
-            is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
-            # See add_recipe() above - the same normalization to canonical
-            # form. Since the form fields here were pre-filled with the
-            # amount already converted to the display unit (see
-            # recipe_edit_view: ingredient_display), saving without any
-            # change again yields exactly the original canonical value.
-            amount, unit = normalize_amount_unit(amount, ing_units[i])
-            normalized_ingredients.append({
-                "name": ing_names[i], "amount": amount, "unit": unit,
-                "category": category, "is_pantry": is_pantry,
-            })
-
-    for ing in normalized_ingredients:
-        db.session.add(Ingredient(
-            recipe_id=recipe.id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
-            category=ing["category"], is_pantry=ing["is_pantry"],
-        ))
-
-    if recipe.nutrition_override:
-        recipe.protein = _parse_float(request.form.get('protein'))
-        recipe.carbs = _parse_float(request.form.get('carbs'))
-        recipe.fat = _parse_float(request.form.get('fat'))
-        recipe.calories = compute_calories(recipe.protein, recipe.carbs, recipe.fat)
-    else:
-        computed = compute_recipe_nutrition(plan_id, normalized_ingredients, recipe.servings)
-        recipe.calories, recipe.protein = computed["calories"], computed["protein"]
-        recipe.carbs, recipe.fat = computed["carbs"], computed["fat"]
+    recipe.calories, recipe.protein, recipe.carbs, recipe.fat = _nutrition_from_form(
+        request.form, plan_id, ingredients, recipe.servings, recipe.nutrition_override)
 
     db.session.commit()
 
-    # This same endpoint now also serves the recipe form's autosave (see
-    # templates/recipe_form.html / static/recipe_form.js: rformWireAutosave())
-    # - it resubmits the WHOLE form via fetch() on every change, marked
-    # with this header so it gets JSON back instead of being redirected
-    # out from under the page the user is still editing. A traditional
-    # (non-JS) submit still gets the normal redirect.
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return {
             "ok": True, "calories": recipe.calories, "protein": recipe.protein,
@@ -421,32 +242,8 @@ def edit_recipe(id):
 
 @recipes_bp.route('/delete-recipe/<int:id>', methods=['POST'])
 def delete_recipe(id):
-    """Deletes a recipe irrevocably - only the OWNER plan
-    (Recipe.owner_plan_id) may do this; a plan that only has the recipe
-    additionally linked in via RecipePlanLink can instead UNLINK it again
-    via unlink_recipe_from_plan() (routes/recipes/links.py), without
-    deleting the recipe for all other plans as well. Associated
-    Ingredient/RecipeSeason/RecipePlanLink rows are deleted automatically
-    along with it via the cascade="all, delete-orphan" configuration in
-    models/recipe.py.
-
-    Also clears any reference to this recipe still sitting in the plan
-    calendar - PlanDay.main_recipe_id/PlanDaySide.recipe_id have no ON
-    DELETE constraint at the database level (SQLite foreign keys aren't
-    enforced here either), so without this the deleted recipe would
-    silently keep "existing" as a dangling ID on every day it was ever
-    planned for, breaking display there. main_recipe_id is nullable - that
-    day just goes back to "no main dish assigned" (cooked is reset for the
-    same reason reroll_day()/set_main_day() reset it: a different dish, not
-    yet cooked). PlanDaySide.recipe_id, by contrast, is NOT nullable (a
-    side-dish row without a recipe doesn't mean anything) - those rows are
-    removed outright instead.
-
-    Permission: membership in the OWNER plan (Recipe.owner_plan_id), not
-    necessarily the currently active plan (current_plan()) - someone
-    viewing a recipe of ANOTHER own plan via a tab, for example, can still
-    delete it without having to switch there first (analogous to
-    routes/categories.py: delete_category())."""
+    """Owner plan members only; linked plans unlink instead. Calendar
+    references are cleared by hand since SQLite doesn't enforce ON DELETE."""
     user = current_user()
     recipe = Recipe.query.get_or_404(id)
     if not user_has_plan_access(user, recipe.owner_plan_id):
@@ -461,20 +258,8 @@ def delete_recipe(id):
 
 @recipes_bp.route('/manage/recipe/import-preview', methods=['POST'])
 def import_recipe_preview():
-    """AJAX endpoint behind the "Import" button on the create page (see
-    recipe_form.html): loads the given chefkoch.de URL and returns the
-    recipe data read from it as JSON (see services/recipe_import.py:
-    fetch_recipe_from_url). Doesn't create ANYTHING in the database
-    itself - the frontend just uses this to pre-fill the normal create
-    form, saving only happens via the regular add_recipe() submit path,
-    after the user has reviewed/completed everything (especially the
-    category).
-
-    Expects a JSON body {"url": str}. Errors (unsupported domain, network
-    error, no recipe found) come back as RecipeImportError with an
-    already fully phrased error message, which ends up 1:1 in the
-    {"error": ...} JSON.
-    """
+    """Returns recipe data scraped from a URL to pre-fill the create form;
+    saves nothing. Body: {"url": str}."""
     data = request.get_json() or {}
     url = (data.get('url') or '').strip()
     if not url:
@@ -485,11 +270,6 @@ def import_recipe_preview():
     except RecipeImportError as e:
         return {"error": str(e)}, 400
 
-    # fetch_recipe_from_url() already returns ingredient amounts in
-    # canonical form (g/ml, see services/recipe_import.py:
-    # _parse_ingredient_line) - convert them to the user's chosen display
-    # unit for the preview, so the pre-filled form is consistent with
-    # every other amount display in the app (see services/units.py).
     display_units = get_display_units(current_plan().id)
     imported['ingredients'] = [
         {**ing, **dict(zip(('amount', 'unit'), convert_for_display(ing['amount'], ing['unit'], display_units)))}

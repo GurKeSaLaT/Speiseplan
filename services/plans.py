@@ -1,15 +1,4 @@
-"""The lifecycle of a plan itself (create/delete) - unlike services/auth.py
-(login/active plan/membership lookups) or routes/sharing.py (members/star
-of a plan that ALREADY exists), this module is about the plan as a whole.
-
-Since the decoupling of accounts from plans, a user no longer automatically
-gets exactly one plan - they create their own via /plan/create
-(routes/plans.py), as many as they like. create_plan()/delete_plan() are
-bundled here because both touch the same category logic (seeding or taking
-over categories) and are reused from several places: create_plan() both
-from the route and (via seed_default_categories()) from migrations.py: init_db()
-for every plan that doesn't have its own categories yet.
-"""
+"""Plan lifecycle: create, delete, and accepting pending invites."""
 
 from models import (
     Category, ExtraShoppingItem, IngredientAlias, IngredientNutrition,
@@ -17,19 +6,11 @@ from models import (
     Recipe, RecipePlanLink, db,
 )
 
-# A sensible base set of categories, so a new plan doesn't start with an
-# empty category list (and thus unusable automatic planning) - see
-# seed_default_categories() below.
 DEFAULT_CATEGORIES = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
 
 
 def seed_default_categories(plan_id):
-    """Creates DEFAULT_CATEGORIES for plan_id, unless it already has ANY
-    category of its own - custom categories added or renamed later are
-    therefore never overwritten or recreated (the check is purely "does
-    this plan already have any category at all?"). Does not commit itself -
-    the caller (create_plan() or migrations.py: init_db()) decides when to
-    commit."""
+    """Only for plans without any category yet; the caller commits."""
     if Category.query.filter_by(plan_id=plan_id).first():
         return
     for name in DEFAULT_CATEGORIES:
@@ -37,13 +18,7 @@ def seed_default_categories(plan_id):
 
 
 def create_plan(user, name):
-    """Creates a new, standalone plan for user: the plan row itself (user
-    is recorded informationally as owner_user_id, see models/plan.py: Plan
-    docstring - grants no special rights as a result), a PlanMembership for
-    user (starred, if this is their FIRST membership ever - otherwise the
-    previously starred plan stays starred, a new plan doesn't automatically
-    push itself to the front), and the default categories (see
-    seed_default_categories)."""
+    """Starred only if it's the user's first membership."""
     is_first_membership = PlanMembership.query.filter_by(user_id=user.id).first() is None
 
     plan = Plan(name=name, owner_user_id=user.id)
@@ -57,21 +32,11 @@ def create_plan(user, name):
 
 
 def delete_plan(plan):
-    """Deletes a plan irrevocably, along with everything it OWNS
-    EXCLUSIVELY - recipes still embedded in another plan via
-    RecipePlanLink are handed over to that other plan INSTEAD (new
-    owner_plan_id), not deleted along with it (see Recipe docstring:
-    category_id always points to a category of the owning plan - on a
-    change of owner, the category must therefore also move along, otherwise
-    it would be left pointing at a category that gets deleted right along
-    with the plan).
-
-    SQLite runs in this app without PRAGMA foreign_keys=ON (see
-    routes/recipes/crud.py: delete_recipe() docstring) - the deletion order
-    below is nonetheless deliberately chosen so that at the time of each
-    individual step, no reference still needed has already vanished
-    (recipes/categories BEFORE the remaining, purely plan-bound data,
-    memberships, and the plan itself last of all)."""
+    """Deletes the plan and everything it exclusively owns. Recipes still
+    linked into another plan are handed over to that plan instead, together
+    with their category (recreated there if missing). SQLite foreign keys
+    aren't enforced, so the order below keeps references valid step by step.
+    """
     for recipe in Recipe.query.filter_by(owner_plan_id=plan.id).all():
         links = RecipePlanLink.query.filter_by(recipe_id=recipe.id).order_by(RecipePlanLink.plan_id).all()
         if links:
@@ -99,29 +64,15 @@ def delete_plan(plan):
     Category.query.filter_by(plan_id=plan.id).delete()
 
     PlanMembership.query.filter_by(plan_id=plan.id).delete()
-    # Any still-open invitations TO this plan (models/plan.py: PendingPlanInvite)
-    # would otherwise be left pointing at a plan_id that no longer exists -
-    # if someone with exactly that email later authenticates via Authelia,
-    # accept_pending_invites() would otherwise create a PlanMembership for
-    # an already-deleted plan.
+    # Otherwise a later first login with that email would join a deleted plan.
     PendingPlanInvite.query.filter_by(plan_id=plan.id).delete()
     db.session.delete(plan)
     db.session.commit()
 
 
 def accept_pending_invites(user):
-    """Converts every still-open PendingPlanInvite for user.email (see the
-    models/plan.py docstring there) into a real PlanMembership - called
-    directly after a brand new User row is auto-provisioned
-    (services/auth.py: current_user()), so that a first-time Authelia
-    login for an invited email leads immediately to plan membership,
-    without the inviter having to take a second action.
-
-    is_starred follows the same criterion as create_plan() above: starred
-    if it's the user's very FIRST membership ever - with several open
-    invitations, only the one processed first gets the star, the rest stay
-    unstarred (analogous to a member invited manually via
-    invite_member())."""
+    """Turns open invites for user.email into memberships (called when a new
+    user is provisioned). Only a very first membership gets starred."""
     for invite in PendingPlanInvite.query.filter_by(email=user.email).all():
         if not PlanMembership.query.filter_by(plan_id=invite.plan_id, user_id=user.id).first():
             is_first = PlanMembership.query.filter_by(user_id=user.id).first() is None

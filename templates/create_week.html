@@ -1,14 +1,7 @@
-{# Page "Create new weekly plan" (/plan/<start_date>/create), rendered
-   by routes/plan/pages.py: week_create_view(). Shows a live search field across all
-   recipes as well as 7 drop zones (one per weekday), onto which recipes can be
-   placed via click or drag-and-drop to fixedly assign them. Days without a
-   fixed assignment are automatically balanced-filled server-side on submit
-   (see week_generate() in routes/plan/pages.py). Main courses are
-   assigned to at most ONE day (via click or drag-and-drop), while side dishes
-   can be assigned to ANY NUMBER of days AND any number of times per day
-   simultaneously (click only, see assignSideToZone in create_week.js). The
-   complete interaction logic (search, drag-and-drop, exclude button) lives in
-   static/create_week.js, not in this file. #}
+{# Create a week (/plan/<start_date>/create). Recipes are assigned to day
+   slots by click or drag-and-drop; unassigned days are filled on submit
+   (routes/plan/pages.py: week_generate). A main dish goes on at most one
+   day, side dishes on any number. Logic lives in static/create_week.js. #}
 {% extends 'base.html' %}
 {% block content %}
 <div style="max-width: 900px;">
@@ -23,13 +16,7 @@
 
     <p class="text-muted mb-4">{{ _("Search for dishes. Click one to assign it automatically to the next free day. Drag main courses via drag-and-drop onto other days to move them. Days without a dish are filled in automatically. Use the 🚫 button to exclude a day's main course from the plan. 🥗 extra dishes (side dishes) don't block the day, can be added any number of times in addition to the main course (each going to the day with the fewest side dishes so far) and also work on excluded days - fine-tuning which side dish ends up on which day can always be done afterwards on the finished plan page.") }}</p>
 
-    <!-- Live search field: ALL recipes are already rendered into the DOM
-         server-side at this point as a (initially hidden via
-         style="display:none") button element with data-* attributes.
-         static/create_week.js filters purely client-side while typing
-         based on these data attributes (no reload via fetch needed, since
-         the recipe list is small enough to live entirely in the DOM for a
-         single-user app). -->
+    <!-- All recipes are rendered hidden; create_week.js filters them client-side. -->
     <div class="search-wrap">
         <div class="search-box">
             <span class="ic">🔍</span>
@@ -45,15 +32,8 @@
         </div>
     </div>
 
-    <!-- Form that goes to week_generate() (routes/plan/pages.py) on submit:
-         the hidden main-course field per day (day_recipe_i) as well as
-         day_excluded_i (see below) are NOT operated directly by the user,
-         but kept up to date by create_week.js on every assignment/removal/
-         exclusion - they are the actual "source of truth" on submit, the
-         visible cards are only their representation. Side dishes have NO
-         fixed field (a day can have any number) - instead create_week.js
-         dynamically creates its own hidden field per assigned side dish
-         (day_side_recipes_i[]), see assignSideToZone. -->
+    <!-- The hidden day_* fields are the submitted state; create_week.js keeps
+         them in sync with the cards (one day_side_recipes_i[] per side dish). -->
     <form action="{{ url_for('plan.week_generate', start_date=start_date.isoformat(), plan_id=plan_id) }}" method="POST" id="planForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
@@ -62,13 +42,8 @@
             <button type="button" class="link-btn" onclick="clearAllDays()">{{ _('Clear All') }}</button>
         </div>
 
-        <!-- The 7 weekdays as drop zones. .slot-status is visually
-             hidden (see below), but stays in the DOM: create_week.js
-             continues to write its text/classes on every change -
-             the actually visible empty/excluded hint instead comes
-             purely from CSS via .recipe-slot-container:empty
-             (see <style> below), without any JS having had to be
-             adjusted for it. -->
+        <!-- .slot-status stays in the DOM for create_week.js but is hidden; the
+             empty/excluded hint comes from CSS (:empty::before). -->
         <div class="day-grid">
             {% for i in range(7) %}
             <div class="day-dropzone" id="day-zone-{{ i }}" data-day-index="{{ i }}" ondragover="allowDrop(event)" ondrop="drop(event)">
@@ -77,21 +52,12 @@
                     <button type="button" class="btn exclude-btn btn-outline-secondary" id="exclude-btn-{{ i }}" title="{{ _('Exclude this day from planning') }}" onclick="toggleExcludeDay({{ i }})">🚫</button>
                 </div>
                 <small class="slot-status" id="status-{{ i }}">{{ _('Fill in automatically') }}</small>
-                <!-- Container for the assigned dish -->
                 <div class="recipe-slot-container">
-                    <!-- Dynamically filled via JS -->
                 </div>
-                <!-- Container for any number of assigned extra dishes/side dishes
-                     (independent of the main course - see assignSideToZone/removeSideFromZone
-                     in create_week.js, which appends its own card AND its own hidden
-                     form field here for each assigned side dish) -->
+                <!-- Side dish cards plus their hidden fields, added by create_week.js. -->
                 <div class="side-slot-container" id="side-slot-{{ i }}">
                     <span class="no-side no-side-placeholder">{{ _('No side dish') }}</span>
                 </div>
-                <!-- Persistent, day-bound form fields (independent of the card).
-                     For side dishes there is deliberately NO fixed field HERE (unlike
-                     day_recipe_i) - there can be 0 to N of them, their fields are created
-                     dynamically in create_week.js (name="day_side_recipes_{{ i }}[]"). -->
                 <input type="hidden" name="day_recipe_{{ i }}" id="day-recipe-input-{{ i }}" value="">
                 <input type="hidden" name="day_excluded_{{ i }}" id="day-excluded-input-{{ i }}" value="0">
             </div>
@@ -102,12 +68,7 @@
     </form>
 </div>
 
-<!-- This page has its own building-block classes used only here
-     (search field/day card/side-dish chips/submit button) - just like
-     templates/plan.html keeps its .recipe-day-card rules local instead of
-     duplicating them in static/style.css, even though the same design
-     tokens (--card-bg/--border-subtle/--radius-main/--highlight-bg/--excluded-bg/
-     --primary-food) are used. -->
+<!-- Page-local styles, like plan.html's day-card rules. -->
 <style>
 .search-wrap { position: relative; margin-bottom: 1.6rem; }
 .search-box {
@@ -180,11 +141,7 @@
     display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 
-/* The status text still exists in the DOM (create_week.js writes it
-   on every change), but is no longer visually needed: its content
-   ("Fill in automatically"/"Fixed"/"Excluded") is instead
-   displayed directly in place via :empty::before (see below) -
-   matching the new, more compact card look. */
+/* Hidden; the status is shown via :empty::before instead. */
 .slot-status { display: none; }
 .recipe-slot-container:empty::before {
     content: "{{ _('Will be filled in automatically') }}";

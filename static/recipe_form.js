@@ -1,22 +1,10 @@
 /**
- * recipe_form.js - Interaction for templates/recipe_form.html, the ONE
- * shared form for "create recipe" AND "edit recipe" (see
- * routes/recipes.py: recipe_create_view/recipe_edit_view). Previously two
- * fundamentally different views (its own full page vs. an edit modal) -
- * this script replaces both the inline script from the former
- * recipe_create.html and static/recipe_edit_modal.js.
- *
- * Ingredient-row markup/classes (.ingredient-row/.ing-name-display/
- * .ing-name-input/.ingredient-alias-hint) are deliberately left
- * unchanged - static/ingredient_alias_hint.js relies on exactly these
- * selectors.
+ * The recipe form (create and edit share one template). The ingredient row
+ * classes are also what ingredient_alias_hint.js looks for.
  */
 
-// --- Pills (side dish/favorite/manual nutrition) & season chips --------
-// The checkbox itself already toggles natively when clicking the
-// enclosing <label> - this only keeps the .on styling in sync
-// (delegated via "change" so that pills added later also work without
-// rewiring).
+// Keeps the pills' .on styling in sync with their checkboxes (delegated, so
+// it works for any pill).
 document.addEventListener('change', (e) => {
     if (e.target.matches('.rform-pill-input, .rform-chip-input')) {
         const wrapper = e.target.closest('.rform-pill, .rform-chip');
@@ -24,21 +12,12 @@ document.addEventListener('change', (e) => {
     }
 });
 
-// --- Collapsible sections (season, nutrition) ---------------------------
 function rformToggleSection(headEl) {
     headEl.closest('.rform-section')?.classList.toggle('rform-collapsed');
 }
 
-// --- Nutrition: manual-entry toggle -----------------------------------
-// Analogous to the previous nutritionOverride checkbox (see formerly
-// recipe_create.html/recipe_edit_modal.js: wireModalBehaviors) - disabled
-// fields aren't submitted at all (HTML spec), and the server treats a
-// missing checkbox the same as "compute automatically" anyway.
-// Additionally (new, see comment in recipe_form.html): toggles between
-// the plain result display and the actually editable protein/
-// carbs/fat fields - previously the mockup only changed the (still
-// invisible) <input> values without anything becoming visibly editable
-// to the user.
+// Manual nutrition toggle. Disabled inputs aren't submitted, which the
+// server treats as "compute from ingredients".
 function rformWireNutrition() {
     const toggle = document.getElementById('nutritionOverride');
     const fieldsWrap = document.getElementById('nutritionFields');
@@ -89,9 +68,7 @@ function rformUpdateNutritionBadge(calories, protein, carbs, fat) {
     if (pvKcal) pvKcal.textContent = `${Math.round(calories)} kcal`;
 }
 
-// --- Add/remove ingredient rows ------------------------------------------
-// categoryOptionsHtml() comes from static/ingredient_category_select.js
-// (loaded on the same page, see recipe_form.html).
+// categoryOptionsHtml() comes from ingredient_category_select.js.
 function rformAddIngredientRow() {
     const container = document.getElementById('ingredientsContainer');
     if (!container) return;
@@ -121,14 +98,11 @@ function rformUpdateIngredientCount() {
     const pvIngCount = document.getElementById('pvIngCount');
     if (pvIngCount) pvIngCount.textContent = n;
     rformUpdateChecklist();
-    // Called after BOTH adding and removing a row (see every caller
-    // above/below) - neither fires a native 'input'/'change' event on
-    // its own, so the delegated form listener wired in rformAutosave()'s
-    // DOMContentLoaded block below wouldn't otherwise notice.
+    // Adding/removing rows fires no input/change event, so trigger autosave here.
     rformScheduleAutosave();
 }
 
-// --- Import (create mode only): entry-choice cards + AJAX import ---
+// --- Import (create mode only) ---
 function rformChooseEntry(which) {
     document.getElementById('entryCardImport')?.classList.toggle('active', which === 'import');
     document.getElementById('entryCardManual')?.classList.toggle('active', which === 'manual');
@@ -193,7 +167,7 @@ function rformApplyImportedRecipe(data) {
     rformUpdatePreview();
 }
 
-// --- Live preview (right column) ----------------------------------------
+// --- Live preview (right column) ---
 function rformUpdatePreview() {
     const name = document.getElementById('nameInput')?.value.trim();
     const pvName = document.getElementById('pvName');
@@ -225,21 +199,12 @@ function rformUpdateChecklist() {
     ciInstr?.classList.toggle('done', !!instructions);
 }
 
-// --- Autosave (existing recipes only) ------------------------------------
-// Confirmed design: a brand new recipe needs one explicit click to create
-// it in the first place (there's no id to save into before that first
-// POST, see routes/recipes/crud.py: add_recipe(), which redirects
-// straight into the edit view above once created) - from then on, every
-// change anywhere in the form resubmits the WHOLE form via fetch() to the
-// same endpoint a traditional submit would use (edit_recipe()), just
-// debounced. The X-Requested-With header tells that endpoint to answer
-// with JSON instead of redirecting the page out from under whatever the
-// user is still typing.
+// --- Autosave (existing recipes only) ---
+// A new recipe is created with one explicit submit; after that, every change
+// resubmits the whole form (debounced). X-Requested-With makes the server
+// answer with JSON instead of redirecting.
 let rformAutosaveTimer = null;
-// Stays false until DOMContentLoaded's initial setup (which itself calls
-// rformUpdateIngredientCount(), which calls rformScheduleAutosave()) has
-// finished - otherwise just opening an existing recipe would schedule a
-// pointless autosave of completely unchanged data 800ms after load.
+// Set at the end of setup, so opening a recipe doesn't trigger a save.
 let rformAutosaveReady = false;
 
 function rformScheduleAutosave() {
@@ -290,13 +255,6 @@ document.addEventListener('DOMContentLoaded', () => {
         rformUpdateNutritionBadge(n.calories, n.protein, n.carbs, n.fat);
     }
 
-    // Event delegation on the form itself catches everything a plain
-    // 'input'/'change' event bubbles for: text/number/date fields,
-    // selects, checkboxes (side dish/favorite/pantry/nutrition override/
-    // season chips) - EXCEPT adding/removing an ingredient row, which
-    // doesn't fire either event on its own (see rformUpdateIngredientCount(),
-    // called from both rformAddIngredientRow() and each row's "x" button,
-    // triggering it there instead).
     const form = document.getElementById('recipe-form');
     if (form && window.RECIPE_ID) {
         form.addEventListener('input', rformScheduleAutosave);

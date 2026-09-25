@@ -1,8 +1,5 @@
-"""Tests for services/nutrition.py: nutrition lookup/storage logic per
-canonical ingredient, as well as the automatic recipe nutrition calculation
-from the ingredients (compute_recipe_nutrition). Calories are never stored
-or entered directly, but always computed from protein/carbs/fat (Atwater
-rule of thumb, see compute_calories())."""
+"""services/nutrition.py: references per canonical ingredient and recipe
+nutrition computed from ingredients."""
 
 
 def test_compute_calories_applies_atwater_rule():
@@ -160,12 +157,7 @@ def test_infer_reference_unit_defaults_to_g_when_unused(app, test_plan_id):
 
 
 def test_infer_reference_units_for_plan_matches_single_name_version(app, test_plan_id, make_recipe):
-    """Bulk counterpart to infer_reference_unit() above (see
-    routes/settings.py: ingredient_aliases_view() - computing this once
-    per plan instead of once per row was the fix for a real production
-    incident, see tests/test_routes_settings_ingredient_aliases.py:
-    test_ingredient_aliases_view_query_count_does_not_scale_with_ingredient_count).
-    Must agree with the single-name version for every name it covers."""
+    """The bulk version must agree with the single-name version."""
     from services.ingredient_aliases import set_alias
     from services.nutrition import infer_reference_units_for_plan
 

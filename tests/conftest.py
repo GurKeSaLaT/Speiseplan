@@ -1,20 +1,9 @@
-"""Shared pytest fixtures for the whole suite.
+"""Shared fixtures.
 
-app.py already connects to the database on plain module import
-(no app factory pattern, see app.py: `with app.app_context(): init_db()`
-runs at module level) - the DATABASE_URL environment variable therefore
-has to be set BEFORE the very first `import app`, otherwise even a
-single test run would touch the real instance/speiseplan.db. The
-app_module fixture is therefore session-scoped: the first test that
-requests it (directly or via app/client) triggers the import exactly
-once against its own temporary SQLite file; all further tests keep
-using that same already-connected app.
-
-So that every test still starts with an empty database regardless of
-execution order, the autouse fixture _clean_tables wipes all tables
-after EVERY test (not via rollback, since the routes themselves
-commit) - tests that need specific starting data create it themselves
-via the make_category/make_recipe factory fixtures below.
+app.py binds the database at import time, so DATABASE_URL must be set
+before the first `import app` (app_module, session-scoped) or tests would
+hit the real instance/speiseplan.db. Tables are wiped around every test
+because routes commit, which rules out rollback-based isolation.
 """
 import os
 
@@ -27,7 +16,7 @@ def app_module(tmp_path_factory):
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     os.environ["SECRET_KEY"] = "test-secret-key"
 
-    import app as _app_module  # noqa: PLC0415 - intentionally late, see docstring above
+    import app as _app_module  # noqa: PLC0415 - must come after DATABASE_URL
 
     _app_module.app.config["TESTING"] = True
     _app_module.app.config["WTF_CSRF_ENABLED"] = False
@@ -41,20 +30,8 @@ def app(app_module):
 
 @pytest.fixture()
 def make_user(app):
-    """Creates a user with its own starred plan (analogous to
-    make_category/make_recipe below) and returns (user_id, plan_id).
-
-    An _make() call WITHOUT an explicit username gets an automatically
-    numbered name ("Testnutzer2", "Testnutzer3", ...) instead of always
-    the same "Testnutzer" - otherwise a second bare make_user() call in
-    the same test (or one that also uses the client fixture, which
-    already creates "Testnutzer" internally, see default_plan) would
-    collide with a UNIQUE constraint violation on User.email. With
-    an EXPLICITLY passed name, the behavior stays unchanged.
-
-    No password anymore (see services/auth.py module docstring) -
-    identity is header-based now, see the client/login_as fixtures
-    below."""
+    """Creates a user with a starred plan; returns (user_id, plan_id).
+    Unnamed calls get numbered names to avoid duplicate emails."""
     from models import Plan, PlanMembership, User, db
 
     counter = {"n": 1}
@@ -63,11 +40,7 @@ def make_user(app):
         if username is None:
             counter["n"] += 1
             username = f"Testnutzer{counter['n']}"
-        # A space in username (e.g. "Nutzer B") would otherwise land in
-        # the generated email's local part, which fails
-        # services/auth.py: EMAIL_PATTERN - harmless with the old,
-        # session-only login, but the header-based identity check
-        # re-validates this pattern on every request now.
+        # Spaces would make the email fail EMAIL_PATTERN on every request.
         email_local_part = username.lower().replace(' ', '.')
         with app.app_context():
             user = User(name=username, email=f"{email_local_part}@test.local")
@@ -85,39 +58,20 @@ def make_user(app):
 
 @pytest.fixture()
 def default_plan(make_user):
-    """ONE user+plan pair, cached by pytest lazily/once per test
-    (standard fixture semantics: all fixtures that request default_plan
-    in the SAME test get the same result) - shared basis for
-    client/make_category/make_recipe below, so that a recipe/category
-    created without an explicit plan_id automatically ends up in the
-    same plan the test client is logged into (which is exactly what
-    most tests that use client AND make_recipe/make_category together
-    expect)."""
+    """The user/plan that client, make_category and make_recipe share."""
     user_id, plan_id = make_user("Testnutzer")
     return {"user_id": user_id, "plan_id": plan_id}
 
 
 @pytest.fixture()
 def test_plan_id(default_plan):
-    """Shorthand for tests that only need the plan_id (e.g. direct unit
-    tests of services/*.py functions that now require a plan_id
-    argument) - the same cached result as default_plan, just without
-    the dict wrapped around it."""
     return default_plan['plan_id']
 
 
 @pytest.fixture()
 def login_as(app):
-    """Returns a function that builds a fresh test client already
-    "authenticated" as user_id - the Authelia-header equivalent of the old
-    session-based login helper that used to be duplicated across several
-    test files (recipe/plan sharing, zero-plan gate tests) wherever a
-    SECOND user besides the default `client` fixture is needed (see
-    services/auth.py module docstring: identity is no longer a Flask
-    session concern at all, it's resolved fresh from the Remote-Email
-    header on every request). Sets the header via environ_base so it's
-    attached to every request this client makes, not just the next
-    one."""
+    """Returns a factory for a test client authenticated as user_id via the
+    Authelia email header (sent with every request)."""
     def _login_as(user_id):
         from models import User, db
 
@@ -133,16 +87,8 @@ def login_as(app):
 
 @pytest.fixture()
 def client(login_as, default_plan):
-    """An already "authenticated" test client (see login_as above): ever
-    since app.py: require_login() requires a valid identity header for
-    practically every route, presenting one is thus simply another
-    invisible precondition, just like _clean_tables below.
-    client.user_id/client.plan_id (see attributes below) make the
-    associated test user/plan accessible for tests that e.g. need to
-    create a PlanDay directly via the ORM (PlanDay.plan_id is NOT
-    NULL). Tests that explicitly want to check the NOT-authenticated
-    behavior (401) instead build their own, deliberately anonymous client
-    directly via app.test_client() (see tests/test_auth.py)."""
+    """Authenticated client with .user_id and .plan_id. For anonymous
+    requests use app.test_client() directly."""
     test_client = login_as(default_plan['user_id'])
     test_client.plan_id = default_plan['plan_id']
     return test_client
@@ -150,12 +96,8 @@ def client(login_as, default_plan):
 
 @pytest.fixture(autouse=True)
 def _clean_tables(app_module):
-    """Wipes all tables BEFORE every test (on the very first app import,
-    init_db() seeds default categories into the otherwise empty test
-    database - without this step, of all tests it would be the first
-    one in the session that collides with "Fleisch"/"Fisch"/... as
-    already-existing categories) AND afterwards (safety net in case a
-    test aborts mid-assertion before it can clean up itself)."""
+    """Wipes all tables before (init_db seeds default categories on the
+    first import) and after every test."""
     from models import db
 
     def _wipe():
@@ -171,13 +113,8 @@ def _clean_tables(app_module):
 
 @pytest.fixture()
 def make_category(app, default_plan):
-    """Creates a Category and returns its id (not an ORM object - that
-    would count as "detached" after the end of the with block, as soon
-    as Flask-SQLAlchemy removes the session when the app context
-    closes). Ends up in the same plan as the client fixture without an
-    explicit plan_id (see default_plan) - a test that deliberately wants
-    to assign a category to a DIFFERENT plan (e.g. for isolation tests)
-    passes plan_id explicitly."""
+    """Returns the id (an ORM object would be detached after the context
+    closes). Defaults to the client's plan."""
     from models import Category, db
 
     def _make(name="Testkategorie", plan_id=None):
@@ -192,9 +129,7 @@ def make_category(app, default_plan):
 
 @pytest.fixture()
 def make_recipe(app, default_plan, make_category):
-    """Like make_category above: without an explicit plan_id the recipe
-    ends up (as owner, Recipe.owner_plan_id) in the same plan as the
-    client fixture."""
+    """Returns the id; owned by the client's plan unless plan_id is given."""
     def _make(name="Testgericht", category_id=None, is_side_dish=False, ingredients=None, plan_id=None, **kwargs):
         from models import Ingredient, Recipe, db
 

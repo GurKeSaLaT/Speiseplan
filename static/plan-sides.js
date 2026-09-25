@@ -1,31 +1,10 @@
 /**
- * plan-sides.js - everything related to side dishes on the plan page
- * (templates/plan.html): rendering the side dish section of a day card,
- * adding new side dishes (rolled randomly or manually selected),
- * rerolling/manually replacing/removing an existing side dish, as well
- * as moving A SINGLE side dish via drag-and-drop to another day
- * (independent of the full day swap, which lives in static/plan.js).
- *
- * Uses shared infrastructure from the other plan-*.js files:
- * weeklySideRecipes/dayDates/postWithCsrf (see static/plan.js),
- * buildManualSelectHtml/wireManualSelectBox (see
- * static/plan-manual-select.js) and rebuildShoppingList (see
- * static/plan-shopping.js) - all three must be included BEFORE or AFTER
- * this file (the order of the <script> tags in plan.html doesn't matter
- * here, since this file only declares its functions but doesn't CALL any
- * of them immediately on load - only later user interactions do, by
- * which point all scripts are long since loaded).
+ * Side dishes on the plan page: rendering, adding (random or manual),
+ * rerolling, replacing, removing and moving a single side to another day.
+ * Uses plan.js's state, plan-manual-select.js and rebuildShoppingList().
  */
 
-/**
- * Builds the complete side dish section of a day card: one row per
- * currently assigned side dish (each with its own drag handle for
- * moveSideDish plus 🎲/✏️/❌ buttons for exactly THIS slot) plus a final
- * "add side dish" row (🎲 rolls a new random side dish, ✏️ opens manual
- * selection for a NEW slot). Each row gets its own id (side-item-<dayIndex>-<sideId>
- * or side-add-row-<dayIndex>), which openSideManualSelect() uses to
- * replace exactly that one row with the selection box.
- */
+/** One row per side (addressed by side_id) plus the "add side" row. */
 function renderSidesSection(dayIndex) {
     const sides = weeklySideRecipes[dayIndex] || [];
     let html = '';
@@ -58,23 +37,13 @@ function renderSidesSection(dayIndex) {
     return html;
 }
 
-/** Re-renders only the side dish section of a day card (side-row-<dayIndex>), without touching the servings row/main dish. */
 function refreshSidesSection(dayIndex) {
     const container = document.getElementById(`side-row-${dayIndex}`);
     if (container) container.innerHTML = renderSidesSection(dayIndex);
 }
 
-/**
- * Opens the manual side dish selection box: either IN PLACE OF an
- * existing side dish row (sideId set - replaces exactly that slot, see
- * setOneSide) or IN PLACE OF the "add" row (sideId null - creates a NEW
- * slot, see addSide). Both cases use the same mechanism: find the target
- * row by id, remember its current markup, swap it for the selection box
- * (see static/plan-manual-select.js). After a successful selection,
- * refreshSidesSection() re-renders the whole section anyway (see
- * addSide/setOneSide), so a manual restore on success isn't needed -
- * only on "Cancel".
- */
+/** Replaces a side's row (sideId) or the "add" row (sideId null) with the
+ * search box. Success re-renders the section; Cancel restores the row. */
 function openSideManualSelect(dayIndex, sideId) {
     const container = sideId
         ? document.getElementById(`side-item-${dayIndex}-${sideId}`)
@@ -96,14 +65,7 @@ function openSideManualSelect(dayIndex, sideId) {
     );
 }
 
-/**
- * Creates a NEW side dish for a day (calls
- * routes/plan/day_actions_sides.py: add_side() server-side) - in addition to
- * any already present, a day can have any number. recipeId is optional:
- * if set (manual selection via ✏️), exactly that recipe is used; if
- * missing (🎲 button), the server rolls one at random, taking weekly
- * duplicates and the soft repetition weighting into account.
- */
+/** Adds a side; without recipeId the server picks one at random. */
 function addSide(dayIndex, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/add`, {
         headers: { 'Content-Type': 'application/json' },
@@ -123,16 +85,10 @@ function addSide(dayIndex, recipeId) {
     });
 }
 
-/** Short alias for the 🎲 button of the "add side dish" row - rolls a new side dish without manual selection. */
 function addRandomSide(dayIndex) {
     addSide(dayIndex, null);
 }
 
-/**
- * Rerolls A SINGLE existing side dish (replaces it with a different,
- * randomly chosen recipe - unlike addSide, which creates an ADDITIONAL
- * slot). sideId identifies the PlanDaySide row, not the recipe.
- */
 function rerollOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/reroll`)
     .then(response => {
@@ -150,7 +106,6 @@ function rerollOneSide(dayIndex, sideId) {
     });
 }
 
-/** Replaces A SINGLE existing side dish with a recipe manually chosen by the user (the manual counterpart to rerollOneSide). */
 function setOneSide(dayIndex, sideId, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/set`, {
         headers: { 'Content-Type': 'application/json' },
@@ -171,7 +126,6 @@ function setOneSide(dayIndex, sideId, recipeId) {
     });
 }
 
-/** Permanently removes A SINGLE existing side dish, without touching the other side dishes of the same day. */
 function removeOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/remove`)
     .then(response => {
@@ -187,25 +141,15 @@ function removeOneSide(dayIndex, sideId) {
     });
 }
 
-// --- MOVING A SINGLE SIDE DISH VIA DRAG-AND-DROP ---
-// See static/plan.js for the full day swap (dragging the whole card) and
-// the shared dayCardDrop() handler, which branches here (moveSideDish)
-// based on the {type: 'side', ...} payload encoded in the DataTransfer.
+// --- Moving a single side (dropped via plan.js: dayCardDrop) ---
 
-/** Remembers the origin (day + PlanDaySide ID) of A SINGLE side dish row in the DataTransfer when dragging starts. stopPropagation prevents the enclosing card's dayCardDragStart from ALSO (redundantly) firing. */
+/** stopPropagation keeps the surrounding day card from starting its own drag. */
 function sideDragStart(event, dayIndex, sideId) {
     event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'side', dayIndex: dayIndex, sideId: sideId }));
     event.stopPropagation();
 }
 
-/**
- * Moves A SINGLE side dish from sourceDayIndex to targetDayIndex (calls
- * routes/plan/day_actions_sides.py: move_one_side() server-side) - a one-way
- * move, not a swap: the target day keeps everything it already had, and
- * gets the side dish in addition. On success, updates both affected side
- * dish sections (not the whole card, the main dish stays untouched after
- * all). Called by static/plan.js: dayCardDrop().
- */
+/** One-way move; the target day keeps everything it had. */
 function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
     if (sourceDayIndex === targetDayIndex) return;
 

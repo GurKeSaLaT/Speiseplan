@@ -1,29 +1,7 @@
 /**
- * plan-manual-select.js - reusable "select manually" search box for the
- * plan page (templates/plan.html): a small live search across all
- * recipes that replaces a caller's location in the DOM (instead of a
- * separate modal/dialog) and calls a passed-in callback on
- * selection/cancel.
- *
- * Deliberately written as a generic component, independent of "main
- * dish" or "side dish": both the main dish selection (openMainManualSelect
- * in static/plan.js) and the side dish selection (openSideManualSelect in
- * static/plan-sides.js) call the same two functions here, instead of
- * each maintaining their own, nearly identical search boxes.
- *
- * Expects the global constant `allRecipes` (see static/plan.js) to
- * already be set by the time either function is called - under normal
- * page load order (this script included after plan.js) this is always
- * the case, since both functions are only triggered by a click, i.e.
- * long after the initial load.
- */
-
-/**
- * Builds the HTML structure of the search box: a text field, a
- * (initially empty, hidden) results list, and a "Cancel" link. isSide
- * only determines the placeholder text ("Search side dish..." vs.
- * "Search recipe...") - the actual filtering by main dish/side dish
- * happens in wireManualSelectBox().
+ * Inline recipe search box used for manually picking main dishes and
+ * sides on the plan page. It replaces part of the card instead of
+ * opening a dialog. Searches plan.js's allRecipes.
  */
 function buildManualSelectHtml(isSide) {
     const placeholder = isSide ? window.I18N.search_placeholder_side : window.I18N.search_placeholder_recipe;
@@ -36,14 +14,8 @@ function buildManualSelectHtml(isSide) {
     `;
 }
 
-/**
- * Wires up a box created via buildManualSelectHtml(): filters allRecipes
- * on every keystroke by name/category (matching is_side_dish === isSide),
- * renders hits as clickable rows and calls onSelect(recipeId) on click.
- * The "Cancel" button calls onCancel() instead (typically: swapping the
- * box back for the previous display). container must already contain the
- * markup from buildManualSelectHtml().
- */
+/** Filters by name/category within main dishes or sides (isSide); calls
+ * onSelect(recipeId) or onCancel(). */
 function wireManualSelectBox(container, isSide, onSelect, onCancel) {
     const input = container.querySelector('.manual-select-input');
     const results = container.querySelector('.manual-select-results');

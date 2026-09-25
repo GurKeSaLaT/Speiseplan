@@ -1,17 +1,6 @@
-{# Cross-plan weekly summary (/), the app's home page - read-only overview
-   of every main dish planned in ANY of the user's plans for the current
-   calendar week, rendered by routes/plan/pages.py: index() (see
-   services/plan_summary.py: build_week_summary()). Deliberately has NO
-   dice/edit/create controls anywhere on this page - the fully
-   interactive single-plan calendar (routes/plan/pages.py: week_view())
-   is one click away via a specific plan in the sidebar's "My Plans"
-   list (see templates/base.html, routes/auth.py: switch_plan()).
-
-   Each dish is a small POST form (routes/plan/pages.py:
-   summary_open_recipe()) rather than a plain link: clicking it switches
-   the active plan to the one that dish belongs to and opens that plan's
-   week view with the day's recipe detail window pre-opened
-   (?open_day=<date>, read by static/plan.js on load). #}
+{# Home page (/): read-only summary of this week's main dishes across all
+   the user's plans. Each dish is a small POST form that switches to its
+   plan and opens the week view with that day's recipe (?open_day=). #}
 {% extends 'base.html' %}
 {% block content %}
 

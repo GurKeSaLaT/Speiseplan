@@ -1,10 +1,5 @@
-{# Profile management for the logged-in user (/manage/account,
-   routes/account.py) - change UI language, delete account. Name/email are
-   shown read-only (they're synced from Authelia on every request, see
-   services/auth.py: current_user()) - there's no password here at all
-   anymore (see services/auth.py module docstring). Two independent
-   forms/POST targets, each re-renders the same page on success/error (no
-   flash messaging system in this app). #}
+{# Account page: language and account deletion. Name/email come from
+   Authelia and are read-only. #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -35,8 +30,7 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label class="form-label fw-bold small" for="accountLanguage">{{ _('Language') }}</label>
-                        {# Option labels are deliberately left in their own language (not translated) -
-                           the usual convention for language-selection fields, see app.py: get_locale(). #}
+                        {# Language names stay untranslated, as is conventional. #}
                         <select name="language" id="accountLanguage" class="form-select">
                             <option value="en" {% if user.language == 'en' %}selected{% endif %}>English</option>
                             <option value="de" {% if user.language == 'de' %}selected{% endif %}>Deutsch</option>

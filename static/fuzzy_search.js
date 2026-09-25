@@ -1,15 +1,7 @@
 /**
- * fuzzy_search.js - small, dependency-free fuzzy search for the
- * client-side list filters (edit recipes, manage categories, equate
- * ingredients): checks whether all characters of the search input occur
- * in the target text in THE SAME ORDER, but not necessarily contiguous -
- * e.g. "ptt" matches "Potatoes", "rcpsp" matches "Recipe Soup".
- * An empty search input always matches everything (no filter active).
- *
- * Deliberately no scoring/ranking (the order of the list stays
- * unchanged, only non-matching rows are hidden) - for a simple "type
- * something similar and the list shrinks" this is enough; real ranking
- * would be unnecessary effort for these list sizes.
+ * Subsequence match for list filters: all query characters must appear in
+ * order, not necessarily adjacent ("ptt" matches "Potatoes"). No ranking;
+ * non-matching rows are just hidden.
  */
 function fuzzyMatch(text, query) {
     if (!query) return true;
@@ -25,14 +17,9 @@ function fuzzyMatch(text, query) {
     return true;
 }
 
-/**
- * Wires up a search input field with a set of rows: on every input,
- * hides all rows whose getText(row) result does not (fuzzy) match the
- * input. Uses the .search-hidden class instead of setting
- * element.style.display directly (see the style.css comment there for
- * the reason - Bootstrap's .d-flex is !important and would otherwise
- * override a simple inline style).
- */
+/** Rows are queried on every input, so rows added later are filtered too.
+ * Uses the .search-hidden class: an inline display style would lose against
+ * Bootstrap's !important .d-flex. */
 function wireFuzzyFilter(inputEl, rowSelector, getText) {
     if (!inputEl) return;
     inputEl.addEventListener('input', () => {

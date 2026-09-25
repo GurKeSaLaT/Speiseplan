@@ -1,13 +1,6 @@
-"""Sharing/star management for weekly plans (/manage/sharing): who is a
-member of the currently active plan, inviting/removing further users, and
-which of one's own plans is currently starred (see models/plan.py:
-Plan/PlanMembership as well as services/auth.py: current_plan()).
-
-All members of a plan have full read/write access - there is no
-role/permission distinction to manage here, only plain membership (who
-belongs to it) and the per-user star (which plan is currently "the
-default one").
-"""
+"""Sharing page (/manage/sharing): members and invites of the active plan,
+and the user's own plans with star/overview toggles. All members have the
+same full access."""
 
 from flask import Blueprint, abort, redirect, render_template, request, session, url_for
 
@@ -20,11 +13,6 @@ sharing_bp = Blueprint('sharing', __name__)
 
 @sharing_bp.route('/manage/sharing')
 def sharing_view():
-    """Shows the members of the currently active plan (with a remove
-    option, except for its owner - see remove_member()), an email field
-    for inviting (see invite_member()), the still-open invites to
-    not-yet-registered addresses, and the list of ALL plans of the
-    logged-in user with a star toggle."""
     plan = current_plan()
     if plan is None:
         abort(404)
@@ -45,23 +33,9 @@ def sharing_view():
 
 @sharing_bp.route('/manage/sharing/invite', methods=['POST'])
 def invite_member():
-    """Shares the currently active plan with an entered email address: if
-    an account already exists for it, a PlanMembership with full access
-    like any other member is created immediately (without an invite/
-    confirmation workflow). If none exists yet, a PendingPlanInvite is
-    created instead (see the models/plan.py docstring there) and an invite is
-    "sent" (services/mail.py: send_invite_email() - currently only
-    logged, the link additionally appears directly on this page, see
-    templates/sharing.html: "Pending invites"). Starred only if this is
-    the existing user's very FIRST membership ever (same is_first
-    criterion as services/plans.py: create_plan()/accept_pending_invites())
-    - a user with zero memberships has no starred plan at all, and
-    default_plan_id()/current_plan() (services/auth.py) then can't fall
-    back to anything, which without this check showed up as e.g. an
-    empty category dropdown when such a user tried to create a recipe
-    without an explicit ?plan_id= in the URL. Otherwise (the invited user
-    already has at least one other plan) not starred - they decide for
-    themselves whether to make THIS plan their default one."""
+    """Known email: membership right away (starred only if it's their first,
+    so everyone has a default plan). Unknown email: a pending invite that is
+    applied on their first login."""
     plan = current_plan()
     if plan is None:
         abort(404)
@@ -80,10 +54,6 @@ def invite_member():
         if not PendingPlanInvite.query.filter_by(plan_id=plan.id, email=email).first():
             db.session.add(PendingPlanInvite(plan_id=plan.id, email=email))
             db.session.commit()
-        # No registration step to link to anymore (see services/auth.py
-        # module docstring) - the invite is applied automatically the
-        # moment this email first authenticates via Authelia, so all
-        # there is to "send" is a pointer to the app itself.
         send_invite_email(email, plan.name, url_for('plan.index', _external=True))
 
     return redirect(url_for('sharing.sharing_view'))
@@ -91,10 +61,6 @@ def invite_member():
 
 @sharing_bp.route('/manage/sharing/invite/<int:invite_id>/cancel', methods=['POST'])
 def cancel_invite(invite_id):
-    """Withdraws a still-open invite to an unregistered email address -
-    counterpart to remove_member() for actual members. Must belong to the
-    currently active plan, otherwise 404 (same pattern as the other
-    ownership checks in this app)."""
     plan = current_plan()
     if plan is None:
         abort(404)
@@ -110,12 +76,7 @@ def cancel_invite(invite_id):
 
 @sharing_bp.route('/manage/sharing/remove/<int:user_id>', methods=['POST'])
 def remove_member(user_id):
-    """Removes a member from the currently active plan - except its owner
-    (Plan.owner_user_id), who always remains a member, so that no plan is
-    left without any access at all. If a user thereby removes themselves
-    from a plan that happened to be their active one, the next
-    current_plan() call automatically resolves to a different (starred
-    or first remaining) plan - no special handling needed here."""
+    """The owner can't be removed, so no plan ends up without access."""
     plan = current_plan()
     if plan is None:
         abort(404)
@@ -129,18 +90,8 @@ def remove_member(user_id):
 
 @sharing_bp.route('/manage/sharing/leave/<int:plan_id>', methods=['POST'])
 def leave_plan(plan_id):
-    """Removes ONE'S OWN membership on plan_id - the counterpart to
-    remove_member() above (which removes SOMEONE ELSE), here for oneself
-    and deliberately independent of the currently active plan
-    (current_plan()): the "My plans" list on sharing.html shows ALL of
-    one's own plans, not just the active one, so leaving must work
-    individually for each of them, regardless of which one is currently
-    active.
-
-    The OWNER of a plan (Plan.owner_user_id) CANNOT leave it this way -
-    delete_plan() (routes/plans.py) exists for that, which correctly
-    hands the plan over to another member when there are several, instead
-    of simply leaving it without an owner."""
+    """Leave any of one's own plans (not just the active one). Owners delete
+    the plan instead."""
     user = current_user()
     membership = PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first()
     if membership is None:
@@ -158,11 +109,6 @@ def leave_plan(plan_id):
 
 @sharing_bp.route('/manage/sharing/overview-toggle/<int:plan_id>', methods=['POST'])
 def toggle_overview(plan_id):
-    """Toggles PlanMembership.show_in_week_overview for ONE'S OWN
-    membership on plan_id (see the models/plan.py docstring there - a flag
-    that applies purely per user, analogous to is_starred) - never
-    affects the membership of another user of the same, possibly shared,
-    plan."""
     user = current_user()
     membership = PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first()
     if membership is None:
@@ -175,12 +121,7 @@ def toggle_overview(plan_id):
 
 @sharing_bp.route('/manage/sharing/star/<int:plan_id>', methods=['POST'])
 def star_plan(plan_id):
-    """Marks plan_id as the one starred plan of the logged-in user (opens
-    automatically after login from now on, appears at the top of the
-    navigation) - to do so, first unstars all other memberships of the
-    same user within the same transaction, so that never more than one
-    is starred at the same time (see models/plan.py: PlanMembership
-    docstring)."""
+    """Unstars the user's other plans in the same transaction (one star max)."""
     user = current_user()
     membership = PlanMembership.query.filter_by(plan_id=plan_id, user_id=user.id).first()
     if membership is None:

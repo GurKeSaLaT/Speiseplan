@@ -1,9 +1,5 @@
-{# Category management (/manage/categories): form for creating a new
-   category plus a list of all existing ones with a delete button. The
-   delete button is disabled as soon as cat.recipes is not empty (see
-   routes/categories.py: delete_category rejects the deletion server-side
-   regardless - the disabling here is just the corresponding
-   UI anticipation, so the user never even triggers the error). #}
+{# Categories. Delete is disabled while recipes use a category (the server
+   refuses it anyway). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -59,8 +55,6 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// Purely client-side fuzzy filter over the category list (see
-// static/fuzzy_search.js) - no server round-trip needed.
 wireFuzzyFilter(document.getElementById('categoryFilter'), '.category-list-row', row => row.dataset.name);
 </script>
 {% endblock %}

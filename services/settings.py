@@ -1,16 +1,11 @@
-"""Display settings of A SINGLE plan (currently: preferred units for mass
-and volume, see services/units.py and models/settings.py: AppSettings) - each plan
-maintains its own row, independent of other plans."""
+"""Per-plan display units."""
 
 from models import AppSettings, db
 from services.units import DEFAULT_DISPLAY_UNIT, DISPLAY_UNIT_CHOICES, MASS, VOLUME
 
 
 def get_settings(plan_id):
-    """Returns the AppSettings row of A SINGLE plan, lazily creating it with
-    the default values (g/ml) if needed, instead of requiring a separate
-    migration step for every newly created plan (see migrations.py: init_db() for
-    the one-time migration of existing legacy data)."""
+    """Creates the row with defaults on first access."""
     settings = AppSettings.query.filter_by(plan_id=plan_id).first()
     if not settings:
         settings = AppSettings(
@@ -24,18 +19,12 @@ def get_settings(plan_id):
 
 
 def get_display_units(plan_id):
-    """Returns the dict {'mass': ..., 'volume': ...} for
-    services/units.py: convert_for_display()."""
     settings = get_settings(plan_id)
     return {MASS: settings.mass_unit, VOLUME: settings.volume_unit}
 
 
 def update_display_units(plan_id, mass_unit, volume_unit):
-    """Saves a new display-unit choice for A SINGLE plan, provided both
-    values are among the allowed options (services/units.py:
-    DISPLAY_UNIT_CHOICES). Returns True on success, False for an invalid
-    value (the previous setting then remains unchanged) - the caller
-    (routes/settings.py) decides how to report that to the user."""
+    """False (and no change) for values outside DISPLAY_UNIT_CHOICES."""
     if mass_unit not in DISPLAY_UNIT_CHOICES[MASS] or volume_unit not in DISPLAY_UNIT_CHOICES[VOLUME]:
         return False
     settings = get_settings(plan_id)

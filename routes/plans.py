@@ -1,12 +1,5 @@
-"""Creating and deleting an entire plan (see services/plans.py for the
-actual logic) - unlike routes/sharing.py (managing members/star of ONE
-already-existing plan), this is about the plan as a whole.
-
-Since plans were decoupled from accounts (no more automatic plan per
-user), "having no plan at all" is a normal, reachable state (e.g. right
-after deleting one's last own plan) - see app.py: require_login() for the
-global zero-plan gate, which keeps create_plan() on its own allowlist for
-that reason."""
+"""Creating, deleting and renaming plans. Having no plan at all is a valid
+state, so create stays reachable (app.py: ZERO_PLAN_ALLOWED_ENDPOINTS)."""
 
 from flask import Blueprint, abort, redirect, request, url_for, session
 
@@ -19,10 +12,7 @@ plans_bp = Blueprint('plans', __name__)
 
 @plans_bp.route('/plan/create', methods=['POST'])
 def create():
-    """Creates a new, own plan for the logged-in user and switches to it
-    right away (session['active_plan_id']) - an empty/missing name is
-    silently ignored (no error text needed, the name field in the modal
-    is already marked "required", see templates/base.html)."""
+    """Switches to the new plan; an empty name is ignored."""
     name = (request.form.get('name') or '').strip()
     if not name:
         return redirect(url_for('plan.index'))
@@ -34,13 +24,7 @@ def create():
 
 @plans_bp.route('/plan/<int:plan_id>/delete', methods=['POST'])
 def delete(plan_id):
-    """Deletes a plan irrevocably (see services/plans.py:
-    delete_plan) - any member may do this, not just whoever originally
-    created it (see models/plan.py: Plan docstring, owner_user_id doesn't grant
-    any special rights). If plan_id was the currently active plan, the
-    session marker is removed, so that the next current_plan() call
-    resolves freshly to a remaining plan (or None), instead of pointing to
-    an ID that no longer exists."""
+    """Any member may delete (the owner has no extra rights)."""
     user = current_user()
     if not user_has_plan_access(user, plan_id):
         abort(404)
@@ -54,11 +38,7 @@ def delete(plan_id):
 
 @plans_bp.route('/plan/<int:plan_id>/rename', methods=['POST'])
 def rename(plan_id):
-    """Renames a plan - any member may do this (same reasoning as with
-    delete() above: owner_user_id doesn't grant any special rights). An
-    empty name is ignored, the previous one then remains unchanged (no
-    error text needed, the name field in the modal is already marked
-    "required", see templates/sharing.html)."""
+    """Any member may rename; an empty name is ignored."""
     user = current_user()
     if not user_has_plan_access(user, plan_id):
         abort(404)

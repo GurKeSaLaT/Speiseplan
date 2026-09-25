@@ -1,7 +1,5 @@
-{# Sharing/starring management (/manage/sharing, routes/sharing.py) - manage
-   members of the currently active plan, invite further users, and switch
-   between your own plans (own + invited) via star, which will open
-   automatically after login in the future. #}
+{# Members and invites of the active plan, plus starring (the starred plan
+   opens after login). #}
 {% extends 'base.html' %}
 {% block content %}
 <div class="row justify-content-center">
@@ -47,7 +45,8 @@
                                 <button type="submit" class="btn btn-sm btn-outline-secondary">{{ _('Withdraw') }}</button>
                             </form>
                         </div>
-                        {# No real email sending yet (services/mail.py) - the link is therefore shown here directly to copy/forward. Just the app itself: there's no registration step anymore, opening it while signed into Authelia with this email is enough. #}
+                        {# No email sending yet, so the link is shown for copying. Opening it
+                           while signed into Authelia with that email is enough. #}
                         <input type="text" class="form-control form-control-sm mt-1" readonly onclick="this.select()" value="{{ url_for('plan.index', _external=True) }}">
                     </div>
                     {% endfor %}
@@ -70,13 +69,8 @@
                             <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none" data-plan-id="{{ membership.plan_id }}" data-plan-name="{{ membership.plan.name }}" onclick="openRenamePlanModal(this)" title="{{ _('Rename') }}">✏️</button>
                         </span>
                         <div class="d-flex align-items-center gap-2">
-                            {# Purely per-membership flag (see models/plan.py:
-                               PlanMembership.show_in_week_overview) -
-                               only controls whether THIS plan additionally
-                               shows up in the day tiles of the user's
-                               OTHER plans (routes/plan/pages.py:
-                               week_view()), not the view of this plan
-                               itself. #}
+                            {# Per membership: whether this plan also shows up in the day tiles
+                               of the user's other plans. #}
                             <form method="POST" action="{{ url_for('sharing.toggle_overview', plan_id=membership.plan_id) }}" class="form-check form-check-inline m-0">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input class="form-check-input" type="checkbox" id="overview-{{ membership.plan_id }}"
@@ -108,14 +102,8 @@
     </div>
 </div>
 
-{# Confirmation modal for permanently deleting an entire plan - ONE shared
-   modal instead of one per plan row (analogous to the recipe detail window
-   in templates/plan.html), filled in with the plan ID/name via JS.
-   data-plan-id/data-plan-name instead of an inline onclick("...", "...")
-   with the name embedded directly (like recipe_edit_list.html still does
-   for deleteRecipeSafely()) - Jinja escapes attribute values
-   automatically, so a plan name with quotes can't break the JavaScript
-   this way. #}
+{# One shared delete modal, filled via JS from data-plan-id/-name
+   (attributes are auto-escaped, unlike names inside onclick). #}
 <div class="modal fade" id="deletePlanModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
@@ -138,9 +126,7 @@
     </div>
 </div>
 
-{# Rename modal - same pattern as the delete modal above (one shared modal
-   instead of one per row, filled in with the plan ID/name via JS). Not
-   destructive, so no warning, just a pre-filled text field. #}
+{# Rename modal, same pattern. #}
 <div class="modal fade" id="renamePlanModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
