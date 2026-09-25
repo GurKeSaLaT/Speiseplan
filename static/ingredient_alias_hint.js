@@ -98,7 +98,7 @@
         if (Object.prototype.hasOwnProperty.call(ALIASES, name)) {
             // Case A
             wrap.classList.add('text-muted');
-            wrap.innerHTML = `→ grouped as „<b>${escapeHtml(ALIASES[name])}</b>"`;
+            wrap.innerHTML = `→ ${escapeHtml(window.I18N.grouped_as_label)} „<b>${escapeHtml(ALIASES[name])}</b>"`;
             return;
         }
 
@@ -106,7 +106,7 @@
             // Case B
             const examples = rawNamesFor(name).slice(0, 3).join(', ');
             wrap.classList.add('text-muted');
-            wrap.innerHTML = `🧺 Base ingredient${examples ? ' (e.g. for ' + escapeHtml(examples) + ')' : ''}`;
+            wrap.innerHTML = `${escapeHtml(window.I18N.base_ingredient_label)}${examples ? ' (' + escapeHtml(window.I18N.example_for_label) + ' ' + escapeHtml(examples) + ')' : ''}`;
             return;
         }
 
@@ -114,8 +114,8 @@
         const group = document.createElement('div');
         group.className = 'input-group input-group-sm mt-1';
         group.innerHTML = `
-            <input type="text" class="form-control form-control-sm alias-target-input" placeholder="Set alias, e.g. Pasta" list="canonical-names-datalist">
-            <button type="button" class="btn btn-outline-secondary alias-set-btn">Set</button>
+            <input type="text" class="form-control form-control-sm alias-target-input" placeholder="${escapeHtml(window.I18N.set_alias_placeholder)}" list="canonical-names-datalist">
+            <button type="button" class="btn btn-outline-secondary alias-set-btn">${escapeHtml(window.I18N.set_button_label)}</button>
         `;
         const input = group.querySelector('.alias-target-input');
         const button = group.querySelector('.alias-set-btn');
@@ -138,30 +138,30 @@
         const box = document.createElement('div');
         box.className = 'mt-1 p-2 border rounded';
         box.innerHTML = `
-            <div class="text-danger small fw-bold mb-2">⚠️ No nutrition data on file for „${escapeHtml(canonical)}"</div>
+            <div class="text-danger small fw-bold mb-2">${escapeHtml(window.I18N.no_nutrition_data_for)} „${escapeHtml(canonical)}"</div>
             <div class="row g-2">
                 <div class="col-6 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Reference</label>
+                    <label class="form-label small text-muted mb-1">${escapeHtml(window.I18N.reference_label)}</label>
                     <select class="form-select form-select-sm nutrition-ref-unit">
-                        <option value="g" selected>per 100 g</option>
-                        <option value="ml">per 100 ml</option>
-                        <option value="Stk">per 1 pc</option>
+                        <option value="g" selected>${escapeHtml(window.I18N.per_100g_option)}</option>
+                        <option value="ml">${escapeHtml(window.I18N.per_100ml_option)}</option>
+                        <option value="Stk">${escapeHtml(window.I18N.per_1pc_option)}</option>
                     </select>
                 </div>
                 <div class="col-4 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Protein (g)</label>
+                    <label class="form-label small text-muted mb-1">${escapeHtml(window.I18N.protein_g_label)}</label>
                     <input type="number" step="0.1" class="form-control form-control-sm nutrition-protein" placeholder="0">
                 </div>
                 <div class="col-4 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Carbs (g)</label>
+                    <label class="form-label small text-muted mb-1">${escapeHtml(window.I18N.carbs_g_label)}</label>
                     <input type="number" step="0.1" class="form-control form-control-sm nutrition-carbs" placeholder="0">
                 </div>
                 <div class="col-4 col-sm-3">
-                    <label class="form-label small text-muted mb-1">Fat (g)</label>
+                    <label class="form-label small text-muted mb-1">${escapeHtml(window.I18N.fat_g_label)}</label>
                     <input type="number" step="0.1" class="form-control form-control-sm nutrition-fat" placeholder="0">
                 </div>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-danger mt-2 nutrition-set-btn">Save nutrition data</button>
+            <button type="button" class="btn btn-sm btn-outline-danger mt-2 nutrition-set-btn">${escapeHtml(window.I18N.save_nutrition_data_label)}</button>
         `;
         // Calories are never entered directly, only computed from
         // protein/carbs/fat (services/nutrition.py: compute_calories()) -
@@ -182,7 +182,7 @@
         })
         .then(response => response.json().then(data => ({ ok: response.ok, data })))
         .then(({ ok, data }) => {
-            if (!ok) { alert('Note: ' + (data.error || 'Could not set alias.')); return; }
+            if (!ok) { alert(window.I18N.note_prefix + ' ' + (data.error || window.I18N.could_not_set_alias)); return; }
             ALIASES[data.raw_name] = data.canonical_name;
             canonicalNames = new Set(Object.values(ALIASES));
             fillUnitFromNutrition(hintEl, data.canonical_name);
@@ -190,7 +190,7 @@
             fillPantryFromAlias(hintEl, data.is_pantry);
             renderHint(hintEl, data.raw_name);
         })
-        .catch(() => alert('Note: Could not set alias.'));
+        .catch(() => alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_set_alias));
     }
 
     /** When setting an alias, automatically takes over the shopping-list
@@ -265,11 +265,11 @@
         })
         .then(response => response.json().then(data => ({ ok: response.ok, data })))
         .then(({ ok, data }) => {
-            if (!ok) { alert('Note: ' + (data.error || 'Could not save nutrition data.')); return; }
+            if (!ok) { alert(window.I18N.note_prefix + ' ' + (data.error || window.I18N.could_not_save_nutrition)); return; }
             NUTRITION[data.canonical_name] = data;
             renderHint(hintEl, name);
         })
-        .catch(() => alert('Note: Could not save nutrition data.'));
+        .catch(() => alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_save_nutrition));
     }
 
     function escapeHtml(text) {

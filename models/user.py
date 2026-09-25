@@ -2,29 +2,25 @@ from models import db
 
 
 class User(db.Model):
-    """A user account - see services/auth.py for login/session handling.
+    """A user account - identity is no longer managed by this app at all
+    (see services/auth.py module docstring): authentication happens
+    entirely in Authelia, in front of the reverse proxy, which attaches
+    the authenticated email/display name to every request as a header.
+    This app never stores or checks a password.
 
-    password_hash NEVER stores the plaintext password, but a hash produced
-    via werkzeug.security.generate_password_hash() (PBKDF2 with salt) -
-    services/auth.py: check_password() compares against it on login via
-    werkzeug.security.check_password_hash(), without ever being able to
-    reconstruct the password itself.
-
-    Login happens via email (always stored lowercased, see
-    routes/auth.py: login()/register()) - name is a pure display name
-    WITHOUT uniqueness, so two users are allowed to have the same name.
-    Registration runs via routes/auth.py: register() (button on the login
-    page); at app start, migrations.py: init_db() additionally still seeds
-    two generic demo accounts ("Nutzer1"/"Nutzer2") (placeholder emails
-    following the pattern <name>@example.com, see there).
+    email (always lowercased) is the identity key - it's how
+    services/auth.py: current_user() finds or auto-provisions the matching
+    row for whatever email Authelia attaches to a request. name is kept in
+    sync with Authelia's display name on every request (see there) rather
+    than being independently editable here.
 
     language is the ISO 639-1 code Flask-Babel uses to pick this user's
     translation catalog (see app.py: get_locale()) - defaults to 'en'
-    (English is the app's default language). Changeable on /manage/account
-    (see services/accounts.py: update_profile())."""
+    (English is the app's default language). This one IS still an
+    app-level preference, changeable on /manage/account (see
+    services/accounts.py: update_language())."""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(255), nullable=False)
     language = db.Column(db.String(5), nullable=False, default='en')
     created_at = db.Column(db.DateTime, default=db.func.now())

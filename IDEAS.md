@@ -221,12 +221,64 @@ Backlog for future features - not yet implemented, just collected.
   matching stored values (`Category.name`, `Ingredient.category`,
   `ExtraShoppingItem.category`, season labels) alongside the constant
   itself.
-- **JS strings aren't localized.** Flask-Babel only extracts from
-  `.py`/`.html` files - user-facing strings in `static/*.js` (mostly
-  `alert()`/`confirm()` calls and a handful of status messages) are
-  therefore plain, hardcoded English regardless of the account's chosen
-  language. Small, low-traffic surface; building a second i18n path for
-  JS wasn't judged worth it yet.
+## Implemented (continued)
+
+- **Demo data moved out of the committed binary database.**
+  `instance/speiseplan.db` is no longer version-controlled at all (see
+  `.gitignore`) - it changed 34 times over the project's history, each
+  time as an opaque, undiffable binary commit, and carried a real risk of
+  a genuine deployment's actual data accidentally ending up committed
+  through the same tracked path. The same sample content (recipes,
+  categories, ingredient aliases, two example accounts, in FK-dependency
+  order) now lives in `fixtures/demo_data.json` - plain, diffable JSON,
+  loaded on demand by `services/demo_seed.py: seed_demo_data_if_requested()`
+  via `SEED_DEMO_DATA=1` (see README.md: "Trying it out with sample
+  data"). Deliberately opt-in rather than "seed whenever the database
+  happens to be empty" - that condition is also exactly what a brand new
+  production deployment looks like before its first real Authelia login.
+  Loads via SQLAlchemy Core's `Table.insert()` rather than hand-written
+  SQL text, so a fixture row that predates a later-added column (e.g. an
+  ingredient from before `Ingredient.is_pantry` existed) still gets that
+  column's normal default applied automatically. Added a `.dockerignore`
+  at the same time - without one, `docker build` from a local working
+  directory would happily bake in whatever real `instance/speiseplan.db`
+  happens to sit there, independent of what git tracks.
+- **Exclude/re-include a day AFTER the week already exists.** Previously
+  `PlanDay.excluded` could only be set while first creating a week
+  (`static/create_week.js`, `templates/create_week.html`) - there was no
+  way back once the week was already created (see the plan page,
+  `templates/plan.html`). New endpoint `routes/plan/day_actions.py:
+  toggle_day_exclusion()` (`POST /day/<date>/toggle-exclude`) toggles it
+  for a single calendar day, clearing the main dish when excluding (side
+  dishes are untouched, matching the existing "excluded only applies to
+  the main dish" rule) - a new 🚫 button next to the 🎲/✏️ actions on
+  each day card calls it.
+- **JS strings localized.** Closed the previous "JS strings aren't
+  localized" gap: Flask-Babel only extracts from `.py`/`.html` files, so
+  user-facing strings in `static/*.js` (status labels, button titles,
+  `alert()` messages) are now routed through `window.I18N` - a single
+  JSON blob rendered server-side in `templates/base.html` via `_(...)`,
+  keyed by a short stable name rather than the English text itself. JS
+  call sites reference `window.I18N.<key>` instead of hardcoded English;
+  the German catalog (`translations/de/LC_MESSAGES/messages.po`) covers
+  every one of them. While auditing this, found and fixed two more spots
+  (`static/plan.js`: `renderMainDisplay()`, `static/plan-sides.js`:
+  `renderSidesSection()`) that interpolated a recipe/category name
+  straight into `innerHTML` without the app's own `escapeHtml()` -
+  the same stored-XSS pattern already fixed once in `create_week.js`.
+
+- **Authelia-based authentication.** This app no longer has its own login/
+  registration/password (see `services/auth.py` module docstring) - it
+  runs behind Authelia as a forward-auth check in front of the reverse
+  proxy (SWAG/nginx on the home server), which attaches the authenticated
+  identity to every request via `Remote-Email`/`Remote-Name` headers.
+  `current_user()` auto-provisions a `User` row the first time a given
+  email is seen and keeps the display name in sync on every request.
+  `User.password_hash` was dropped entirely (`migrations.py:
+  _migrate_drop_user_password_hash_column()`). This retires two of the
+  three items previously listed below under "waiting on real email
+  delivery" - password reset and email verification are now Authelia's
+  problem, not this app's.
 
 ## Waiting on real email delivery
 
@@ -239,12 +291,3 @@ there - no SMTP credentials in place yet).
    actual invite email (`send_invite_email()`) is only logged and
    additionally shown as a copyable link on the sharing page (see
    `templates/sharing.html`: "Pending invites").
-2. **Password reset via email.** There is currently no "forgot password"
-   feature - a forgotten password can't be reset anywhere by yourself.
-   Would need a time-limited reset link sent by email (analogous to the
-   invite-link mechanism).
-3. **Email verification on registration.** `routes/auth.py: register()`
-   currently only checks the entered address for rough shape
-   (`services/auth.py: EMAIL_PATTERN`), not actual deliverability - a
-   confirmation link wouldn't be worth implementing without real email
-   delivery.

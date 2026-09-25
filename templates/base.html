@@ -97,6 +97,92 @@
         window.SHOPPING_UNCATEGORIZED = {{ shopping_uncategorized | tojson }};
     </script>
 
+    {# User-facing strings referenced from static/*.js (alert()/confirm()
+       text, status labels, button titles) - Flask-Babel only extracts
+       msgids from .py/.html files (see babel.cfg), so these are routed
+       through this one JSON blob instead of being hardcoded English in
+       the JS itself (see IDEAS.md: "Known gaps" - this closes that gap).
+       Keyed by a short, stable name rather than the English text itself,
+       so a later wording tweak here doesn't silently orphan the German
+       translation. #}
+    <script>
+        window.I18N = {
+            note_prefix: {{ _('Note:') | tojson }},
+            day_planned: {{ _('Planned') | tojson }},
+            day_fill_automatically: {{ _('Fill automatically') | tojson }},
+            day_excluded: {{ _('Excluded') | tojson }},
+            no_side_dish: {{ _('No side dish') | tojson }},
+            exclude_day_title: {{ _('Exclude this day from planning') | tojson }},
+            include_day_title: {{ _('Include this day in planning again') | tojson }},
+            no_free_day: {{ _('No free day left!') | tojson }},
+            could_not_set_alias: {{ _('Could not set alias.') | tojson }},
+            could_not_save_nutrition: {{ _('Could not save nutrition data.') | tojson }},
+            could_not_save_servings: {{ _('Could not save number of servings.') | tojson }},
+            remove_item_title: {{ _('Remove item') | tojson }},
+            add_to_shopping_list_title: {{ _('Add to shopping list') | tojson }},
+            importing: {{ _('Importing...') | tojson }},
+            imported_success: {{ _('✓ Imported - please choose a category and check all details.') | tojson }},
+            no_dishes_planned: {{ _('No dishes in the plan yet.') | tojson }},
+            no_ingredients_needed: {{ _('No ingredients needed for this week.') | tojson }},
+            no_spices_planned: {{ _('No spices/consumables planned this week.') | tojson }},
+            no_ingredients_on_file: {{ _('No ingredients on file.') | tojson }},
+            instructions_heading: {{ _('📝 Instructions') | tojson }},
+            open_source_link: {{ _('🔗 Open source') | tojson }},
+            per_serving: {{ _('(per serving)') | tojson }},
+            adding_failed: {{ _('Adding failed.') | tojson }},
+            removing_failed: {{ _('Removing failed.') | tojson }},
+            moving_failed: {{ _('Moving failed.') | tojson }},
+            swap_failed: {{ _('Swap failed.') | tojson }},
+            could_not_be_saved: {{ _('Could not be saved.') | tojson }},
+            selection_failed: {{ _('Selection failed.') | tojson }},
+            import_failed: {{ _('Import failed.') | tojson }},
+            no_alternative_recipe_available: {{ _('No alternative recipe available.') | tojson }},
+            no_side_dish_available: {{ _('No side dish available.') | tojson }},
+            no_alternative_available: {{ _('No alternative available.') | tojson }},
+            show_details_title: {{ _('Show details') | tojson }},
+            reroll_this_day_title: {{ _('Re-roll this day') | tojson }},
+            select_different_recipe_title: {{ _('Select a different recipe') | tojson }},
+            select_recipe_label: {{ _('✏️ Select recipe') | tojson }},
+            servings_label: {{ _('👥 Servings') | tojson }},
+            excluded_from_planning: {{ _('🚫 Excluded from planning') | tojson }},
+            no_matching_recipe_available: {{ _('No matching recipe available') | tojson }},
+            ingredients_word: {{ _('Ingredients') | tojson }},
+            ingredient_singular: {{ _('ingredient') | tojson }},
+            ingredient_plural: {{ _('ingredients') | tojson }},
+            servings_word: {{ _('servings') | tojson }},
+            untitled_recipe: {{ _('Untitled recipe') | tojson }},
+            cancel_label: {{ _('Cancel') | tojson }},
+            search_placeholder_side: {{ _('Search side dish...') | tojson }},
+            search_placeholder_recipe: {{ _('Search recipe...') | tojson }},
+            reroll_side_title: {{ _('Reroll this side dish') | tojson }},
+            choose_different_side_title: {{ _('Choose a different side dish') | tojson }},
+            remove_side_title: {{ _('Remove side dish') | tojson }},
+            choose_side_title: {{ _('Choose a side dish') | tojson }},
+            roll_side_dish_label: {{ _('Roll a side dish') | tojson }},
+            new_ingredient_placeholder: {{ _('New ingredient...') | tojson }},
+            amount_placeholder: {{ _('Amount') | tojson }},
+            unit_placeholder: {{ _('Unit') | tojson }},
+            shopping_list_category_title: {{ _('Shopping list category') | tojson }},
+            pantry_item_title: {{ _('Pantry item (not on the weekly shopping list)') | tojson }},
+            remove_ingredient_title: {{ _('Remove ingredient') | tojson }},
+            category_other_label: {{ _('Other') | tojson }},
+            grouped_as_label: {{ _('grouped as') | tojson }},
+            base_ingredient_label: {{ _('🧺 Base ingredient') | tojson }},
+            example_for_label: {{ _('e.g. for') | tojson }},
+            set_alias_placeholder: {{ _('Set alias, e.g. Pasta') | tojson }},
+            set_button_label: {{ _('Set') | tojson }},
+            no_nutrition_data_for: {{ _('⚠️ No nutrition data on file for') | tojson }},
+            reference_label: {{ _('Reference') | tojson }},
+            per_100g_option: {{ _('per 100 g') | tojson }},
+            per_100ml_option: {{ _('per 100 ml') | tojson }},
+            per_1pc_option: {{ _('per 1 pc') | tojson }},
+            protein_g_label: {{ _('Protein (g)') | tojson }},
+            carbs_g_label: {{ _('Carbs (g)') | tojson }},
+            fat_g_label: {{ _('Fat (g)') | tojson }},
+            save_nutrition_data_label: {{ _('Save nutrition data') | tojson }},
+        };
+    </script>
+
     {# 1. Local Bootstrap CSS (as a file in the static folder, not loaded
        via CDN) - the app should also work entirely without internet
        access on the home network. #}
@@ -202,10 +288,15 @@
                 {% if nav_current_user %}
                 <div class="theme-row d-flex justify-content-between align-items-center">
                     <span class="lbl">👤 {{ nav_current_user.name }}</span>
-                    <form method="POST" action="{{ url_for('auth.logout') }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">{{ _('Log Out') }}</button>
-                    </form>
+                    {# This app no longer manages its own login session (see
+                       services/auth.py module docstring) - "logging out"
+                       can only mean ending the Authelia session itself, so
+                       this link only appears when AUTHELIA_LOGOUT_URL is
+                       actually configured (see app.py:
+                       inject_current_user_and_plans()). #}
+                    {% if nav_authelia_logout_url %}
+                    <a href="{{ nav_authelia_logout_url }}" class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.78rem;">{{ _('Log Out') }}</a>
+                    {% endif %}
                 </div>
                 {% endif %}
                 <div class="theme-row"><span class="lbl">🎨 {{ _('Appearance') }}</span></div>

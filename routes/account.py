@@ -1,16 +1,17 @@
-"""Profile management for the logged-in user (/manage/account): change own
-name/email address, change password, delete account.
+"""Self-service management of the logged-in user's own account
+(/manage/account): change the UI language, delete the account. Name/email
+are no longer editable here - they're synced from Authelia on every
+request (see services/auth.py: current_user()) - and there's no password
+to change or confirm anymore (see services/auth.py module docstring).
 
-No flash-messaging system in this app (see templates/login.html: the same
-re-render-with-error pattern for invalid forms) - success/error of each of
-the three actions is therefore passed directly into the re-render of
-account.html, instead of redirecting after the POST."""
+No flash-messaging system in this app - success/error is passed directly
+into the re-render of account.html, instead of redirecting after the
+POST."""
 
-from flask import Blueprint, redirect, render_template, request, session, url_for
-from flask_babel import gettext as _
+from flask import Blueprint, redirect, render_template, request, url_for
 
-from services.accounts import delete_account, update_password, update_profile
-from services.auth import current_user, verify_password
+from services.accounts import delete_account, update_language
+from services.auth import current_user
 
 account_bp = Blueprint('account', __name__)
 
@@ -20,43 +21,27 @@ def account_view():
     return render_template('account.html', user=current_user())
 
 
-@account_bp.route('/manage/account/profile', methods=['POST'])
-def update_profile_route():
+@account_bp.route('/manage/account/language', methods=['POST'])
+def update_language_route():
     user = current_user()
-    ok, error = update_profile(
-        user, request.form.get('name'), request.form.get('email'), request.form.get('language')
-    )
-    return render_template('account.html', user=user, profile_error=error, profile_success=ok)
-
-
-@account_bp.route('/manage/account/password', methods=['POST'])
-def update_password_route():
-    """The new/confirm-new-password match check happens here rather than
-    in services/accounts.py: update_password() - it's a pure form-input
-    concern (two fields that must agree), not a business rule about the
-    account itself, and keeping it here avoids changing that function's
-    signature/tests for something callers other than this one form don't
-    need to care about."""
-    user = current_user()
-    new_password = request.form.get('new_password')
-    if new_password != request.form.get('confirm_new_password'):
-        return render_template('account.html', user=user, password_error=_('Passwords do not match.'))
-    ok, error = update_password(user, request.form.get('current_password'), new_password)
-    return render_template('account.html', user=user, password_error=error, password_success=ok)
+    ok, error = update_language(user, request.form.get('language'))
+    return render_template('account.html', user=user, language_error=error, language_success=ok)
 
 
 @account_bp.route('/manage/account/delete', methods=['POST'])
 def delete_account_route():
-    """Deletes the user's own account irrevocably (services/accounts.py:
-    delete_account()) - requires entering the CURRENT password in addition
-    to the confirmation modal (templates/account.html), so that a single
-    click on an otherwise still-open session isn't enough. Afterward
-    clears the session entirely (the user no longer exists) and redirects
-    to the login page."""
-    user = current_user()
-    if not verify_password(user, request.form.get('password') or ''):
-        return render_template('account.html', user=user, delete_error=_('Password is incorrect.'))
+    """Deletes the user's own Speiseplan data irrevocably
+    (services/accounts.py: delete_account()) - the confirmation modal
+    (templates/account.html) is the only safeguard now; there's no
+    password left to additionally require (Authelia already gated access
+    to this page in the first place).
 
-    delete_account(user)
-    session.clear()
-    return redirect(url_for('auth.login'))
+    Doesn't (and can't) actually log the person out: identity comes from
+    Authelia on every request (see services/auth.py module docstring), so
+    the very next request - including the redirect target below -
+    auto-provisions a brand new, empty User row for the same email again.
+    "Delete account" therefore really means "wipe my plans/recipes/
+    settings and start over", not "close my account" - closing the actual
+    account is Authelia's job, not this app's."""
+    delete_account(current_user())
+    return redirect(url_for('plan.index'))

@@ -545,6 +545,39 @@ def test_delete_recipe_unknown_id_returns_404(client):
     assert resp.status_code == 404
 
 
+def test_delete_recipe_clears_dangling_plan_references(client, app, make_recipe):
+    """A deleted recipe must not leave a dangling main_recipe_id/side-dish
+    row behind (see routes/recipes/crud.py: delete_recipe() docstring) -
+    the day should simply fall back to "no main dish assigned" and any
+    PlanDaySide row for it should disappear instead of pointing at a
+    recipe that no longer exists."""
+    from datetime import date
+
+    from models import PlanDay, PlanDaySide, db
+
+    main_id = make_recipe("Hauptgericht")
+    side_id = make_recipe("Beilage", is_side_dish=True)
+
+    with app.app_context():
+        day = PlanDay(plan_id=client.plan_id, date=date(2026, 1, 2), main_recipe_id=main_id, cooked=True)
+        db.session.add(day)
+        db.session.flush()
+        db.session.add(PlanDaySide(plan_day_id=day.id, recipe_id=side_id))
+        db.session.commit()
+        day_id = day.id
+
+    resp = client.post(f"/delete-recipe/{main_id}", follow_redirects=True)
+    assert resp.status_code == 200
+    resp = client.post(f"/delete-recipe/{side_id}", follow_redirects=True)
+    assert resp.status_code == 200
+
+    with app.app_context():
+        day = db.session.get(PlanDay, day_id)
+        assert day.main_recipe_id is None
+        assert day.cooked is False
+        assert PlanDaySide.query.filter_by(plan_day_id=day_id).count() == 0
+
+
 @patch("routes.recipes.crud.fetch_recipe_from_url")
 def test_import_recipe_preview_success(mock_fetch, client):
     mock_fetch.return_value = {"name": "Importiert", "servings": 4, "ingredients": []}

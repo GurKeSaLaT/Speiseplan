@@ -1,5 +1,7 @@
-"""Tests for routes/account.py: /manage/account (change profile/password,
-delete account)."""
+"""Tests for routes/account.py: /manage/account (change UI language,
+delete account) - name/email are read-only now (synced from Authelia, see
+services/auth.py: current_user()) and there's no password anymore (see
+services/auth.py module docstring)."""
 
 
 def test_account_view_reachable(client):
@@ -8,92 +10,45 @@ def test_account_view_reachable(client):
     assert b"Testnutzer" in resp.data
 
 
-def test_update_profile_shows_success(app, client):
-    resp = client.post(
-        "/manage/account/profile", data={"name": "Neuer Name", "email": "neu@test.local", "language": "en"}
-    )
+def test_update_language_route_shows_success(client):
+    # Stays "en" here so the success message itself (rendered in the
+    # NEW, just-saved language, see app.py: get_locale()) is checked in
+    # English - test_update_language_route_changes_language below covers
+    # an actual language change without depending on the message text.
+    resp = client.post("/manage/account/language", data={"language": "en"})
     assert resp.status_code == 200
     assert "Profile updated.".encode("utf-8") in resp.data
 
-    from models import User
+
+def test_update_language_route_changes_language(app, client):
+    resp = client.post("/manage/account/language", data={"language": "de"})
+    assert resp.status_code == 200
+
+    from models import User, db
     with app.app_context():
-        assert User.query.get(client.user_id).name == "Neuer Name"
+        assert db.session.get(User, client.user_id).language == "de"
 
 
-def test_update_profile_shows_error_on_duplicate_email(app, client, make_user):
-    from models import User
+def test_update_language_route_rejects_invalid_language(app, client):
+    resp = client.post("/manage/account/language", data={"language": "fr"})
+    assert resp.status_code == 200
+    assert "Please choose a valid language.".encode("utf-8") in resp.data
 
-    _, _ = make_user("Andere")
+    from models import User, db
     with app.app_context():
-        other_email = User.query.filter_by(name="Andere").first().email
-
-    resp = client.post(
-        "/manage/account/profile", data={"name": "X", "email": other_email, "language": "en"}
-    )
-    assert resp.status_code == 200
-    assert "already exists".encode("utf-8") in resp.data
+        assert db.session.get(User, client.user_id).language == "en"
 
 
-def test_update_profile_route_changes_language(app, client):
-    resp = client.post(
-        "/manage/account/profile", data={"name": "X", "email": "x@test.local", "language": "de"}
-    )
-    assert resp.status_code == 200
-    from models import User
-    with app.app_context():
-        assert User.query.get(client.user_id).language == "de"
-
-
-def test_update_password_shows_success(client):
-    resp = client.post("/manage/account/password", data={"current_password": "test", "new_password": "neuespw123", "confirm_new_password": "neuespw123"})
-    assert resp.status_code == 200
-    assert "Password changed.".encode("utf-8") in resp.data
-
-
-def test_update_password_rejects_mismatched_confirmation(app, client):
-    resp = client.post("/manage/account/password", data={"current_password": "test", "new_password": "neuespw123", "confirm_new_password": "andereswort"})
-    assert resp.status_code == 200
-    assert "Passwords do not match.".encode("utf-8") in resp.data
-
-    from models import User
-    from services.auth import verify_password
-    with app.app_context():
-        # Unchanged - the old password still verifies.
-        assert verify_password(User.query.get(client.user_id), "test")
-
-
-def test_update_password_shows_error_on_wrong_current(client):
-    resp = client.post("/manage/account/password", data={"current_password": "falsch", "new_password": "neuespw123", "confirm_new_password": "neuespw123"})
-    assert resp.status_code == 200
-    assert "Current password is incorrect.".encode("utf-8") in resp.data
-
-
-def test_delete_account_requires_correct_password(app, client):
-    resp = client.post("/manage/account/delete", data={"password": "falsch"})
-    assert resp.status_code == 200
-    assert "Password is incorrect.".encode("utf-8") in resp.data
-
-    from models import User
-    with app.app_context():
-        assert User.query.get(client.user_id) is not None
-
-
-def test_delete_account_with_correct_password_logs_out(app, client):
-    resp = client.post("/manage/account/delete", data={"password": "test"}, follow_redirects=False)
+def test_delete_account_removes_user(app, client):
+    resp = client.post("/manage/account/delete", follow_redirects=False)
     assert resp.status_code == 302
-    assert resp.headers["Location"].endswith("/login")
 
-    from models import User
+    from models import User, db
     with app.app_context():
-        assert User.query.get(client.user_id) is None
-
-    # Session is cleared - a protected route redirects to /login again.
-    resp = client.get("/manage")
-    assert resp.status_code == 302
-    assert "/login" in resp.headers["Location"]
+        assert db.session.get(User, client.user_id) is None
 
 
-def test_account_reachable_without_any_plan(app, make_user):
+def test_account_reachable_without_any_plan(app, make_user, login_as):
     """The zero-plan gate (app.py: require_login) must not block the
     profile page - a user without any plan membership still has to be
     able to manage/delete their account."""
@@ -104,8 +59,5 @@ def test_account_reachable_without_any_plan(app, make_user):
         PlanMembership.query.filter_by(user_id=user_id).delete()
         db.session.commit()
 
-    test_client = app.test_client()
-    with test_client.session_transaction() as sess:
-        sess['user_id'] = user_id
-    resp = test_client.get("/manage/account")
+    resp = login_as(user_id).get("/manage/account")
     assert resp.status_code == 200

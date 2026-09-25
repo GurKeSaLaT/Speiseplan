@@ -71,18 +71,18 @@ class PlanMembership(db.Model):
 
 
 class PendingPlanInvite(db.Model):
-    """A plan invite sent by email to an address that is NOT YET
-    registered (see routes/sharing.py: invite_member() - for an email
-    that already exists, a real PlanMembership is created immediately
-    instead, no row here).
+    """A plan invite sent by email to an address with no User row yet
+    (see routes/sharing.py: invite_member() - for an email that already
+    exists, a real PlanMembership is created immediately instead, no row
+    here).
 
-    If someone later registers with exactly this email (lowercased, see
-    routes/auth.py: register()), the invite is automatically converted
-    into a real PlanMembership and this row is deleted in the process
-    (services/plans.py: accept_pending_invites()) - until then it stays
-    here as a visible "pending" entry on /manage/sharing (including a
-    re-fetchable invite link, since real email sending isn't wired up
-    yet, see services/mail.py)."""
+    If that email later authenticates via Authelia for the first time
+    (lowercased, see services/auth.py: current_user()), the invite is
+    automatically converted into a real PlanMembership and this row is
+    deleted in the process (services/plans.py: accept_pending_invites()) -
+    until then it stays here as a visible "pending" entry on
+    /manage/sharing (including a re-fetchable link to the app itself,
+    since real email sending isn't wired up yet, see services/mail.py)."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     email = db.Column(db.String(255), nullable=False, index=True)

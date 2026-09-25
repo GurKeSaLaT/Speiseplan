@@ -1,9 +1,13 @@
-"""Self-service management of the user's own account (change profile, change
-password, delete account) - see routes/account.py for the associated routes.
+"""Self-service management of the user's own account (change UI language,
+delete account) - see routes/account.py for the associated routes.
 
-Unlike services/auth.py (login/session/active plan) and services/plans.py
-(the lifecycle of A SINGLE plan), this module is about the user themselves
-as an object that can be changed or dissolved entirely.
+Unlike services/auth.py (identity/session/active plan) and
+services/plans.py (the lifecycle of A SINGLE plan), this module is about
+the user themselves as an object that can be changed or dissolved
+entirely. Name/email are no longer changeable here - they're synced from
+Authelia on every request instead (see services/auth.py: current_user())
+- and there's no password to change anymore (see services/auth.py module
+docstring).
 """
 
 # lazy_gettext (not gettext): this module's functions are also called
@@ -13,52 +17,24 @@ as an object that can be changed or dissolved entirely.
 # the string is actually rendered/stringified, so it works either way.
 from flask_babel import lazy_gettext as _l
 
-from models import PlanMembership, User, db
-from services.auth import EMAIL_PATTERN, hash_password, verify_password
+from models import PlanMembership, db
 from services.plans import delete_plan
 
 # The languages this app ships a UI for (see app.py: get_locale()) - kept
 # here rather than in models/user.py since it's a validation concern of the
-# profile form, not part of the User schema itself.
+# language form, not part of the User schema itself.
 SUPPORTED_LANGUAGES = ('en', 'de')
 
 
-def update_profile(user, name, email, language):
-    """Changes name (a free-form display name, no uniqueness required, see
-    models/user.py: User docstring), email (the LOGIN field, so it must still be
-    unique and roughly valid) and the UI language (User.language, see
-    app.py: get_locale()). Returns (True, None) on success, otherwise
-    (False, error text) - only commits on success."""
-    name = (name or '').strip()
-    email = (email or '').strip().lower()
-    if not name or not email:
-        return False, _l('Please provide a name and email address.')
-    if not EMAIL_PATTERN.match(email):
-        return False, _l('Please provide a valid email address.')
-    existing = User.query.filter(User.email == email, User.id != user.id).first()
-    if existing is not None:
-        return False, _l('Another account already exists for this email address.')
+def update_language(user, language):
+    """Changes the UI language (User.language, see app.py: get_locale()) -
+    the only account setting left that's actually an app-level preference
+    rather than an Authelia-owned identity fact. Returns (True, None) on
+    success, otherwise (False, error text) - only commits on success."""
     if language not in SUPPORTED_LANGUAGES:
         return False, _l('Please choose a valid language.')
 
-    user.name = name
-    user.email = email
     user.language = language
-    db.session.commit()
-    return True, None
-
-
-def update_password(user, current_password, new_password):
-    """Requires (unlike update_profile() above) the CURRENT password - a
-    simple safeguard against a hijacked but still logged-in session (e.g.
-    on a shared device), which could otherwise take over the account
-    without any further hurdle."""
-    if not verify_password(user, current_password or ''):
-        return False, _l('Current password is incorrect.')
-    if not new_password:
-        return False, _l('Please provide a new password.')
-
-    user.password_hash = hash_password(new_password)
     db.session.commit()
     return True, None
 

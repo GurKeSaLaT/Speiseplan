@@ -8,7 +8,11 @@ __pycache__/
 .venv/
 venv/
 
-# SQLite runtime files (the actual speiseplan.db stays version-controlled)
+# SQLite runtime files, AND the database itself: speiseplan.db is no
+# longer version-controlled (see fixtures/demo_data.json +
+# services/demo_seed.py instead) - a real deployment's actual data must
+# never be able to end up committed here by accident.
+instance/*.db
 instance/*.db-journal
 instance/*.db-wal
 instance/*.db-shm

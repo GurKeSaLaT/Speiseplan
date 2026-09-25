@@ -174,6 +174,46 @@ def set_main_day(day_date):
     return jsonify_recipe(recipe, plan.id)
 
 
+@plan_bp.route('/day/<day_date>/toggle-exclude', methods=['POST'])
+def toggle_day_exclusion(day_date):
+    """AJAX endpoint behind the 🚫 button on an ALREADY-CREATED plan day
+    (templates/plan.html) - toggles PlanDay.excluded for exactly this
+    calendar day. Previously this flag could only be set while first
+    creating a week (services/week_generation.py, templates/
+    create_week.html), with no way to exclude (or re-include) a day
+    afterward once the week already existed - this closes that gap.
+
+    Excluding a day also clears its main dish, mirroring
+    static/create_week.js: toggleExcludeDay()'s client-side behavior for
+    the same reason: an excluded day shouldn't keep displaying one. Side
+    dishes are deliberately left untouched - "excluded" has only ever
+    applied to the main dish (see models/calendar.py: PlanDay docstring).
+    Re-including a day leaves it without a main dish, exactly like a
+    freshly created, not-yet-filled day - the user can then roll or
+    manually pick one via the now-visible 🎲/✏️ buttons.
+
+    Creates the PlanDay row on demand if it doesn't exist yet (same
+    pattern as set_main_day() above) - a day that was never touched
+    before still needs a row to persist "excluded" against.
+    """
+    target_date = parse_iso_date(day_date)
+    if target_date is None:
+        return {"error": _("Invalid date")}, 400
+    plan = current_plan()
+
+    plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=target_date).first()
+    if not plan_day:
+        plan_day = PlanDay(plan_id=plan.id, date=target_date, servings=2)
+        db.session.add(plan_day)
+
+    plan_day.excluded = not plan_day.excluded
+    if plan_day.excluded:
+        plan_day.main_recipe_id = None
+        plan_day.cooked = False
+    db.session.commit()
+    return {"excluded": plan_day.excluded}
+
+
 @plan_bp.route('/day/<day_date>/servings', methods=['POST'])
 def set_day_servings(day_date):
     """AJAX endpoint for the servings input field on a day card: saves

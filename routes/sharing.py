@@ -80,7 +80,11 @@ def invite_member():
         if not PendingPlanInvite.query.filter_by(plan_id=plan.id, email=email).first():
             db.session.add(PendingPlanInvite(plan_id=plan.id, email=email))
             db.session.commit()
-        send_invite_email(email, plan.name, url_for('auth.register', email=email, _external=True))
+        # No registration step to link to anymore (see services/auth.py
+        # module docstring) - the invite is applied automatically the
+        # moment this email first authenticates via Authelia, so all
+        # there is to "send" is a pointer to the app itself.
+        send_invite_email(email, plan.name, url_for('plan.index', _external=True))
 
     return redirect(url_for('sharing.sharing_view'))
 

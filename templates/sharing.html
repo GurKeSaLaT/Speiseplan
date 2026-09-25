@@ -33,7 +33,7 @@
                     <input type="email" name="email" class="form-control" placeholder="{{ _('Email address') }}" required>
                     <button type="submit" class="btn btn-success fw-bold text-nowrap">{{ _('Invite') }}</button>
                 </form>
-                <div class="form-text">{{ _('If an account already exists for it, the plan is shared immediately. Otherwise a registration invite is "sent" (see below) - invited users have full access to this plan, same as an owner.') }}</div>
+                <div class="form-text">{{ _('If an account already exists for it, the plan is shared immediately. Otherwise the invite applies automatically the moment that email first signs in via Authelia (see below) - invited users have full access to this plan, same as an owner.') }}</div>
 
                 {% if pending_invites %}
                 <h6 class="fw-bold text-muted mb-2 mt-4">{{ _('Pending invites') }}</h6>
@@ -47,8 +47,8 @@
                                 <button type="submit" class="btn btn-sm btn-outline-secondary">{{ _('Withdraw') }}</button>
                             </form>
                         </div>
-                        {# No real email sending yet (services/mail.py) - the link is therefore shown here directly to copy/forward. #}
-                        <input type="text" class="form-control form-control-sm mt-1" readonly onclick="this.select()" value="{{ url_for('auth.register', email=invite.email, _external=True) }}">
+                        {# No real email sending yet (services/mail.py) - the link is therefore shown here directly to copy/forward. Just the app itself: there's no registration step anymore, opening it while signed into Authelia with this email is enough. #}
+                        <input type="text" class="form-control form-control-sm mt-1" readonly onclick="this.select()" value="{{ url_for('plan.index', _external=True) }}">
                     </div>
                     {% endfor %}
                 </div>

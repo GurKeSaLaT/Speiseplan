@@ -30,6 +30,17 @@ const searchInput = document.getElementById('searchInput');
 const searchResults = document.getElementById('searchResults');
 const searchItems = document.querySelectorAll('.search-item');
 
+/** Escapes text for safe embedding in innerHTML (recipe names are free-form
+ * user input, also filled in by the recipe import from external sites) -
+ * same implementation as static/plan.js: escapeHtml(). Kept local here
+ * rather than a shared <script> include, consistent with how this file is
+ * already deliberately self-contained (see module docstring above). */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Prevents one and the same recipe from being permanently assigned to two
 // different days at the same time: already-assigned IDs are hidden from
 // the live search (see search filter below). Main dish and side dish
@@ -136,7 +147,7 @@ searchItems.forEach(item => {
           !zone.classList.contains('excluded') && zone.querySelector('.draggable-recipe-card') === null
         );
         if (!freeZone) {
-          alert("No free day left!");
+          alert(window.I18N.no_free_day);
           searchInput.value = '';
           searchResults.style.display = 'none';
           return;
@@ -159,7 +170,7 @@ function assignRecipeToZone(zoneElement, id, name, category) {
     const statusText = zoneElement.querySelector('.slot-status');
     const dayIndex = zoneElement.getAttribute('data-day-index');
     assignedRecipeIds.add(id);
-    statusText.textContent = "Planned";
+    statusText.textContent = window.I18N.day_planned;
     statusText.classList.remove('text-muted');
     statusText.classList.add('text-dark', 'fw-bold');
 
@@ -177,7 +188,7 @@ function assignRecipeToZone(zoneElement, id, name, category) {
     card.setAttribute('data-category', category);
     card.ondragstart = dragStart;
     card.innerHTML = `
-        <span class="name">${name}</span>
+        <span class="name">${escapeHtml(name)}</span>
         <button type="button" class="x" onclick="removeRecipeFromZone('${id}', '${dayIndex}')" aria-label="Remove">✕</button>
     `;
     slotContainer.innerHTML = '';
@@ -193,7 +204,7 @@ function removeRecipeFromZone(id, dayIndex) {
     if (zone) {
       zone.querySelector('.recipe-slot-container').innerHTML = '';
       const statusText = zone.querySelector('.slot-status');
-      statusText.textContent = "Fill automatically";
+      statusText.textContent = window.I18N.day_fill_automatically;
       statusText.classList.remove('text-dark', 'fw-bold');
       statusText.classList.add('text-muted');
     }
@@ -228,7 +239,7 @@ function assignSideToZone(zoneElement, id, name, category) {
     chip.setAttribute('id', 'side-card-' + id);
     chip.setAttribute('data-id', id);
     chip.innerHTML = `
-        <span class="text-truncate">🥗 ${name}</span>
+        <span class="text-truncate">🥗 ${escapeHtml(name)}</span>
         <button type="button" class="x" onclick="removeSideFromZone('${id}', '${dayIndex}')" aria-label="Remove">✕</button>
     `;
     sideContainer.appendChild(chip);
@@ -255,7 +266,7 @@ function removeSideFromZone(id, dayIndex) {
     const zone = document.getElementById('day-zone-' + dayIndex);
     const sideContainer = zone && zone.querySelector('.side-slot-container');
     if (sideContainer && sideContainer.children.length === 0) {
-        sideContainer.innerHTML = '<span class="no-side no-side-placeholder">No side dish</span>';
+        sideContainer.innerHTML = `<span class="no-side no-side-placeholder">${escapeHtml(window.I18N.no_side_dish)}</span>`;
     }
 }
 
@@ -272,9 +283,9 @@ function clearAllDays() {
     assignedSideRecipeIds.clear();
     document.querySelectorAll('.day-dropzone').forEach(zone => {
       zone.querySelector('.recipe-slot-container').innerHTML = '';
-      zone.querySelector('.side-slot-container').innerHTML = '<span class="no-side no-side-placeholder">No side dish</span>';
+      zone.querySelector('.side-slot-container').innerHTML = `<span class="no-side no-side-placeholder">${escapeHtml(window.I18N.no_side_dish)}</span>`;
       const statusText = zone.querySelector('.slot-status');
-      statusText.textContent = "Fill automatically";
+      statusText.textContent = window.I18N.day_fill_automatically;
       statusText.classList.remove('text-dark', 'fw-bold');
       statusText.classList.add('text-muted');
       const dayIndex = zone.getAttribute('data-day-index');
@@ -303,12 +314,12 @@ function toggleExcludeDay(dayIndex) {
       zone.classList.remove('excluded');
       excludedInput.value = '0';
       excludedDays.delete(parseInt(dayIndex));
-      statusText.textContent = "Fill automatically";
+      statusText.textContent = window.I18N.day_fill_automatically;
       statusText.classList.remove('text-dark', 'fw-bold');
       statusText.classList.add('text-muted');
       excludeBtn.classList.remove('btn-danger');
       excludeBtn.classList.add('btn-outline-secondary');
-      excludeBtn.title = "Exclude this day from planning";
+      excludeBtn.title = window.I18N.exclude_day_title;
     } else {
       const existingCard = zone.querySelector('.draggable-recipe-card');
       if (existingCard) {
@@ -317,12 +328,12 @@ function toggleExcludeDay(dayIndex) {
       zone.classList.add('excluded');
       excludedInput.value = '1';
       excludedDays.add(parseInt(dayIndex));
-      statusText.textContent = "Excluded";
+      statusText.textContent = window.I18N.day_excluded;
       statusText.classList.remove('text-muted');
       statusText.classList.add('text-dark', 'fw-bold');
       excludeBtn.classList.remove('btn-outline-secondary');
       excludeBtn.classList.add('btn-danger');
-      excludeBtn.title = "Include this day in planning again";
+      excludeBtn.title = window.I18N.include_day_title;
     }
 }
 

@@ -17,36 +17,75 @@ top returns seeded_plans_by_username, threaded through as a parameter to
 every step that needs it.
 """
 
+import re
+
 from sqlalchemy import text
 
 from models import db, ExtraShoppingItem, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
-from services.auth import hash_password
 from services.plans import seed_default_categories
 from services.planning import friday_of
 from services.seasons import SEASON_PRESETS
 from services.units import renormalize_existing_ingredients
 
+# _add_plan_id_column()/_add_plan_id_with_rebuild() below take a table/
+# column name as a plain Python parameter and interpolate it into raw SQL
+# via an f-string, since SQLite's DDL statements don't support bind
+# parameters for identifiers (only for values). Every CALL site in this
+# file passes a hardcoded literal, never anything derived from user
+# input - but that's an invariant of how the functions happen to be used
+# today, not something enforced by the functions themselves. _identifier()
+# below is a cheap, permanent guardrail against that assumption quietly
+# becoming false later (a copy-pasted call site, a future refactor that
+# threads a variable through) - it fails loudly at startup instead of
+# silently building unexpected SQL.
+_VALID_IDENTIFIER = re.compile(r'^[a-z_][a-z0-9_]*$')
+
+
+def _identifier(name):
+    """Validates a single table/column name against a strict snake_case
+    allowlist before it's allowed into an f-string SQL fragment - raises
+    ValueError instead of proceeding if it doesn't match exactly (no
+    quoting/escaping attempted, since a legitimate identifier here never
+    needs any)."""
+    if not _VALID_IDENTIFIER.match(name):
+        raise ValueError(f"Refusing to build SQL with unsafe identifier: {name!r}")
+    return name
+
+
+def _identifier_list(csv_names):
+    """Like _identifier() above, but for a comma-separated list of column
+    names (see _add_plan_id_with_rebuild(): copy_columns) - validates each
+    one individually."""
+    for part in csv_names.split(','):
+        _identifier(part.strip())
+    return csv_names
+
 
 def _legacy_plan(seeded_plans_by_username):
-    """The plan that inherits all pre-existing, not-yet-plan-scoped data:
-    Nutzer1's freshly seeded plan on a brand new database (see
-    _seed_demo_accounts()), or otherwise the oldest existing plan on a
-    database that already had data before plans existed at all."""
+    """The plan that inherits all pre-existing, not-yet-plan-scoped data.
+    seeded_plans_by_username is always {} now (this app no longer seeds
+    any demo accounts of its own, see init_db() below) - kept as a
+    parameter purely so the plan-scoping migration steps below don't need
+    to change, since they were written for it. In practice this always
+    resolves to the oldest existing plan on a database that already had
+    data before plans existed at all; on a genuinely fresh, empty database
+    there is nothing to migrate and every caller here already bails out
+    when this returns None."""
     return seeded_plans_by_username.get("Nutzer1") or Plan.query.first()
 
 
 def _rebuild_user_table_for_email_login():
-    """user.username -> user.name (no longer a login field, purely a
-    display name, from now on NOT unique) + new, unique user.email column
-    (login now goes through email, see routes/auth.py: login()). The old
-    inline UNIQUE on username (from the original CREATE TABLE) can't be
-    removed via ALTER TABLE - as with the later category/ingredient_alias
-    migrations, this requires a one-time table rebuild. Placeholder email
-    for each existing account follows the pattern <lowercase-name>@
-    example.com (e.g. "Nutzer1" -> nutzer1@example.com) - derived
-    automatically from the previous username, no special handling of
-    individual names needed; logging in with these placeholders is
-    explicitly allowed in test operation.
+    """user.username -> user.name (purely a display name, from now on NOT
+    unique) + new, unique user.email column (email became the identity
+    key - later still true once identity moved to Authelia, see
+    services/auth.py: current_user(), which matches its header against
+    exactly this column). The old inline UNIQUE on username (from the
+    original CREATE TABLE) can't be removed via ALTER TABLE - as with the
+    later category/ingredient_alias migrations, this requires a one-time
+    table rebuild. Placeholder email for each existing account follows the
+    pattern <lowercase-name>@example.com (e.g. "Nutzer1" ->
+    nutzer1@example.com) - derived automatically from the previous
+    username, no special handling of individual names needed.
     """
     existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
     if 'email' in existing_user_columns:
@@ -259,37 +298,18 @@ def _migrate_plan_day_cooked_columns():
         db.session.commit()
 
 
-def _seed_demo_accounts():
-    """--- User management: login + own/shared weekly plans ---
-    First start (not a single user exists yet): creates two generic demo
-    accounts (see models/user.py: User) so the app is directly usable
-    after a fresh clone without the versioned instance/speiseplan.db (see
-    README.md: Setup) - real registration normally goes through
-    routes/auth.py: register(). Each one immediately gets their own plan
-    (see models/plan.py: Plan/PlanMembership); ONLY Nutzer1's own plan
-    gets starred right away - it becomes the "legacy_plan" used by later
-    migration steps (see _legacy_plan()), to which the entire prior
-    planning history is assigned, and Nutzer2 gets THEIR star there too
-    (not on their own, empty plan) - this way every user consistently has
-    exactly one starred plan, and both end up on the same, already
-    existing plan after their very first login.
-
-    Returns seeded_plans_by_username ({} on an already-seeded database),
-    passed on to every later migration step that needs to know the legacy
-    plan (see _legacy_plan())."""
-    seeded_plans_by_username = {}
-    if not User.query.first():
-        for username in ("Nutzer1", "Nutzer2"):
-            user = User(name=username, email=f"{username.lower()}@example.com", password_hash=hash_password(username))
-            db.session.add(user)
-            db.session.flush()
-            plan = Plan(name=f"{username}s Plan", owner_user_id=user.id)
-            db.session.add(plan)
-            db.session.flush()
-            db.session.add(PlanMembership(plan_id=plan.id, user_id=user.id, is_starred=(username == "Nutzer1")))
-            seeded_plans_by_username[username] = plan
+def _migrate_drop_user_password_hash_column():
+    """user.password_hash removed: authentication no longer happens in
+    this app at all (see services/auth.py module docstring) - Authelia,
+    in front of the reverse proxy, owns the password entirely, and this
+    app never sees or checks one anymore. Not a foreign key and not part
+    of any constraint, so a direct DROP COLUMN works without the
+    table-rebuild detour used elsewhere in this file (analogous to
+    _migrate_drop_ingredient_nutrition_calories() below)."""
+    existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
+    if 'password_hash' in existing_user_columns:
+        db.session.execute(text("ALTER TABLE user DROP COLUMN password_hash"))
         db.session.commit()
-    return seeded_plans_by_username
 
 
 def _migrate_plan_membership_overview_column():
@@ -394,6 +414,7 @@ def _add_plan_id_column(table, column, seeded_plans_by_username, unique_index_sq
     standalone "CREATE UNIQUE INDEX" (SQLite doesn't allow a retroactive
     ALTER TABLE ... ADD CONSTRAINT, but does allow an independently
     created unique index with the same effect, without any table copy)."""
+    table, column = _identifier(table), _identifier(column)
     existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
     if column in existing_columns:
         return
@@ -429,6 +450,7 @@ def _add_plan_id_with_rebuild(table, create_new_table_sql, copy_columns, seeded_
     migration for plan_day, the table is therefore rebuilt once with the
     complete target schema (including IDs, which e.g. recipe.category_id
     still depends on)."""
+    table, copy_columns = _identifier(table), _identifier_list(copy_columns)
     existing_columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
     if 'plan_id' in existing_columns:
         return
@@ -600,6 +622,7 @@ def init_db():
 
     _rebuild_user_table_for_email_login()
     _migrate_user_language_column()
+    _migrate_drop_user_password_hash_column()
     _migrate_recipe_columns()
     _migrate_ingredient_category_column()
     _migrate_ingredient_pantry_flag()
@@ -608,7 +631,13 @@ def init_db():
     _migrate_plan_day_side_table()
     _migrate_plan_day_cooked_columns()
 
-    seeded_plans_by_username = _seed_demo_accounts()
+    # No demo accounts to seed anymore (see services/auth.py module
+    # docstring: identity now comes from Authelia, auto-provisioned on
+    # first sight by current_user()) - {} makes _legacy_plan() below fall
+    # straight back to "the oldest existing plan", which is exactly what
+    # every already-deployed database (with real, pre-existing data) still
+    # needs for the plan-scoping migrations that follow.
+    seeded_plans_by_username = {}
 
     _migrate_plan_membership_overview_column()
     _migrate_plan_day_plan_scoping(seeded_plans_by_username)
