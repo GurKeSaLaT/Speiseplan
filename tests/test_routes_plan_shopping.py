@@ -114,3 +114,59 @@ def test_delete_shopping_item_from_other_plan_returns_404(client, app, make_user
     assert resp.status_code == 404
     with app.app_context():
         assert ExtraShoppingItem.query.count() == 1
+
+
+# --- ticking off shopping-list lines ---
+
+def test_shopping_check_is_saved_and_shown_on_reload(client, app):
+    import json
+    import re
+
+    resp = client.post("/plan/2026-06-17/shopping-check", json={"key": "item:Mehl|||g", "checked": True})
+    assert resp.status_code == 200
+
+    # Saved for the week's Friday, so the week page shows it as ticked.
+    page = client.get("/plan/2026-06-12").get_data(as_text=True)
+    plan_data = json.loads(re.search(r"window\.PLAN_DATA = (\{.*?\});", page, re.S).group(1))
+    assert plan_data["checkedShoppingKeys"] == ["item:Mehl|||g"]
+
+
+def test_shopping_check_can_be_unticked_and_is_idempotent(client, app):
+    from models import ShoppingListCheck
+
+    for checked in (True, True):
+        client.post("/plan/2026-06-12/shopping-check", json={"key": "extra:1", "checked": checked})
+    with app.app_context():
+        assert ShoppingListCheck.query.count() == 1
+
+    for _ in range(2):
+        resp = client.post("/plan/2026-06-12/shopping-check", json={"key": "extra:1", "checked": False})
+        assert resp.status_code == 200
+    with app.app_context():
+        assert ShoppingListCheck.query.count() == 0
+
+
+def test_shopping_check_is_per_week(client, app):
+    import json
+    import re
+
+    client.post("/plan/2026-06-12/shopping-check", json={"key": "item:Mehl|||g", "checked": True})
+    page = client.get("/plan/2026-06-19").get_data(as_text=True)
+    plan_data = json.loads(re.search(r"window\.PLAN_DATA = (\{.*?\});", page, re.S).group(1))
+    assert plan_data["checkedShoppingKeys"] == []
+
+
+def test_shopping_check_rejects_invalid_input(client):
+    assert client.post("/plan/garbage/shopping-check", json={"key": "x", "checked": True}).status_code == 400
+    assert client.post("/plan/2026-06-12/shopping-check", json={"key": " ", "checked": True}).status_code == 400
+    assert client.post("/plan/2026-06-12/shopping-check", json={"key": "x" * 256, "checked": True}).status_code == 400
+
+
+def test_deleting_extra_item_removes_its_check(client, app):
+    from models import ShoppingListCheck
+
+    item_id = client.post("/plan/2026-06-12/shopping-item/add", json={"name": "Klopapier"}).get_json()["id"]
+    client.post("/plan/2026-06-12/shopping-check", json={"key": f"extra:{item_id}", "checked": True})
+    client.post(f"/shopping-item/{item_id}/delete")
+    with app.app_context():
+        assert ShoppingListCheck.query.count() == 0

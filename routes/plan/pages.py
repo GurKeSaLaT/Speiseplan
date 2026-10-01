@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from flask import render_template, request, redirect, url_for, abort, session
 from flask_babel import gettext as _
 
-from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem
+from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem, ShoppingListCheck
 from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.planning import DAY_NAMES, friday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
 from services.plan_summary import build_week_summary
@@ -104,6 +104,9 @@ def week_view(start_date):
         ExtraShoppingItem.query.filter_by(plan_id=active_plan.id, week_start=normalized)
         .order_by(ExtraShoppingItem.id).all()
     )
+    checked_shopping_keys = [
+        c.item_key for c in ShoppingListCheck.query.filter_by(plan_id=active_plan.id, week_start=normalized)
+    ]
 
     all_recipes = visible_recipes_query(active_plan.id).all()
 
@@ -152,6 +155,7 @@ def week_view(start_date):
             }
             for it in extra_items
         ],
+        'checkedShoppingKeys': checked_shopping_keys,
         'allRecipes': [
             {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
             for r in all_recipes

@@ -9,9 +9,9 @@ Calories are never stored, always computed from protein/carbs/fat.
 
 from collections import Counter
 
-from models import Ingredient, IngredientAlias, IngredientNutrition, db
+from models import Ingredient, IngredientAlias, IngredientNutrition, Recipe, db
 from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name, normalize_name
-from services.recipe_visibility import visible_recipe_ids_subquery
+from services.recipe_visibility import visible_recipe_ids_subquery, visible_recipes_query
 from services.units import NON_CONVERTIBLE_UNITS, normalize_amount_unit
 
 # reference_amount always follows from the unit, it is never entered.
@@ -142,3 +142,39 @@ def compute_recipe_nutrition(plan_id, ingredient_rows, servings):
         "carbs": carbs,
         "fat": fat,
     }
+
+
+def recompute_recipes_nutrition(plan_id, ingredient_names):
+    """Refreshes the stored nutrition of every recipe visible to plan_id that
+    uses one of ingredient_names (matched literally or alias-resolved).
+    Recipes only compute nutrition on save, so changing a reference or an
+    alias must call this. nutrition_override recipes keep their manual
+    values. Returns the number of recipes recomputed."""
+    names = {normalize_name(name) for name in ingredient_names}
+    aliases = get_all_aliases(plan_id)
+    rows = (
+        db.session.query(Ingredient.recipe_id, Ingredient.name)
+        .filter(Ingredient.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
+        .all()
+    )
+    affected_ids = set()
+    for recipe_id, name in rows:
+        key = normalize_name(name)
+        if key in names or aliases.get(key, key) in names:
+            affected_ids.add(recipe_id)
+    if not affected_ids:
+        return 0
+
+    recipes = (
+        visible_recipes_query(plan_id)
+        .filter(Recipe.id.in_(affected_ids), Recipe.nutrition_override.is_(False))
+        .all()
+    )
+    for recipe in recipes:
+        computed = compute_recipe_nutrition(plan_id, recipe.ingredients, recipe.servings)
+        recipe.calories = computed["calories"]
+        recipe.protein = computed["protein"]
+        recipe.carbs = computed["carbs"]
+        recipe.fat = computed["fat"]
+    db.session.commit()
+    return len(recipes)

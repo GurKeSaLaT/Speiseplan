@@ -53,6 +53,10 @@ msgstr "Zutatenname darf nicht leer sein."
 msgid "Invalid date"
 msgstr "Ungültiges Datum"
 
+#: routes/plan/shopping.py
+msgid "Invalid item"
+msgstr "Ungültiger Eintrag"
+
 #: routes/plan/day_actions.py:78
 msgid "This day is not part of a plan or is excluded from main dish planning."
 msgstr ""

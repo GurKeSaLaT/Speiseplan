@@ -69,7 +69,7 @@
                     {% if main_groups %}
                     <div class="d-flex flex-column gap-3">
                         {% for group in main_groups %}
-                        <div class="ingredient-card main-ingredient-row" data-row-key="main:{{ group.canonical_name }}" data-search="{{ group.canonical_name }} {{ group.aliases | map(attribute='name') | join(' ') }}">
+                        <div class="ingredient-card main-ingredient-row" data-row-key="main:{{ group.canonical_name }}" data-search="{{ group.canonical_name }}{% for alias in group.aliases %}&#10;{{ alias.name }}{% endfor %}">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <div class="fw-bold fs-5">{{ recipe_link(group.canonical_name, group.recipes, plan_id) }}</div>
                                 <span class="badge-count">{{ group.aliases|length }} {{ _('ingredient') if group.aliases|length == 1 else _('ingredients') }}</span>

@@ -98,3 +98,72 @@ def test_api_set_ingredient_nutrition_ignores_plan_id_without_membership(client,
     with app.app_context():
         assert get_nutrition_entry(foreign_plan_id, "Reis") is None
         assert get_nutrition_entry(client.plan_id, "Reis").protein == 3
+
+
+def _recipe_nutrition(app, recipe_id):
+    from models import Recipe, db
+
+    with app.app_context():
+        recipe = db.session.get(Recipe, recipe_id)
+        return recipe.calories, recipe.protein, recipe.carbs, recipe.fat
+
+
+def test_api_set_ingredient_nutrition_recomputes_recipes_using_it(client, app, make_recipe):
+    recipe_id = make_recipe("Reispfanne", servings=2, ingredients=[
+        {"name": "Reis", "amount": 200, "unit": "g"},
+        {"name": "Paprika", "amount": 1, "unit": "Stk"},
+    ])
+    other_id = make_recipe("Salat", servings=1, calories=50, protein=1.0, ingredients=[
+        {"name": "Gurke", "amount": 1, "unit": "Stk"},
+    ])
+
+    client.post("/api/ingredient-nutrition/set", json={
+        "name": "reis", "reference_unit": "g", "protein": 3, "carbs": 28, "fat": 0.3,
+    })
+
+    # 200 g for 2 servings = 100 g per serving.
+    assert _recipe_nutrition(app, recipe_id) == (127, 3.0, 28.0, 0.3)
+    assert _recipe_nutrition(app, other_id)[:2] == (50, 1.0)
+
+
+def test_api_set_ingredient_nutrition_recomputes_through_alias(client, app, make_recipe):
+    from services.ingredient_aliases import set_alias
+
+    with app.app_context():
+        set_alias(client.plan_id, "Spaghetti", "Nudeln")
+    recipe_id = make_recipe("Spaghetti Bolognese", servings=1, ingredients=[
+        {"name": "Spaghetti", "amount": 100, "unit": "g"},
+    ])
+
+    client.post("/api/ingredient-nutrition/set", json={
+        "name": "Nudeln", "reference_unit": "g", "protein": 12, "carbs": 70, "fat": 1.5,
+    })
+    assert _recipe_nutrition(app, recipe_id)[1:] == (12.0, 70.0, 1.5)
+
+
+def test_api_set_ingredient_nutrition_keeps_manual_recipe_values(client, app, make_recipe):
+    recipe_id = make_recipe("Handgerechnet", servings=1, nutrition_override=True,
+                            calories=500, protein=10.0, carbs=50.0, fat=20.0,
+                            ingredients=[{"name": "Reis", "amount": 100, "unit": "g"}])
+
+    client.post("/api/ingredient-nutrition/set", json={
+        "name": "Reis", "reference_unit": "g", "protein": 3, "carbs": 28, "fat": 0.3,
+    })
+    assert _recipe_nutrition(app, recipe_id) == (500, 10.0, 50.0, 20.0)
+
+
+def test_api_set_ingredient_alias_recomputes_recipe_nutrition(client, app, make_recipe):
+    from services.nutrition import set_nutrition
+
+    with app.app_context():
+        set_nutrition(client.plan_id, "Nudeln", reference_unit="g", protein=12, carbs=70, fat=1.5)
+    recipe_id = make_recipe("Penne Arrabiata", servings=1, ingredients=[
+        {"name": "Penne", "amount": 100, "unit": "g"},
+    ])
+
+    client.post("/api/ingredient-alias/set", json={"raw_name": "Penne", "canonical_name": "Nudeln"})
+    assert _recipe_nutrition(app, recipe_id)[1:] == (12.0, 70.0, 1.5)
+
+    # Removing the alias again drops the reference.
+    client.post("/api/ingredient-alias/set", json={"raw_name": "Penne", "canonical_name": "Penne"})
+    assert _recipe_nutrition(app, recipe_id) == (0, 0.0, 0.0, 0.0)

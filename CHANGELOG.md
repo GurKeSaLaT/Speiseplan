@@ -2,6 +2,16 @@
 
 One line per change, newest first.
 
+## 2026-10-01
+
+- Fix: list searches matched far too much - the subsequence match ran over
+  all names joined together; now each query word must match within one
+  name (substring, or a typo-tolerant match inside one word).
+- Fix: changing an ingredient's nutrition or alias did not update the
+  stored nutrition of recipes using it until the recipe was saved again.
+- Fix: ticked-off shopping-list lines were lost on reload; they are now
+  saved per plan and week.
+
 ## 2026-09-25
 
 - Refactor: trimmed comments across the codebase, split long files (recipe
