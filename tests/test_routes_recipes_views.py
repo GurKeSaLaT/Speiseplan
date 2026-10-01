@@ -146,8 +146,9 @@ def test_recipe_edit_list_view_search_data_includes_category(client, make_catego
 
     resp = client.get("/manage/recipe/edit-list")
     assert resp.status_code == 200
-    # Searching for a category also finds its recipes.
-    assert b'data-search="kartoffelp\xc3\xbcree beilagen"' in resp.data
+    # Searching for a category also finds its recipes; one term per line so
+    # the search never matches across name and category.
+    assert 'data-search="Kartoffelpüree&#10;Beilagen"' in resp.get_data(as_text=True)
 
 
 def test_recipe_edit_list_view_shows_season_badges(client, app, make_recipe):

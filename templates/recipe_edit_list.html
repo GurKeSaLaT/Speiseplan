@@ -27,7 +27,7 @@
                 {% if recipes %}
                 <div class="recipe-grid" id="recipeList">
                     {% for recipe in recipes %}
-                    <div class="recipe-card recipe-list-row" data-search="{{ recipe.name|lower }} {{ recipe.category.name|lower }}">
+                    <div class="recipe-card recipe-list-row" data-search="{{ recipe.name }}&#10;{{ recipe.category.name }}">
                         <div class="rc-head">
                             <span class="rc-name">{{ recipe.name }}</span>
                             {% if recipe.is_favorite %}<span class="rc-star" title="{{ _('Favorite') }}">⭐</span>{% endif %}
@@ -80,7 +80,7 @@
 
 <script src="{{ url_for('static', filename='fuzzy_search.js') }}"></script>
 <script>
-// data-search holds name and category, so a category search matches too.
+// data-search holds name and category (one per line), so a category search matches too.
 const recipeFilterInput = document.getElementById('recipeFilter');
 wireFuzzyFilter(recipeFilterInput, '.recipe-list-row', row => row.dataset.search);
 

@@ -13,7 +13,7 @@ from services.ingredient_aliases import (
 )
 from services.nutrition import (
     compute_calories, get_all_nutrition_entries, infer_reference_units_for_plan, list_alias_canonical_names,
-    set_nutrition,
+    recompute_recipes_nutrition, set_nutrition,
 )
 from services.settings import get_settings, update_display_units
 from services.shopping import infer_category, infer_is_pantry
@@ -146,6 +146,8 @@ def api_set_ingredient_alias():
         return {"error": _("Name and alias must not be empty.")}, 400
 
     set_alias(plan_id, raw_name, canonical_name)
+    # The alias decides which nutrition reference the ingredient uses.
+    recompute_recipes_nutrition(plan_id, [raw_name])
     resolved_canonical = normalize_ingredient_name(plan_id, raw_name)
     return {
         "ok": True,
@@ -186,6 +188,7 @@ def api_set_ingredient_nutrition():
 
     values = _parse_nutrition_form_values(data)
     entry = set_nutrition(plan_id, name, **values)
+    recompute_recipes_nutrition(plan_id, [entry.canonical_name])
     return {
         "ok": True,
         "canonical_name": entry.canonical_name,

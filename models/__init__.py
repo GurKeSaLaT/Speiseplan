@@ -11,7 +11,7 @@ db = SQLAlchemy()
 from models.user import User
 from models.plan import Plan, PlanMembership, PendingPlanInvite
 from models.recipe import Category, Recipe, RecipePlanLink, RecipeSeason, Ingredient
-from models.calendar import PlanDay, PlanDaySide, ExtraShoppingItem
+from models.calendar import PlanDay, PlanDaySide, ExtraShoppingItem, ShoppingListCheck
 from models.settings import AppSettings, IngredientAlias, IngredientNutrition
 
 __all__ = [
@@ -19,6 +19,6 @@ __all__ = [
     'User',
     'Plan', 'PlanMembership', 'PendingPlanInvite',
     'Category', 'Recipe', 'RecipePlanLink', 'RecipeSeason', 'Ingredient',
-    'PlanDay', 'PlanDaySide', 'ExtraShoppingItem',
+    'PlanDay', 'PlanDaySide', 'ExtraShoppingItem', 'ShoppingListCheck',
     'AppSettings', 'IngredientAlias', 'IngredientNutrition',
 ]

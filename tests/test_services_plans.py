@@ -96,10 +96,11 @@ def test_delete_plan_removes_settings_and_memberships(app, client, make_category
         update_display_units(client.plan_id, "kg", "l")
         set_alias(client.plan_id, "Spaghetti", "Nudeln")
         set_nutrition(client.plan_id, "Nudeln", reference_unit="g", protein=1, carbs=1, fat=1)
+    client.post("/plan/2026-06-12/shopping-check", json={"key": "item:Mehl|||g", "checked": True})
 
     with app.app_context():
         from services.plans import delete_plan
-        from models import IngredientAlias, IngredientNutrition
+        from models import IngredientAlias, IngredientNutrition, ShoppingListCheck
 
         plan = db.session.get(Plan, client.plan_id)
         delete_plan(plan)
@@ -108,4 +109,5 @@ def test_delete_plan_removes_settings_and_memberships(app, client, make_category
         assert Category.query.filter_by(plan_id=client.plan_id).count() == 0
         assert IngredientAlias.query.filter_by(plan_id=client.plan_id).count() == 0
         assert IngredientNutrition.query.filter_by(plan_id=client.plan_id).count() == 0
+        assert ShoppingListCheck.query.filter_by(plan_id=client.plan_id).count() == 0
         assert PlanMembership.query.filter_by(plan_id=client.plan_id).count() == 0

@@ -34,6 +34,9 @@ let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 // Manual shopping-list items for the whole week (not per day).
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
+// Keys of the ticked-off shopping-list lines this week (see shoppingItemKey()).
+let checkedShoppingKeys = new Set(window.PLAN_DATA.checkedShoppingKeys || []);
+
 // Read-only dishes of the user's other plans; tied to the date, so they
 // never move on a swap.
 let otherPlanMeals = window.PLAN_DATA.otherPlanMeals || [[], [], [], [], [], [], []];

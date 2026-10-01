@@ -82,7 +82,7 @@ function rebuildShoppingList() {
                         if (ing.is_pantry) consolidated[key].is_pantry = true;
                     } else {
                         consolidated[key] = {
-                            name: ing.name, amount: scaledAmount, unit: ing.unit,
+                            key: `item:${key}`, name: ing.name, amount: scaledAmount, unit: ing.unit,
                             category: ing.category || null, is_pantry: !!ing.is_pantry,
                         };
                     }
@@ -95,7 +95,7 @@ function rebuildShoppingList() {
     const allItems = Object.values(consolidated).map(item => ({ ...item, isExtra: false }));
     weeklyExtraItems.forEach(extra => {
         allItems.push({
-            id: extra.id, name: extra.name, amount: extra.amount, unit: extra.unit,
+            key: `extra:${extra.id}`, id: extra.id, name: extra.name, amount: extra.amount, unit: extra.unit,
             category: extra.category, isExtra: true,
         });
     });
@@ -191,19 +191,41 @@ function buildShoppingRow(item) {
     li.appendChild(label);
     li.appendChild(right);
 
-    // Ticking off while shopping is visual only; the list is rebuilt on
-    // every plan change anyway, so nothing is saved.
-    checkbox.addEventListener('change', function() {
-        if (this.checked) {
-            nameSpan.style.textDecoration = 'line-through';
-            nameSpan.style.opacity = '0.5';
-        } else {
-            nameSpan.style.textDecoration = 'none';
-            nameSpan.style.opacity = '1';
-        }
+    // Ticked-off lines are saved per week, so they survive reloads and show
+    // up on other devices. The key is the line's merge key (name + unit), so
+    // a line stays ticked while plan changes only alter its amount.
+    const applyCheckedStyle = () => {
+        nameSpan.style.textDecoration = checkbox.checked ? 'line-through' : 'none';
+        nameSpan.style.opacity = checkbox.checked ? '0.5' : '1';
+    };
+    checkbox.checked = checkedShoppingKeys.has(item.key);
+    applyCheckedStyle();
+    checkbox.addEventListener('change', () => {
+        applyCheckedStyle();
+        saveShoppingCheck(item.key, checkbox.checked, () => {
+            checkbox.checked = !checkbox.checked;
+            applyCheckedStyle();
+        });
     });
 
     return li;
+}
+
+/** Saves one line's tick; onError reverts the checkbox. */
+function saveShoppingCheck(key, checked, onError) {
+    if (checked) checkedShoppingKeys.add(key); else checkedShoppingKeys.delete(key);
+    postWithCsrf(`/plan/${dayDates[0]}/shopping-check`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, checked }),
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(window.I18N.could_not_be_saved);
+    })
+    .catch(err => {
+        if (checked) checkedShoppingKeys.delete(key); else checkedShoppingKeys.add(key);
+        onError();
+        alert(window.I18N.note_prefix + ' ' + err.message);
+    });
 }
 
 function renderPantryList(pantryItems) {
