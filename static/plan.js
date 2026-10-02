@@ -34,8 +34,9 @@ let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 // Manual shopping-list items for the whole week (not per day).
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
-// Keys of the ticked-off shopping-list lines this week (see shoppingItemKey()).
-let checkedShoppingKeys = new Set(window.PLAN_DATA.checkedShoppingKeys || []);
+// Ticked-off shopping-list lines this week: item key -> {key, amount,
+// category}; amount is how much was ticked off (see applyShoppingChecks()).
+let shoppingChecks = new Map((window.PLAN_DATA.shoppingChecks || []).map(check => [check.key, check]));
 
 // Read-only dishes of the user's other plans; tied to the date, so they
 // never move on a swap.
@@ -104,26 +105,22 @@ function renderMainDisplay(dayIndex) {
     if (recipe) {
         const cookedClass = dayCooked[dayIndex] ? ' dish-cooked' : '';
         return `
-            <div class="d-flex justify-content-between align-items-start mb-2">
-                <div class="dish-clickable${cookedClass}" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, null)">
-                    <h5 class="text-success fw-bold mb-0" style="color: var(--primary-food) !important;">${dayLabels[dayIndex]}</h5>
-                    <span class="recipe-name fw-bold fs-5 text-dark d-block mt-1">${escapeHtml(recipe.name)}</span>
-                </div>
-                <div class="text-end">
-                    ${servingsHtml}
-                    <div class="d-flex align-items-center gap-1 justify-content-end mt-1">
-                        <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.reroll_this_day_title)}" onclick="rerollSingleDay(${dayIndex})">🎲</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.select_different_recipe_title)}" onclick="openMainManualSelect(${dayIndex})">✏️</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.exclude_day_title)}" onclick="toggleDayExclusion(${dayIndex})">🚫</button>
-                    </div>
+            <div class="dish-header mb-2">
+                <h5 class="dish-header-label text-success fw-bold mb-0 dish-clickable${cookedClass}" style="color: var(--primary-food) !important;" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, null)">${dayLabels[dayIndex]}</h5>
+                <div class="dish-header-servings">${servingsHtml}</div>
+                <span class="dish-header-name recipe-name fw-bold fs-5 text-dark dish-clickable${cookedClass}" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, null)">${escapeHtml(recipe.name)}</span>
+                <div class="dish-header-actions d-flex align-items-center gap-1">
+                    <span class="badge badge-category recipe-category px-3 py-2 rounded-pill">${escapeHtml(recipe.category_name)}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.reroll_this_day_title)}" onclick="rerollSingleDay(${dayIndex})">🎲</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.select_different_recipe_title)}" onclick="openMainManualSelect(${dayIndex})">✏️</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-2 fs-5" title="${escapeHtml(window.I18N.exclude_day_title)}" onclick="toggleDayExclusion(${dayIndex})">🚫</button>
                 </div>
             </div>
             <div class="text-muted small font-monospace bg-light p-2 rounded dish-clickable${cookedClass}" role="button" title="${escapeHtml(window.I18N.show_details_title)}" onclick="openRecipeDetail(${dayIndex}, null)">
                 📊 <span class="recipe-kcal">${recipe.calories}</span> kcal |
-                P: <span class="recipe-protein">${recipe.protein}</span>g |
-                C: <span class="recipe-carbs">${recipe.carbs}</span>g |
-                F: <span class="recipe-fat">${recipe.fat}</span>g
+                ${escapeHtml(window.I18N.protein_abbr)}: <span class="recipe-protein">${recipe.protein}</span>g |
+                ${escapeHtml(window.I18N.carbs_abbr)}: <span class="recipe-carbs">${recipe.carbs}</span>g |
+                ${escapeHtml(window.I18N.fat_abbr)}: <span class="recipe-fat">${recipe.fat}</span>g
             </div>
         `;
     }
@@ -167,7 +164,7 @@ function toggleDayExclusion(dayIndex) {
 function renderServingsHtml(dayIndex) {
     return `
         <div class="d-flex align-items-center justify-content-end gap-1">
-            <label class="small text-muted mb-0" for="servings-${dayIndex}">${escapeHtml(window.I18N.servings_label)}</label>
+            <label class="small text-muted mb-0 text-nowrap" for="servings-${dayIndex}"><span aria-hidden="true">👥</span><span class="servings-label-text"> ${escapeHtml(window.I18N.servings_label)}</span></label>
             <input type="number" id="servings-${dayIndex}" class="form-control form-control-sm servings-input" style="width: 60px;" min="1" step="1" value="${dayServings[dayIndex]}" onchange="updateDayServings(${dayIndex}, this.value)">
         </div>
     `;
@@ -342,6 +339,12 @@ function daySwap(i, j) {
         }
     });
 })();
+
+/** "P: 1g | C: 2g | F: 3g" with the locale's macro abbreviations (plain
+ * text, escape before putting it into innerHTML). */
+function macroLine(protein, carbs, fat) {
+    return `${window.I18N.protein_abbr}: ${protein}g | ${window.I18N.carbs_abbr}: ${carbs}g | ${window.I18N.fat_abbr}: ${fat}g`;
+}
 
 /** Use for every user-provided string that goes into innerHTML. */
 function escapeHtml(text) {

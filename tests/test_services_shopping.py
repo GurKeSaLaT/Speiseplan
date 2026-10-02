@@ -1,4 +1,5 @@
-"""Tests for services/shopping.py: the fixed shopping-list category list."""
+"""Tests for services/shopping.py: the fixed shopping-list categories and
+one category per ingredient group (target ingredient plus its aliases)."""
 from services.shopping import SHOPPING_CATEGORIES, UNCATEGORIZED, infer_category, infer_is_pantry
 
 
@@ -136,3 +137,107 @@ def test_infer_is_pantry_majority_wins(app, test_plan_id, make_recipe):
     ])
     with app.app_context():
         assert infer_is_pantry(test_plan_id, "Zwiebel") is False
+
+
+# --- group_category_map / apply_group_category: one category per ingredient group ---
+
+def _categories_by_name(recipe_id):
+    from models import Ingredient
+    return {ing.name: ing.category for ing in Ingredient.query.filter_by(recipe_id=recipe_id)}
+
+
+def test_group_category_target_rows_win_over_alias_majority(app, test_plan_id, make_recipe):
+    from services.ingredient_aliases import set_alias
+    from services.shopping import group_category_map
+
+    make_recipe("Ziel", ingredients=[
+        {"name": "Frühlingszwiebel", "amount": 1, "unit": "Bund", "category": "Obst/Gemüse"},
+    ])
+    make_recipe("Alias A", ingredients=[{"name": "Lauchzwiebeln", "amount": 1, "unit": "", "category": "Konserven"}])
+    make_recipe("Alias B", ingredients=[{"name": "Lauchzwiebeln", "amount": 2, "unit": "", "category": "Konserven"}])
+    with app.app_context():
+        set_alias(test_plan_id, "Lauchzwiebeln", "Frühlingszwiebel")
+        assert group_category_map(test_plan_id)["Frühlingszwiebel"] == "Obst/Gemüse"
+
+
+def test_group_category_falls_back_to_alias_when_target_has_none(app, test_plan_id, make_recipe):
+    from services.shopping import group_category_map
+    from services.ingredient_aliases import set_alias
+
+    make_recipe("Ziel", ingredients=[{"name": "Frühlingszwiebel", "amount": 1, "unit": "", "category": None}])
+    make_recipe("Alias", ingredients=[{"name": "Lauchzwiebeln", "amount": 1, "unit": "Bund", "category": "Obst/Gemüse"}])
+    with app.app_context():
+        set_alias(test_plan_id, "Lauchzwiebeln", "Frühlingszwiebel")
+        assert group_category_map(test_plan_id)["Frühlingszwiebel"] == "Obst/Gemüse"
+
+
+def test_group_category_leaves_out_uncategorized_groups(app, test_plan_id, make_recipe):
+    from services.shopping import group_category_map
+
+    make_recipe("Gericht", ingredients=[{"name": "Wasser", "amount": 1, "unit": "l", "category": None}])
+    with app.app_context():
+        assert "Wasser" not in group_category_map(test_plan_id)
+
+
+def test_set_alias_adopts_target_category_in_own_recipes(app, test_plan_id, make_recipe):
+    from services.ingredient_aliases import set_alias
+
+    target_id = make_recipe("Ziel", ingredients=[
+        {"name": "Frühlingszwiebel", "amount": 1, "unit": "Bund", "category": "Obst/Gemüse"},
+    ])
+    alias_id = make_recipe("Alias", ingredients=[
+        {"name": "Lauchzwiebel(n)", "amount": 1, "unit": "", "category": None},
+        {"name": "Mehl", "amount": 100, "unit": "g", "category": "Backwaren"},
+    ])
+    with app.app_context():
+        set_alias(test_plan_id, "Lauchzwiebel(n)", "Frühlingszwiebel")
+        assert _categories_by_name(alias_id) == {"Lauchzwiebel(n)": "Obst/Gemüse", "Mehl": "Backwaren"}
+        assert _categories_by_name(target_id) == {"Frühlingszwiebel": "Obst/Gemüse"}
+
+
+def test_set_alias_aligns_target_rows_without_category(app, test_plan_id, make_recipe):
+    from services.ingredient_aliases import set_alias
+
+    target_id = make_recipe("Ziel", ingredients=[{"name": "Frühlingszwiebel", "amount": 1, "unit": "", "category": None}])
+    make_recipe("Alias", ingredients=[{"name": "Lauchzwiebeln", "amount": 1, "unit": "Bund", "category": "Obst/Gemüse"}])
+    with app.app_context():
+        set_alias(test_plan_id, "Lauchzwiebeln", "Frühlingszwiebel")
+        assert _categories_by_name(target_id) == {"Frühlingszwiebel": "Obst/Gemüse"}
+
+
+def test_set_alias_leaves_other_plans_recipes_untouched(app, test_plan_id, make_recipe, make_user):
+    """A recipe shared into this plan from another plan is visible here,
+    but its rows belong to the other plan, whose aliases may differ."""
+    from models import RecipePlanLink, db
+    from services.ingredient_aliases import set_alias
+
+    _, other_plan_id = make_user("Andere")
+    make_recipe("Ziel", ingredients=[{"name": "Frühlingszwiebel", "amount": 1, "unit": "", "category": "Obst/Gemüse"}])
+    shared_id = make_recipe("Geteilt", plan_id=other_plan_id, ingredients=[
+        {"name": "Lauchzwiebeln", "amount": 1, "unit": "", "category": "Konserven"},
+    ])
+    with app.app_context():
+        db.session.add(RecipePlanLink(recipe_id=shared_id, plan_id=test_plan_id))
+        db.session.commit()
+        set_alias(test_plan_id, "Lauchzwiebeln", "Frühlingszwiebel")
+        assert _categories_by_name(shared_id) == {"Lauchzwiebeln": "Konserven"}
+
+
+def test_plan_json_uses_group_category_for_existing_aliases(app, test_plan_id, make_recipe):
+    """Existing data where alias rows still carry another category: the
+    shopping list (plan page JSON) groups them by the target's category."""
+    from models import IngredientAlias, Recipe, db
+    from services.planning import jsonify_recipe
+
+    recipe_id = make_recipe("Gericht", ingredients=[
+        {"name": "Frühlingszwiebel", "amount": 1, "unit": "Bund", "category": "Obst/Gemüse"},
+        {"name": "Lauchzwiebeln", "amount": 50, "unit": "g", "category": None},
+    ])
+    with app.app_context():
+        # Inserted directly, as on tower before this fix: no category sync ran.
+        db.session.add(IngredientAlias(plan_id=test_plan_id, raw_name="Lauchzwiebeln", canonical_name="Frühlingszwiebel"))
+        db.session.commit()
+        data = jsonify_recipe(db.session.get(Recipe, recipe_id), test_plan_id)
+        assert [(i["name"], i["category"]) for i in data["ingredients"]] == [
+            ("Frühlingszwiebel", "Obst/Gemüse"), ("Frühlingszwiebel", "Obst/Gemüse"),
+        ]

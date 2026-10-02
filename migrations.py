@@ -195,6 +195,18 @@ def _migrate_plan_day_cooked_columns():
         db.session.commit()
 
 
+def _migrate_shopping_list_check_amount_columns():
+    """Ticked-off amount + category snapshot (ShoppingListCheck). Existing
+    ticks keep amount NULL, i.e. "the whole line"."""
+    existing_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(shopping_list_check)"))}
+    if 'amount' not in existing_columns:
+        db.session.execute(text("ALTER TABLE shopping_list_check ADD COLUMN amount FLOAT"))
+        db.session.commit()
+    if 'category' not in existing_columns:
+        db.session.execute(text("ALTER TABLE shopping_list_check ADD COLUMN category VARCHAR(50)"))
+        db.session.commit()
+
+
 def _migrate_drop_user_password_hash_column():
     """Passwords are Authelia's job now."""
     existing_user_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(user)"))}
@@ -446,6 +458,7 @@ def init_db():
     _migrate_recipe_season_table()
     _migrate_plan_day_side_table()
     _migrate_plan_day_cooked_columns()
+    _migrate_shopping_list_check_amount_columns()
 
     seeded_plans_by_username = {}
 

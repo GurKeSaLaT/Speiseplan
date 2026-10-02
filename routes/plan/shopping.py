@@ -1,6 +1,8 @@
 """JSON endpoints for manually added shopping-list items and for ticking
 off shopping-list lines."""
 
+import math
+
 from flask import abort, request
 from flask_babel import gettext as _
 
@@ -64,10 +66,20 @@ def delete_shopping_item(item_id):
     return {"ok": True}
 
 
+def _parse_checked_amount(raw):
+    """A finite, non-negative number, else None ("the whole line")."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    value = float(raw)
+    return value if math.isfinite(value) and value >= 0 else None
+
+
 @plan_bp.route('/plan/<start_date>/shopping-check', methods=['POST'])
 def set_shopping_check(start_date):
-    """Body: {"key", "checked"}. Ticks a shopping-list line off (or back on)
-    for the week containing start_date; idempotent either way."""
+    """Body: {"key", "checked", "amount"?, "category"?}. Ticks a
+    shopping-list line off (or back on) for the week containing start_date;
+    idempotent either way. Ticking an already ticked key updates its amount
+    and category (ticking the open rest of a partly bought line)."""
     start = parse_iso_date(start_date)
     if start is None:
         return {"error": _("Invalid date")}, 400
@@ -78,11 +90,18 @@ def set_shopping_check(start_date):
     if not isinstance(key, str) or not key.strip() or len(key) > 255:
         return {"error": _("Invalid item")}, 400
 
+    amount = _parse_checked_amount(data.get('amount'))
+    category = data.get('category')
+    category = (category.strip()[:50] or None) if isinstance(category, str) else None
+
     plan = current_plan()
     existing = ShoppingListCheck.query.filter_by(plan_id=plan.id, week_start=start, item_key=key).first()
     if data.get('checked'):
         if existing is None:
-            db.session.add(ShoppingListCheck(plan_id=plan.id, week_start=start, item_key=key))
+            existing = ShoppingListCheck(plan_id=plan.id, week_start=start, item_key=key)
+            db.session.add(existing)
+        existing.amount = amount
+        existing.category = category
     elif existing is not None:
         db.session.delete(existing)
     db.session.commit()

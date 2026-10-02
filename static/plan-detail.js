@@ -53,7 +53,7 @@ function renderRecipeDetailBody(recipe, targetServings) {
             <span class="text-muted small">👥 ${targetServings} ${escapeHtml(window.I18N.servings_word)}</span>
         </div>
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-3">
-            📊 ${recipe.calories} kcal | P: ${recipe.protein}g | C: ${recipe.carbs}g | F: ${recipe.fat}g <span class="text-muted">${escapeHtml(window.I18N.per_serving)}</span>
+            📊 ${recipe.calories} kcal | ${escapeHtml(macroLine(recipe.protein, recipe.carbs, recipe.fat))} <span class="text-muted">${escapeHtml(window.I18N.per_serving)}</span>
         </div>
         <h6 class="fw-bold text-dark mb-1">🛒 ${escapeHtml(window.I18N.ingredients_word)}</h6>
         ${ingredientsHtml}

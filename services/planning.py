@@ -12,6 +12,7 @@ from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
 from services.ingredient_aliases import normalize_ingredient_name
 from services.settings import get_display_units
+from services.shopping import group_category_map
 from services.units import convert_for_display
 
 # The household's week runs Friday-Thursday, not ISO Monday-Sunday.
@@ -177,15 +178,28 @@ def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_s
     return weighted_recipe_choice(candidates, usage_counts)
 
 
-def jsonify_recipe(recipe, plan_id):
+def jsonify_recipe(recipe, plan_id, group_categories=None):
     """Recipe as a JSON-ready dict for the plan page.
 
     Ingredient names go through plan_id's alias mapping and amounts are
     converted to plan_id's display units - always plan_id's (the viewing
     plan), not the owner's, and always one unit per family, because the
-    client-side shopping list merges items by name+unit.
+    client-side shopping list merges items by name+unit. The category is
+    the canonical ingredient's (group_category_map; pass it in when
+    serializing many recipes), so aliases never split across groups.
     """
     display_units = get_display_units(plan_id)
+    if group_categories is None:
+        group_categories = group_category_map(plan_id)
+    ingredients = []
+    for ing in recipe.ingredients:
+        canonical = normalize_ingredient_name(plan_id, ing.name)
+        ingredients.append({
+            "name": canonical,
+            **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
+            "category": group_categories.get(canonical, ing.category),
+            "is_pantry": ing.is_pantry,
+        })
     return {
         "id": recipe.id,
         "name": recipe.name,
@@ -199,22 +213,14 @@ def jsonify_recipe(recipe, plan_id):
         "is_favorite": recipe.is_favorite,
         "source_url": recipe.source_url,
         "instructions": recipe.instructions,
-        "ingredients": [
-            {
-                "name": normalize_ingredient_name(plan_id, ing.name),
-                **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
-                "category": ing.category,
-                "is_pantry": ing.is_pantry,
-            }
-            for ing in recipe.ingredients
-        ]
+        "ingredients": ingredients
     }
 
 
-def jsonify_side(plan_day_side, plan_id):
+def jsonify_side(plan_day_side, plan_id, group_categories=None):
     """jsonify_recipe() plus the PlanDaySide's own id (the slot the frontend
     rerolls/moves/removes) and its cooked flag."""
-    data = jsonify_recipe(plan_day_side.recipe, plan_id)
+    data = jsonify_recipe(plan_day_side.recipe, plan_id, group_categories)
     data['side_id'] = plan_day_side.id
     data['cooked'] = plan_day_side.cooked
     return data

@@ -70,7 +70,9 @@ def prune_orphaned_aliases(plan_id, recipes_by_name):
 
 
 def set_alias(plan_id, raw_name, canonical_name):
-    """Upsert; aliasing a name to itself deletes the alias instead."""
+    """Upsert; aliasing a name to itself deletes the alias instead. The
+    whole group then takes over the target's category in this plan's own
+    recipes (services/shopping.py: apply_group_category)."""
     key = normalize_name(raw_name)
     canonical = normalize_name(canonical_name)
     if not key:
@@ -85,6 +87,10 @@ def set_alias(plan_id, raw_name, canonical_name):
     else:
         db.session.add(IngredientAlias(plan_id=plan_id, raw_name=key, canonical_name=canonical))
     db.session.commit()
+
+    # An alias joins the target's shopping-list category.
+    from services.shopping import apply_group_category
+    apply_group_category(plan_id, canonical)
 
 
 def delete_alias(plan_id, raw_name):
