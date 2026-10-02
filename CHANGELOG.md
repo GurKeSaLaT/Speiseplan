@@ -2,6 +2,22 @@
 
 One line per change, newest first.
 
+## 2026-10-02
+
+- Shopping list keeps what was already bought: a tick stores its amount.
+  More needed later -> the bought part stays ticked and the rest shows up
+  as an open line; less or nothing needed -> the line stays ticked.
+- Ingredient aliases share one shopping-list category: the target
+  ingredient's category wins, and setting an alias writes it into the
+  plan's own recipes.
+- Fix: weekday names, the weekly nutrition summary and the macro
+  abbreviations were English in the German UI (`pybabel extract` missed
+  `_l()` strings; now `-k _l`, documented, and a test catches gaps).
+- Fix: day card header overflowed on phones (servings field and exclude
+  button outside the card); it now stacks below 576 px.
+- Fix: on phones the shopping list was its own scroll area, trapping the
+  page scroll and jumping on rotation; that is now desktop-only.
+
 ## 2026-10-01
 
 - Fix: list searches matched far too much - the subsequence match ran over

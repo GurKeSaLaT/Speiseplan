@@ -128,7 +128,7 @@ def test_shopping_check_is_saved_and_shown_on_reload(client, app):
     # Saved for the week's Friday, so the week page shows it as ticked.
     page = client.get("/plan/2026-06-12").get_data(as_text=True)
     plan_data = json.loads(re.search(r"window\.PLAN_DATA = (\{.*?\});", page, re.S).group(1))
-    assert plan_data["checkedShoppingKeys"] == ["item:Mehl|||g"]
+    assert plan_data["shoppingChecks"] == [{"key": "item:Mehl|||g", "amount": None, "category": None}]
 
 
 def test_shopping_check_can_be_unticked_and_is_idempotent(client, app):
@@ -153,7 +153,7 @@ def test_shopping_check_is_per_week(client, app):
     client.post("/plan/2026-06-12/shopping-check", json={"key": "item:Mehl|||g", "checked": True})
     page = client.get("/plan/2026-06-19").get_data(as_text=True)
     plan_data = json.loads(re.search(r"window\.PLAN_DATA = (\{.*?\});", page, re.S).group(1))
-    assert plan_data["checkedShoppingKeys"] == []
+    assert plan_data["shoppingChecks"] == []
 
 
 def test_shopping_check_rejects_invalid_input(client):
@@ -170,3 +170,67 @@ def test_deleting_extra_item_removes_its_check(client, app):
     client.post(f"/shopping-item/{item_id}/delete")
     with app.app_context():
         assert ShoppingListCheck.query.count() == 0
+
+
+def _plan_data(client, start):
+    import json
+    import re
+
+    page = client.get(f"/plan/{start}").get_data(as_text=True)
+    return json.loads(re.search(r"window\.PLAN_DATA = (\{.*?\});", page, re.S).group(1))
+
+
+def test_shopping_check_saves_ticked_amount_and_category(client):
+    resp = client.post("/plan/2026-06-12/shopping-check", json={
+        "key": "item:Nudeln|||g", "checked": True, "amount": 500, "category": "Teigwaren",
+    })
+    assert resp.status_code == 200
+    assert _plan_data(client, "2026-06-12")["shoppingChecks"] == [
+        {"key": "item:Nudeln|||g", "amount": 500.0, "category": "Teigwaren"},
+    ]
+
+
+def test_ticking_again_updates_the_amount(client, app):
+    """Ticking the open rest of a partly bought line (500 g bought, 800 g
+    needed) re-ticks the same key with the full amount."""
+    from models import ShoppingListCheck
+
+    client.post("/plan/2026-06-12/shopping-check", json={"key": "item:Nudeln|||g", "checked": True, "amount": 500})
+    client.post("/plan/2026-06-12/shopping-check", json={"key": "item:Nudeln|||g", "checked": True, "amount": 800})
+    with app.app_context():
+        checks = ShoppingListCheck.query.all()
+        assert [(c.item_key, c.amount) for c in checks] == [("item:Nudeln|||g", 800.0)]
+
+
+def test_shopping_check_ignores_invalid_amount_and_category(client, app):
+    from models import ShoppingListCheck
+
+    for amount in ("viel", -5, True, None):
+        resp = client.post("/plan/2026-06-12/shopping-check", json={
+            "key": "item:Nudeln|||g", "checked": True, "amount": amount, "category": 42,
+        })
+        assert resp.status_code == 200
+        with app.app_context():
+            check = ShoppingListCheck.query.one()
+            assert (check.amount, check.category) == (None, None)
+
+
+def test_shopping_check_survives_reordering_days(client, app, make_recipe):
+    """Bug report: swapping days wiped all ticks. Ticks are stored per week
+    and line key, independent of which day a dish is on."""
+    from datetime import date
+    from models import PlanDay, db
+
+    recipe_id = make_recipe("Nudelauflauf", servings=2, ingredients=[
+        {"name": "Nudeln", "amount": 500, "unit": "g", "category": "Teigwaren"},
+    ])
+    with app.app_context():
+        db.session.add(PlanDay(plan_id=client.plan_id, date=date(2026, 6, 12), main_recipe_id=recipe_id, servings=2))
+        db.session.add(PlanDay(plan_id=client.plan_id, date=date(2026, 6, 13), servings=2))
+        db.session.commit()
+
+    client.post("/plan/2026-06-12/shopping-check", json={"key": "item:Nudeln|||g", "checked": True, "amount": 500})
+    assert client.post("/day/2026-06-12/swap/2026-06-13").status_code == 200
+    assert _plan_data(client, "2026-06-12")["shoppingChecks"] == [
+        {"key": "item:Nudeln|||g", "amount": 500.0, "category": None},
+    ]

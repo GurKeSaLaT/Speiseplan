@@ -57,7 +57,7 @@ function rformFormatDe(num) {
 function rformUpdateNutritionBadge(calories, protein, carbs, fat) {
     const badge = document.getElementById('nutritionBadge');
     if (badge) {
-        badge.textContent = `${Math.round(calories)} kcal · P ${rformFormatDe(protein)}g · C ${rformFormatDe(carbs)}g · F ${rformFormatDe(fat)}g`;
+        badge.textContent = `${Math.round(calories)} kcal · ${window.I18N.protein_abbr} ${rformFormatDe(protein)}g · ${window.I18N.carbs_abbr} ${rformFormatDe(carbs)}g · ${window.I18N.fat_abbr} ${rformFormatDe(fat)}g`;
     }
     document.querySelectorAll('.rform-nutrition-summary .stat').forEach((statEl, i) => {
         const values = [Math.round(calories), `${rformFormatDe(protein)}g`, `${rformFormatDe(carbs)}g`, `${rformFormatDe(fat)}g`];

@@ -83,8 +83,9 @@
     <!-- COLUMN 2: The shopping list -->
     <div class="col-12 col-lg-5">
         {# Shopping list and pantry share one sticky, self-scrolling wrapper;
-           a lone sticky list would let the pantry card slide under it. #}
-        <div class="sticky-lg-top" style="top: 24px; z-index: 100; max-height: calc(100vh - 48px); overflow-y: auto;">
+           a lone sticky list would let the pantry card slide under it. Only
+           from lg up: on phones a nested scroll area traps the page scroll. #}
+        <div class="sticky-lg-top shopping-sidebar">
             <div class="card shadow-sm border-0">
                 <div class="panel-head">
                     <h4>🛒 {{ _('Shopping list') }}</h4>
@@ -184,6 +185,52 @@
 .recipe-day-card.today-card {
     border: 2px solid var(--primary-food) !important;
     background-color: var(--highlight-bg);
+}
+
+/* Day card header (plan.js: renderMainDisplay). Wide: label/name on the
+   left, servings/actions on the right. Phones: label + servings, then the
+   name and the actions each on their own full-width row. */
+.dish-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "label servings"
+        "name actions";
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+    align-items: start;
+}
+.dish-header-label { grid-area: label; min-width: 0; }
+.dish-header-servings { grid-area: servings; }
+.dish-header-name { grid-area: name; min-width: 0; overflow-wrap: anywhere; }
+.dish-header-actions { grid-area: actions; justify-content: flex-end; }
+/* The category pill shares --highlight-bg with the today card. */
+.recipe-day-card.today-card .badge-category {
+    background-color: var(--card-bg) !important;
+}
+@media (max-width: 575.98px) {
+    .dish-header {
+        grid-template-areas:
+            "label servings"
+            "name name"
+            "actions actions";
+        align-items: center;
+    }
+    .dish-header-label { font-size: 1.05rem; }
+    .dish-header-actions { justify-content: flex-start; flex-wrap: wrap; }
+    .dish-header-actions .badge-category { margin-right: auto; }
+    .servings-label-text { display: none; }
+}
+
+.shopping-sidebar {
+    top: 24px;
+    z-index: 100;
+}
+@media (min-width: 992px) {
+    .shopping-sidebar {
+        max-height: calc(100vh - 48px);
+        overflow-y: auto;
+    }
 }
 
 /* Opens the detail modal; action buttons are outside this. */

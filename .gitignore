@@ -30,3 +30,4 @@ instance/secret_key
 # not meant for the public repo, checked and cleared before every
 # push/deploy instead.
 BUGS.md
+messages.pot

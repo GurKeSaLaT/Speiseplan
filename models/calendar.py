@@ -54,11 +54,19 @@ class ShoppingListCheck(db.Model):
     """A ticked-off shopping-list line for one week (week_start = that week's
     Friday). The list itself is built client-side, so a line is identified by
     plan-shopping.js's item key ("item:<name>|||<unit>" or "extra:<id>"),
-    not by a row id. A key whose line disappears just never matches again."""
+    not by a row id.
+
+    amount is how much was ticked off (in the display unit of the key), so
+    plan changes keep what was already bought: more needed -> the rest shows
+    up as an open line, less or nothing needed -> the line stays ticked.
+    None means "the whole line, whatever its amount". category is a
+    snapshot for lines no recipe needs anymore."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     week_start = db.Column(db.Date, nullable=False, index=True)
     item_key = db.Column(db.String(255), nullable=False)
+    amount = db.Column(db.Float, nullable=True)
+    category = db.Column(db.String(50), nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint('plan_id', 'week_start', 'item_key', name='uq_shopping_list_check_plan_week_key'),

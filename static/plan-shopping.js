@@ -32,12 +32,14 @@ function rebuildWeeklyNutritionSummary() {
         return;
     }
 
+    const perDayLabel = window.I18N.per_day_planned_label.replace('{count}', plannedDays);
+    const avg = value => (value / plannedDays).toFixed(1);
     container.innerHTML = `
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-1">
-            Σ week: ${Math.round(totals.calories)} kcal | P: ${totals.protein.toFixed(1)}g | C: ${totals.carbs.toFixed(1)}g | F: ${totals.fat.toFixed(1)}g
+            Σ ${escapeHtml(window.I18N.week_total_label)}: ${Math.round(totals.calories)} kcal | ${escapeHtml(macroLine(totals.protein.toFixed(1), totals.carbs.toFixed(1), totals.fat.toFixed(1)))}
         </div>
         <div class="text-muted small font-monospace bg-light p-2 rounded">
-            Ø per day (${plannedDays} planned): ${Math.round(totals.calories / plannedDays)} kcal | P: ${(totals.protein / plannedDays).toFixed(1)}g | C: ${(totals.carbs / plannedDays).toFixed(1)}g | F: ${(totals.fat / plannedDays).toFixed(1)}g
+            Ø ${escapeHtml(perDayLabel)}: ${Math.round(totals.calories / plannedDays)} kcal | ${escapeHtml(macroLine(avg(totals.protein), avg(totals.carbs), avg(totals.fat)))}
         </div>
     `;
 }
@@ -101,7 +103,10 @@ function rebuildShoppingList() {
     });
 
     const pantryItems = allItems.filter(item => !item.isExtra && item.is_pantry);
-    const items = allItems.filter(item => item.isExtra || !item.is_pantry);
+    const items = applyShoppingChecks(
+        allItems.filter(item => item.isExtra || !item.is_pantry),
+        new Set(allItems.map(item => item.key))
+    );
 
     if (counterBadge) counterBadge.textContent = items.length;
 
@@ -112,6 +117,50 @@ function rebuildShoppingList() {
     }
 
     renderPantryList(pantryItems);
+}
+
+// Float noise from scaling must not split a line into "500 g + 0.0001 g".
+const AMOUNT_EPSILON = 0.005;
+
+/**
+ * Turns the needed items into display rows, given what was ticked off
+ * (shoppingChecks). Bought amounts survive plan changes:
+ * - ticked amount >= needed (incl. reorders and smaller amounts): one
+ *   ticked row with the needed amount;
+ * - ticked amount < needed: a ticked row with the bought amount plus an
+ *   open row with the rest (remainderOf = the full needed amount);
+ * - ticked but no longer needed at all: the ticked row stays, rebuilt from
+ *   the key and the check's amount/category snapshot.
+ * Ticks without an amount (and manual items) count as "the whole line".
+ */
+function applyShoppingChecks(items, allKeys) {
+    const rows = [];
+    items.forEach(item => {
+        const check = shoppingChecks.get(item.key);
+        if (!check) {
+            rows.push({ ...item, checked: false });
+            return;
+        }
+        const bought = check.amount;
+        const needed = item.amount;
+        const wholeLine = item.isExtra || bought === null || bought === undefined || needed === null || needed === undefined;
+        if (wholeLine || bought >= needed - AMOUNT_EPSILON) {
+            rows.push({ ...item, checked: true });
+            return;
+        }
+        rows.push({ ...item, amount: bought, checked: true });
+        rows.push({ ...item, amount: needed - bought, checked: false, remainderOf: needed });
+    });
+
+    shoppingChecks.forEach((check, key) => {
+        if (allKeys.has(key) || !key.startsWith('item:')) return;
+        const [name, unit] = key.slice('item:'.length).split('|||');
+        rows.push({
+            key, name, unit, amount: check.amount, category: check.category,
+            is_pantry: false, isExtra: false, checked: true,
+        });
+    });
+    return rows;
 }
 
 /** Two decimals (hides float artifacts from scaling); null stays null. */
@@ -135,7 +184,10 @@ function buildAmountBadge(item) {
 function renderGroupedList(container, items, buildRowFn) {
     items.sort((a, b) => {
         const catDiff = categorySortIndex(a.category) - categorySortIndex(b.category);
-        return catDiff !== 0 ? catDiff : a.name.localeCompare(b.name);
+        if (catDiff !== 0) return catDiff;
+        const nameDiff = a.name.localeCompare(b.name);
+        // A partly bought line: the ticked part first, then the open rest.
+        return nameDiff !== 0 ? nameDiff : Number(!!b.checked) - Number(!!a.checked);
     });
 
     let lastCategoryLabel = undefined;
@@ -193,37 +245,39 @@ function buildShoppingRow(item) {
 
     // Ticked-off lines are saved per week, so they survive reloads and show
     // up on other devices. The key is the line's merge key (name + unit), so
-    // a line stays ticked while plan changes only alter its amount.
-    const applyCheckedStyle = () => {
-        nameSpan.style.textDecoration = checkbox.checked ? 'line-through' : 'none';
-        nameSpan.style.opacity = checkbox.checked ? '0.5' : '1';
-    };
-    checkbox.checked = checkedShoppingKeys.has(item.key);
-    applyCheckedStyle();
-    checkbox.addEventListener('change', () => {
-        applyCheckedStyle();
-        saveShoppingCheck(item.key, checkbox.checked, () => {
-            checkbox.checked = !checkbox.checked;
-            applyCheckedStyle();
-        });
-    });
+    // plan changes only alter amounts (see applyShoppingChecks()).
+    checkbox.checked = !!item.checked;
+    nameSpan.style.textDecoration = item.checked ? 'line-through' : 'none';
+    nameSpan.style.opacity = item.checked ? '0.5' : '1';
+    checkbox.addEventListener('change', () => toggleShoppingRow(item, checkbox.checked));
 
     return li;
 }
 
-/** Saves one line's tick; onError reverts the checkbox. */
-function saveShoppingCheck(key, checked, onError) {
-    if (checked) checkedShoppingKeys.add(key); else checkedShoppingKeys.delete(key);
+/** Ticking stores the full needed amount (for an open rest: the whole
+ * line's); unticking any part forgets the tick, so the whole line is open
+ * again. Optimistic; a failed save restores the previous state. */
+function toggleShoppingRow(item, checked) {
+    const previous = shoppingChecks.get(item.key);
+    if (checked) {
+        const amount = item.remainderOf !== undefined ? item.remainderOf : item.amount;
+        shoppingChecks.set(item.key, { key: item.key, amount: amount ?? null, category: item.category || null });
+    } else {
+        shoppingChecks.delete(item.key);
+    }
+    rebuildShoppingList();
+
+    const saved = shoppingChecks.get(item.key);
     postWithCsrf(`/plan/${dayDates[0]}/shopping-check`, {
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, checked }),
+        body: JSON.stringify({ key: item.key, checked, amount: saved ? saved.amount : null, category: saved ? saved.category : null }),
     })
     .then(response => {
         if (!response.ok) throw new Error(window.I18N.could_not_be_saved);
     })
     .catch(err => {
-        if (checked) checkedShoppingKeys.delete(key); else checkedShoppingKeys.add(key);
-        onError();
+        if (previous) shoppingChecks.set(item.key, previous); else shoppingChecks.delete(item.key);
+        rebuildShoppingList();
         alert(window.I18N.note_prefix + ' ' + err.message);
     });
 }

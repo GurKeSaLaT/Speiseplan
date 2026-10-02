@@ -10,6 +10,7 @@ from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem, 
 from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.planning import DAY_NAMES, friday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
 from services.plan_summary import build_week_summary
+from services.shopping import group_category_map
 from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
@@ -104,11 +105,13 @@ def week_view(start_date):
         ExtraShoppingItem.query.filter_by(plan_id=active_plan.id, week_start=normalized)
         .order_by(ExtraShoppingItem.id).all()
     )
-    checked_shopping_keys = [
-        c.item_key for c in ShoppingListCheck.query.filter_by(plan_id=active_plan.id, week_start=normalized)
+    shopping_checks = [
+        {"key": c.item_key, "amount": c.amount, "category": c.category}
+        for c in ShoppingListCheck.query.filter_by(plan_id=active_plan.id, week_start=normalized)
     ]
 
     all_recipes = visible_recipes_query(active_plan.id).all()
+    group_categories = group_category_map(active_plan.id)
 
     # Read-only main dishes of the user's other plans on the same days
     # (only memberships with show_in_week_overview set).
@@ -142,8 +145,8 @@ def week_view(start_date):
         'excludedDays': [i in excluded_days for i in range(7)],
         'servingsList': servings_list,
         'cookedMain': cooked_main,
-        'plan': [jsonify_recipe(r, active_plan.id) if r else None for r in plan],
-        'sidePlan': [[jsonify_side(s, active_plan.id) for s in sides] for sides in side_plan],
+        'plan': [jsonify_recipe(r, active_plan.id, group_categories) if r else None for r in plan],
+        'sidePlan': [[jsonify_side(s, active_plan.id, group_categories) for s in sides] for sides in side_plan],
         'extraItems': [
             {
                 "id": it.id, "name": it.name,
@@ -155,7 +158,7 @@ def week_view(start_date):
             }
             for it in extra_items
         ],
-        'checkedShoppingKeys': checked_shopping_keys,
+        'shoppingChecks': shopping_checks,
         'allRecipes': [
             {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
             for r in all_recipes

@@ -104,6 +104,23 @@ pytest
 
 Tests use their own temporary SQLite database.
 
+## Translations
+
+English is the source language; `translations/de` holds the German
+catalog. After adding or changing UI strings:
+
+```bash
+pybabel extract -F babel.cfg -k _l -o messages.pot .
+pybabel update -i messages.pot -d translations -l de
+# fill in the new msgstr entries in translations/de/LC_MESSAGES/messages.po
+pybabel compile -d translations
+```
+
+`-k _l` is required: module-level strings use `lazy_gettext as _l`, and
+without it they silently drop out of the catalog. Strings for
+`static/*.js` go through `window.I18N` in `templates/base.html`.
+`tests/test_translations.py` fails on any untranslated string.
+
 ## Project structure
 
 ```

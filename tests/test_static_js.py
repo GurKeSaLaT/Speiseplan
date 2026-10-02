@@ -35,4 +35,12 @@ def test_fuzzy_search_never_matches_across_terms():
 def test_shopping_checkboxes_are_saved():
     content = _read("plan-shopping.js")
     assert "/shopping-check" in content
-    assert "checkedShoppingKeys.has(item.key)" in content
+    assert "shoppingChecks.get(item.key)" in content
+
+
+def test_shopping_ticks_keep_bought_amounts():
+    """Partly bought lines split into a ticked and an open row instead of
+    losing the tick (source-level guard only, no JS runtime here)."""
+    content = _read("plan-shopping.js")
+    assert "function applyShoppingChecks(" in content
+    assert "remainderOf" in content

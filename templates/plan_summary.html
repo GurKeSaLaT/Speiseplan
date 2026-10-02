@@ -19,15 +19,15 @@
         <p class="section-title mb-2">📊 {{ _('Combined weekly nutrition') }}</p>
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-1">
             Σ {{ _('week') }}: {{ summary.nutrition.week.calories | round | int }} kcal |
-            P: {{ '%.1f'|format(summary.nutrition.week.protein) }}g |
-            C: {{ '%.1f'|format(summary.nutrition.week.carbs) }}g |
-            F: {{ '%.1f'|format(summary.nutrition.week.fat) }}g
+            {{ _('P') }}: {{ '%.1f'|format(summary.nutrition.week.protein) }}g |
+            {{ _('C') }}: {{ '%.1f'|format(summary.nutrition.week.carbs) }}g |
+            {{ _('F') }}: {{ '%.1f'|format(summary.nutrition.week.fat) }}g
         </div>
         <div class="text-muted small font-monospace bg-light p-2 rounded">
             Ø {{ _('per planned day') }}: {{ summary.nutrition.daily_avg.calories | round | int }} kcal |
-            P: {{ '%.1f'|format(summary.nutrition.daily_avg.protein) }}g |
-            C: {{ '%.1f'|format(summary.nutrition.daily_avg.carbs) }}g |
-            F: {{ '%.1f'|format(summary.nutrition.daily_avg.fat) }}g
+            {{ _('P') }}: {{ '%.1f'|format(summary.nutrition.daily_avg.protein) }}g |
+            {{ _('C') }}: {{ '%.1f'|format(summary.nutrition.daily_avg.carbs) }}g |
+            {{ _('F') }}: {{ '%.1f'|format(summary.nutrition.daily_avg.fat) }}g
         </div>
     </div>
 </div>
