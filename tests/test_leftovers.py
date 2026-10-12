@@ -188,7 +188,7 @@ def test_create_view_prefills_leftovers_and_suggests_ingredients(app, client, ma
 
     html = client.get(f"/plan/{WEEK}/create").data.decode("utf-8")
     assert '<option value="Paprika">' in html
-    initial = json.loads(re.search(r"window\.INITIAL_LEFTOVERS = (.*?);</script>", html).group(1))
+    initial = json.loads(re.search(r"window\.INITIAL_LEFTOVERS = (.*?);\s*\n", html).group(1))
     assert [(lo["name"], lo["amount"], lo["unit"]) for lo in initial] == [("Sahne", 200, "ml")]
 
 

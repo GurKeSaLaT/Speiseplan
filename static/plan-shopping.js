@@ -54,8 +54,8 @@ function categorySortIndex(category) {
 /**
  * Rebuilds the shopping list (and the nutrition summary) from state.
  *
- * Recipe ingredients are scaled to each day's servings and merged by
- * name+unit, then the week's leftovers are subtracted. Pantry ingredients go to the pantry list instead - except
+ * Recipe ingredients are scaled to each day's servings (a main dish's plus
+ * its follow-ups', see extraServingsFor) and merged by name+unit, then the week's leftovers are subtracted. Pantry ingredients go to the pantry list instead - except
  * manually added items, which always stay on the shopping list (adding
  * one is an explicit "I need to buy this").
  */
@@ -70,10 +70,16 @@ function rebuildShoppingList() {
     let consolidated = {};
 
     for (let i = 0; i < 7; i++) {
-        [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach(recipe => {
+        [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach((recipe, position) => {
             if (recipe && recipe.ingredients) {
-                const factor = recipe.servings ? dayServings[i] / recipe.servings : 1;
+                const isMain = position === 0;
+                // A main dish with follow-ups is bought for their servings too;
+                // a follow-up dish skips what comes from its source dish.
+                const servings = dayServings[i] + (isMain ? extraServingsFor(i) : 0);
+                const factor = recipe.servings ? servings / recipe.servings : 1;
+                const linkedFollowUp = isMain && !!followUpOf[i];
                 recipe.ingredients.forEach(ing => {
+                    if (linkedFollowUp && ing.from_previous) return;
                     // Different units are never added up.
                     const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
                     const scaledAmount = ing.amount * factor;

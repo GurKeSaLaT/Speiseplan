@@ -3,8 +3,10 @@
 from models import (
     Category, ExtraShoppingItem, IngredientAlias, IngredientNutrition,
     AppSettings, PendingPlanInvite, Plan, PlanDay, PlanDaySide, PlanMembership,
-    Recipe, RecipePlanLink, ShoppingListCheck, WeekLeftover, db,
+    PendingFollowUp, Recipe, RecipePlanLink, ShoppingListCheck, WeekLeftover, db,
 )
+
+from services.follow_ups import forget_recipe
 
 DEFAULT_CATEGORIES = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
 
@@ -51,6 +53,7 @@ def delete_plan(plan):
             recipe.category_id = new_category.id
             RecipePlanLink.query.filter_by(recipe_id=recipe.id, plan_id=new_owner_plan_id).delete()
         else:
+            forget_recipe(recipe.id)
             db.session.delete(recipe)
 
     plan_day_ids = db.session.query(PlanDay.id).filter(PlanDay.plan_id == plan.id)
@@ -60,6 +63,7 @@ def delete_plan(plan):
     ExtraShoppingItem.query.filter_by(plan_id=plan.id).delete()
     ShoppingListCheck.query.filter_by(plan_id=plan.id).delete()
     WeekLeftover.query.filter_by(plan_id=plan.id).delete()
+    PendingFollowUp.query.filter_by(plan_id=plan.id).delete()
     AppSettings.query.filter_by(plan_id=plan.id).delete()
     IngredientAlias.query.filter_by(plan_id=plan.id).delete()
     IngredientNutrition.query.filter_by(plan_id=plan.id).delete()

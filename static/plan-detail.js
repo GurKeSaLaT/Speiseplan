@@ -20,7 +20,11 @@ function openRecipeDetail(dayIndex, sideId) {
 
     document.getElementById('recipeDetailTitle').textContent = (recipe.is_favorite ? '⭐ ' : '') + recipe.name;
     document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit/${recipe.id}`;
-    document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(recipe, dayServings[dayIndex]);
+    const extra = sideId ? 0 : extraServingsFor(dayIndex);
+    document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(
+        recipe, dayServings[dayIndex] + extra,
+        sideId ? null : { dayIndex, extra, isFollowUp: !!followUpOf[dayIndex] }
+    );
 
     const checkbox = document.getElementById('recipeDetailCookedCheckbox');
     checkbox.checked = cooked;
@@ -30,12 +34,14 @@ function openRecipeDetail(dayIndex, sideId) {
 }
 
 /** Ingredient amounts are scaled to the day's servings like on the shopping
- * list; nutrition stays per serving. */
-function renderRecipeDetailBody(recipe, targetServings) {
+ * list (for a main dish with follow-ups: including their servings, see
+ * link.extra); nutrition stays per serving. link is null for side dishes. */
+function renderRecipeDetailBody(recipe, targetServings, link = null) {
     const factor = recipe.servings ? targetServings / recipe.servings : 1;
+    const fromPreviousNote = link && link.isFollowUp ? ` <span class="text-muted small">(${escapeHtml(window.I18N.from_previous_short)})</span>` : '';
     const ingredientsHtml = recipe.ingredients.length
         ? `<ul class="mb-0 ps-3">${recipe.ingredients.map(ing =>
-            `<li>${escapeHtml(roundedAmount({ amount: ing.amount * factor }))} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}</li>`
+            `<li>${escapeHtml(roundedAmount({ amount: ing.amount * factor }))} ${escapeHtml(ing.unit)} ${escapeHtml(ing.name)}${ing.from_previous ? fromPreviousNote : ''}</li>`
           ).join('')}</ul>`
         : `<span class="text-muted">${escapeHtml(window.I18N.no_ingredients_on_file)}</span>`;
 
@@ -55,6 +61,8 @@ function renderRecipeDetailBody(recipe, targetServings) {
         <div class="text-muted small font-monospace bg-light p-2 rounded mb-3">
             📊 ${recipe.calories} kcal | ${escapeHtml(macroLine(recipe.protein, recipe.carbs, recipe.fat))} <span class="text-muted">${escapeHtml(window.I18N.per_serving)}</span>
         </div>
+        ${link ? renderFollowUpNotes(link.dayIndex) : ''}
+        ${link && link.extra ? `<div class="follow-up-note mb-2">${escapeHtml(window.I18N.follow_up_amounts_include.replace('{count}', link.extra))}</div>` : ''}
         <h6 class="fw-bold text-dark mb-1">🛒 ${escapeHtml(window.I18N.ingredients_word)}</h6>
         ${ingredientsHtml}
         ${instructionsHtml}

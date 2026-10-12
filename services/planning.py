@@ -7,8 +7,8 @@ from datetime import date, timedelta
 
 from flask_babel import lazy_gettext as _l
 
-from models import db, Recipe, PlanDay, PlanDaySide
-from services.recipe_visibility import visible_recipes_query
+from models import db, Category, Recipe, PlanDay, PlanDaySide, RecipeFollowUp
+from services.recipe_visibility import visible_recipe_ids_subquery, visible_recipes_query
 from services.seasons import recipe_available_now
 from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name
 from services.instruction_placeholders import tokenize_instructions
@@ -149,13 +149,28 @@ def assign_balanced_categories(all_categories, days_to_fill, final_plan, preexis
     return assigned
 
 
+def follow_up_target_ids(plan_id):
+    """Recipes that are the follow-up of a recipe visible to plan_id
+    (RecipeFollowUp) - never drawn on their own, only planned after their
+    source dish (services/follow_ups.py)."""
+    rows = (
+        db.session.query(RecipeFollowUp.follow_up_recipe_id)
+        .filter(RecipeFollowUp.recipe_id.in_(visible_recipe_ids_subquery(plan_id)))
+        .distinct().all()
+    )
+    return {rid for (rid,) in rows}
+
+
 def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_season=True, reference_date=None):
     """Picks one recipe visible to plan_id, or None if nothing is left.
 
-    exclude_ids is the only hard filter. Currently seasonal recipes are
+    exclude_ids and follow-up dishes (follow_up_target_ids) are the only
+    hard filters. Currently seasonal recipes are
     preferred but never required (falls back to all candidates), and the
     draw is weighted by favorites and recent use before reference_date.
     """
+    if not is_side_dish:
+        exclude_ids = set(exclude_ids) | follow_up_target_ids(plan_id)
     base_query = visible_recipes_query(plan_id).filter(
         Recipe.is_side_dish.is_(is_side_dish),
         ~Recipe.id.in_(exclude_ids)
@@ -179,6 +194,40 @@ def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_s
     return weighted_recipe_choice(candidates, usage_counts)
 
 
+def reroll_choice(plan_id, target_date, current_recipe_id=None):
+    """A main dish for one day of a stored week, or None: never the current
+    dish or one used elsewhere in the week; prefers categories not used by
+    the neighboring days (real dates, so across week boundaries too) and
+    the week's least-used categories, then falls back to any category."""
+    exclude_ids = week_neighbor_exclude_ids(target_date, plan_id)
+    if current_recipe_id:
+        exclude_ids.add(current_recipe_id)
+
+    all_cat_ids = [c.id for c in Category.query.filter_by(plan_id=plan_id).all()]
+    other_cat_counts = {cid: 0 for cid in all_cat_ids}
+    for r in visible_recipes_query(plan_id).filter(Recipe.id.in_(exclude_ids)).all():
+        other_cat_counts[r.category_id] = other_cat_counts.get(r.category_id, 0) + 1
+
+    neighbor_ids = []
+    for neighbor_date in (target_date - timedelta(days=1), target_date + timedelta(days=1)):
+        neighbor_day = PlanDay.query.filter_by(plan_id=plan_id, date=neighbor_date).first()
+        if neighbor_day and neighbor_day.main_recipe_id:
+            neighbor_ids.append(neighbor_day.main_recipe_id)
+    neighbor_categories = {
+        r.category_id for r in visible_recipes_query(plan_id).filter(Recipe.id.in_(neighbor_ids)).all()
+    }
+
+    # Same ordering as assign_balanced_categories(): non-neighbor first, then rarest.
+    for cat_id in sorted(all_cat_ids, key=lambda cid: (cid in neighbor_categories, other_cat_counts[cid])):
+        chosen = choose_recipe(
+            is_side_dish=False, exclude_ids=exclude_ids, plan_id=plan_id, category_id=cat_id,
+            reference_date=target_date
+        )
+        if chosen:
+            return chosen
+    return choose_recipe(is_side_dish=False, exclude_ids=exclude_ids, plan_id=plan_id, reference_date=target_date)
+
+
 def jsonify_recipe(recipe, plan_id, group_categories=None):
     """Recipe as a JSON-ready dict for the plan page.
 
@@ -200,6 +249,7 @@ def jsonify_recipe(recipe, plan_id, group_categories=None):
             **dict(zip(("amount", "unit"), convert_for_display(ing.amount, ing.unit, display_units))),
             "category": group_categories.get(canonical, ing.category),
             "is_pantry": ing.is_pantry,
+            "from_previous": ing.from_previous,
         })
     return {
         "id": recipe.id,

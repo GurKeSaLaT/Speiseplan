@@ -28,6 +28,10 @@ in, and get a combined shopping list.
   by hand.
 - **Units**: amounts are stored in g/ml and shown in g/kg or ml/l as
   configured.
+- **Linked recipes**: a dish can name follow-up dishes made from its
+  leftovers a few days later (e.g. roast vegetables -> pasta with vegetable
+  sauce). Planning the dish puts one follow-up on a free day in its window
+  and buys the dish for both days; follow-ups are never rolled on their own.
 - **Scaling amounts in instructions**: placeholders like `{Flour}` or
   `{Butter*1/2}` in the instructions show the ingredient's amount, scaled
   to the day's servings.

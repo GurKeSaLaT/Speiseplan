@@ -54,6 +54,13 @@ class Recipe(db.Model):
     # No rows = available year-round. Only restricts automatic selection.
     seasons = db.relationship('RecipeSeason', backref='recipe', cascade="all, delete-orphan")
     plan_links = db.relationship('RecipePlanLink', backref='recipe', cascade="all, delete-orphan")
+    # Dishes planned a few days after this one, made from its leftovers
+    # (services/follow_ups.py). Rows where this recipe is the follow-up are
+    # cleaned up by hand on delete.
+    follow_ups = db.relationship(
+        'RecipeFollowUp', foreign_keys='RecipeFollowUp.recipe_id', cascade="all, delete-orphan",
+        order_by='RecipeFollowUp.id',
+    )
 
 
 class RecipeSeason(db.Model):
@@ -79,12 +86,31 @@ class RecipePlanLink(db.Model):
     plan = db.relationship('Plan')
 
 
+class RecipeFollowUp(db.Model):
+    """"Cook more of recipe, and min_days..max_days later make follow_up
+    from what's left" (e.g. roast vegetables -> pasta with vegetable
+    sauce). A recipe can have several; one is drawn when the recipe gets
+    planned. A recipe that is any recipe's follow-up is never drawn on its
+    own (services/follow_ups.py: follow_up_target_ids)."""
+    id = db.Column(db.Integer, primary_key=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False, index=True)
+    follow_up_recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False, index=True)
+    min_days = db.Column(db.Integer, nullable=False, default=2)
+    max_days = db.Column(db.Integer, nullable=False, default=3)
+
+    __table_args__ = (
+        db.UniqueConstraint('recipe_id', 'follow_up_recipe_id', name='uq_recipe_follow_up_recipe_follow_up'),
+    )
+
+    follow_up_recipe = db.relationship('Recipe', foreign_keys=[follow_up_recipe_id])
+
+
 class Ingredient(db.Model):
     """One ingredient line; amount is for Recipe.servings people and stored
     canonically (g/ml where convertible).
 
     category is one of services/shopping.py: SHOPPING_CATEGORIES (None =
-    misc). is_pantry puts the line on the "check pantry" list instead of the
+    misc). from_previous: see below. is_pantry puts the line on the "check pantry" list instead of the
     shopping list - per line, since the same ingredient can be a staple in
     one recipe and a fresh purchase in another.
     """
@@ -95,3 +121,6 @@ class Ingredient(db.Model):
     unit = db.Column(db.String(20), nullable=False)
     category = db.Column(db.String(50), nullable=True)
     is_pantry = db.Column(db.Boolean, nullable=False, default=False)
+    # Comes from the preceding dish's leftovers: left off the shopping list
+    # when this recipe is planned as a follow-up (PlanDay.follow_up_of_date).
+    from_previous = db.Column(db.Boolean, nullable=False, default=False)

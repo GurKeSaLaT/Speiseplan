@@ -34,6 +34,46 @@ let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 // Manual shopping-list items for the whole week (not per day).
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
+// Linked dishes (services/follow_ups.py). followUpOf[i]: the dish day i's
+// dish is made from ({date, index|null, name, label}) or null.
+// followUpsOut[i]: dishes made from day i's dish ({date, index|null, name,
+// label, servings, pending}); index set = in this week (servings live).
+let followUpOf = window.PLAN_DATA.followUpOf || [null, null, null, null, null, null, null];
+let followUpsOut = window.PLAN_DATA.followUpsOut || [[], [], [], [], [], [], []];
+
+/** Extra servings day i's main dish is bought and cooked for: its
+ * follow-ups' servings (only in-week ones that still link back count). */
+function extraServingsFor(dayIndex) {
+    return (followUpsOut[dayIndex] || []).reduce((sum, entry) => {
+        if (entry.index === null || entry.index === undefined) return sum + (entry.servings || 0);
+        return followUpOf[entry.index] ? sum + dayServings[entry.index] : sum;
+    }, 0);
+}
+
+/** The "made from / goes into" lines under a day's main dish. */
+function renderFollowUpNotes(dayIndex) {
+    const notes = [];
+    const source = followUpOf[dayIndex];
+    if (source) {
+        notes.push(window.I18N.follow_up_of.replace('{name}', source.name).replace('{day}', source.label));
+    }
+    (followUpsOut[dayIndex] || []).forEach(entry => {
+        const template = entry.pending ? window.I18N.follow_up_pending : window.I18N.follow_up_on;
+        notes.push(template.replace('{name}', entry.name).replace('{day}', entry.label));
+    });
+    return notes.map(note => `<div class="follow-up-note">↪ ${escapeHtml(note)}</div>`).join('');
+}
+
+/** Link changes touch other days (maybe other weeks) - reload instead of
+ * patching every affected card. */
+function reloadIfLinksChanged(data) {
+    if (data && data.links_changed) {
+        window.location.reload();
+        return true;
+    }
+    return false;
+}
+
 // This week's leftovers ({id, name, amount, unit}, display units);
 // subtracted from the shopping list (see subtractLeftovers()).
 let weeklyLeftovers = window.PLAN_DATA.leftovers || [];
@@ -87,6 +127,7 @@ function rerollSingleDay(dayIndex) {
         return response.json();
     })
     .then(newRecipe => {
+        if (reloadIfLinksChanged(newRecipe)) return;
         weeklyPlanRecipes[dayIndex] = newRecipe;
         dayCooked[dayIndex] = false;
         refreshDayCard(dayIndex);
@@ -126,6 +167,7 @@ function renderMainDisplay(dayIndex) {
                 ${escapeHtml(window.I18N.carbs_abbr)}: <span class="recipe-carbs">${recipe.carbs}</span>g |
                 ${escapeHtml(window.I18N.fat_abbr)}: <span class="recipe-fat">${recipe.fat}</span>g
             </div>
+            ${renderFollowUpNotes(dayIndex)}
         `;
     }
     const placeholderText = dayExcluded[dayIndex] ? window.I18N.excluded_from_planning : window.I18N.no_matching_recipe_available;
@@ -152,6 +194,7 @@ function toggleDayExclusion(dayIndex) {
         return response.json();
     })
     .then(data => {
+        if (reloadIfLinksChanged(data)) return;
         dayExcluded[dayIndex] = data.excluded;
         if (data.excluded) {
             weeklyPlanRecipes[dayIndex] = null;
@@ -198,6 +241,7 @@ function setMainRecipe(dayIndex, recipeId) {
         return response.json();
     })
     .then(newRecipe => {
+        if (reloadIfLinksChanged(newRecipe)) return;
         weeklyPlanRecipes[dayIndex] = newRecipe;
         dayExcluded[dayIndex] = false;
         dayCooked[dayIndex] = false;
@@ -307,7 +351,8 @@ function daySwap(i, j) {
         if (!response.ok) throw new Error(window.I18N.swap_failed);
         return response.json();
     })
-    .then(() => {
+    .then(data => {
+        if (reloadIfLinksChanged(data)) return;
         [weeklyPlanRecipes[i], weeklyPlanRecipes[j]] = [weeklyPlanRecipes[j], weeklyPlanRecipes[i]];
         [weeklySideRecipes[i], weeklySideRecipes[j]] = [weeklySideRecipes[j], weeklySideRecipes[i]];
         [dayExcluded[i], dayExcluded[j]] = [dayExcluded[j], dayExcluded[i]];
