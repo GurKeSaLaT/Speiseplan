@@ -70,7 +70,9 @@ function formatPlaceholderAmount(ingredient, factor) {
     const amount = roundedAmount({ amount: ingredient.amount * factor });
     if (!amount) return '';
     const unit = (ingredient.unit || '').trim();
-    return COUNT_UNITS.has(unit.toLowerCase()) ? `${amount}` : `${amount} ${unit}`;
+    if (!unit) return `${amount}`;
+    // A literal's unit is whatever was written ("{12 Stück}"), so keep it.
+    return !ingredient.literal && COUNT_UNITS.has(unit.toLowerCase()) ? `${amount}` : `${amount} ${unit}`;
 }
 
 /** Instructions as escaped HTML with every placeholder replaced by its
@@ -81,9 +83,12 @@ function renderInstructionParts(recipe, factor) {
     const parts = recipe.instruction_parts || [{ text: recipe.instructions || '' }];
     return parts.map(part => {
         if (part.text !== undefined) return escapeHtml(part.text);
-        const ingredient = recipe.ingredients[part.ing];
+        // A literal amount like {500 ml}: scaled as written, unit kept.
+        const ingredient = part.amount !== undefined
+            ? { amount: part.amount, unit: part.unit, literal: true }
+            : recipe.ingredients[part.ing];
         if (!ingredient) return escapeHtml(part.raw || '');
-        const amount = formatPlaceholderAmount(ingredient, part.factor * factor);
+        const amount = formatPlaceholderAmount(ingredient, part.amount !== undefined ? factor : part.factor * factor);
         return amount ? `<strong class="instruction-amount">${escapeHtml(amount)}</strong>` : '';
     }).join('');
 }

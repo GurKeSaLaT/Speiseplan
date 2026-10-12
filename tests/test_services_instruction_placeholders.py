@@ -142,3 +142,27 @@ def test_autosave_reports_unresolved_placeholders_against_new_ingredients(app, c
     )
     assert resp.status_code == 200
     assert resp.get_json()["unresolved_placeholders"] == ["{Zucker}"]
+
+
+# --- literal amounts ---
+
+@pytest.mark.parametrize("ref, expected", [
+    ("500 ml", (500.0, "ml")), ("12", (12.0, "")), ("½ TL", (0.5, "TL")), ("1/2 TL", (0.5, "TL")),
+    ("1 1/2 EL", (1.5, "EL")), ("1,5 l", (1.5, "l")), ("2½ EL", (2.5, "EL")), ("4 Teller", (4.0, "Teller")),
+    ("Mehl", None), ("Champignons (braune)", None), ("0 g", None), ("1/0 TL", None), ("", None),
+])
+def test_parse_literal_amount(ref, expected):
+    from services.instruction_placeholders import parse_literal_amount
+    assert parse_literal_amount(ref) == expected
+
+
+def test_tokenize_literal_amounts_need_no_ingredient():
+    parts = tokenize_instructions("{500 ml} Wasser, {12} Knödel, {½ TL*2} Salz", [])
+    assert parts == [
+        {"amount": 500.0, "unit": "ml", "raw": "{500 ml}"}, {"text": " Wasser, "},
+        {"amount": 12.0, "unit": "", "raw": "{12}"}, {"text": " Knödel, "},
+        {"amount": 1.0, "unit": "TL", "raw": "{½ TL*2}"}, {"text": " Salz"},
+    ]
+    assert unresolved_placeholders("{500 ml} {12} {½ TL}", []) == []
+    # #n makes no sense on a literal.
+    assert unresolved_placeholders("{500 ml#2}", []) == ["{500 ml#2}"]

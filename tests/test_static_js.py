@@ -166,3 +166,21 @@ def test_instruction_placeholders_scale_with_servings_and_share():
 def test_instructions_without_parts_render_escaped_text():
     html = _render_instructions({"instructions": "a < b {Mehl}", "ingredients": []}, 2)
     assert html == "a &lt; b {Mehl}"
+
+
+@needs_node
+def test_literal_amount_placeholders_scale_and_keep_their_unit():
+    recipe = {
+        "instructions": "x", "ingredients": [],
+        "instruction_parts": [
+            {"amount": 500, "unit": "ml", "raw": "{500 ml}"}, {"text": " Wasser, "},
+            {"amount": 12, "unit": "", "raw": "{12}"}, {"text": " Knödel, "},
+            {"amount": 2, "unit": "Stück", "raw": "{2 Stück}"},
+        ],
+    }
+    html = _render_instructions(recipe, 0.5)
+    assert html == (
+        '<strong class="instruction-amount">250 ml</strong> Wasser, '
+        '<strong class="instruction-amount">6</strong> Knödel, '
+        '<strong class="instruction-amount">1 Stück</strong>'
+    )
