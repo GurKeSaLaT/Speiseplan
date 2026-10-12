@@ -19,6 +19,9 @@ in, and get a combined shopping list.
 - **Shopping list**: ingredients summed across the week, scaled to each
   day's servings and grouped by shop category. Pantry items are listed
   separately. Manual items can be added.
+- **Leftovers**: enter what's left from last week when creating a week;
+  dishes that use it up are planned first, and it is subtracted from the
+  shopping list.
 - **Ingredients and nutrition**: spelling variants merge into one shopping
   list entry ("Spaghetti", "Fusilli" → "Noodles"). Nutrition per 100 g,
   100 ml or 1 piece; recipe nutrition is computed from it unless entered

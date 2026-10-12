@@ -7,6 +7,10 @@ from flask import render_template, request, redirect, url_for, abort, session
 from flask_babel import gettext as _
 
 from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem, ShoppingListCheck
+from services.ingredient_aliases import get_all_aliases, list_known_ingredient_names
+from services.leftovers import (
+    canonical_name, parse_leftovers_form, replace_week_leftovers, week_leftovers_payload,
+)
 from services.auth import current_plan, current_user, selected_plan_id, user_has_plan_access, user_plan_memberships
 from services.planning import DAY_NAMES, friday_of, week_dates_for, parse_iso_date, jsonify_recipe, jsonify_side
 from services.plan_summary import build_week_summary
@@ -159,6 +163,7 @@ def week_view(start_date):
             for it in extra_items
         ],
         'shoppingChecks': shopping_checks,
+        'leftovers': week_leftovers_payload(active_plan.id, normalized),
         'allRecipes': [
             {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
             for r in all_recipes
@@ -175,6 +180,10 @@ def week_view(start_date):
     )
 
 
+# Datalist suggestions only; any unit can be typed.
+LEFTOVER_UNIT_SUGGESTIONS = ['g', 'kg', 'ml', 'l', 'Stück', 'EL', 'TL', 'Bund', 'Dose', 'Packung']
+
+
 @plan_bp.route('/plan/<start_date>/create')
 def week_create_view(start_date):
     """Form for (re)creating a week: pin or exclude days before the rest is
@@ -189,17 +198,22 @@ def week_create_view(start_date):
 
     recipes = visible_recipes_query(plan.id).all()
     categories = Category.query.filter_by(plan_id=plan.id).order_by(Category.name).all()
+    aliases = get_all_aliases(plan.id)
+    ingredient_names = sorted({canonical_name(aliases, n) for n in list_known_ingredient_names(plan.id)})
 
     return render_template(
         'create_week.html', recipes=recipes, categories=categories,
-        week_dates=week_dates_for(start), start_date=start, days=DAY_NAMES, plan_id=plan.id
+        week_dates=week_dates_for(start), start_date=start, days=DAY_NAMES, plan_id=plan.id,
+        ingredient_names=ingredient_names, leftovers=week_leftovers_payload(plan.id, start),
+        leftover_units=LEFTOVER_UNIT_SUGGESTIONS,
     )
 
 
 @plan_bp.route('/plan/<start_date>/generate', methods=['POST'])
 def week_generate(start_date):
     """Saves a week from the create form: pinned days stay, the remaining
-    main dishes are generated (services/week_generation.py). Side dishes are
+    main dishes are generated (services/week_generation.py), using up the
+    entered leftovers first (stored for the week's shopping list). Side dishes are
     never generated, only pinned ones are saved. Existing days are
     overwritten, so this also handles "recreate week"."""
     start = parse_iso_date(start_date)
@@ -229,7 +243,15 @@ def week_generate(start_date):
         if side_rids:
             day_side_recipe_ids[i] = list(dict.fromkeys(side_rids))
 
-    final_plan, final_side_plan = generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids)
+    # The form is prefilled with the week's stored leftovers, so whatever
+    # comes back replaces them.
+    leftovers = parse_leftovers_form(request.form, plan.id)
+    replace_week_leftovers(plan.id, start, leftovers)
+
+    final_plan, final_side_plan = generate_week(
+        plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids,
+        leftover_names={lo["name"] for lo in leftovers},
+    )
 
     for i in range(7):
         day_date = dates[i]

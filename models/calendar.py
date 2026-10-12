@@ -71,3 +71,20 @@ class ShoppingListCheck(db.Model):
     __table_args__ = (
         db.UniqueConstraint('plan_id', 'week_start', 'item_key', name='uq_shopping_list_check_plan_week_key'),
     )
+
+
+class WeekLeftover(db.Model):
+    """Something left over from the previous week, entered when (re)creating
+    a week or later on the plan page (week_start = that week's Friday).
+
+    Week generation prefers recipes that use it up, and the client-side
+    shopping list subtracts it from the matching line. name is the
+    canonical ingredient name (aliases resolved), amount/unit are stored
+    canonically like Ingredient (g/ml where convertible). No amount means
+    "enough for whatever the week needs": the whole line is dropped."""
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    week_start = db.Column(db.Date, nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.Float, nullable=True)
+    unit = db.Column(db.String(20), nullable=True)

@@ -1,12 +1,14 @@
-"""JSON endpoints for manually added shopping-list items and for ticking
-off shopping-list lines."""
+"""JSON endpoints for manually added shopping-list items, for ticking off
+shopping-list lines, and for the week's leftovers (WeekLeftover)."""
 
 import math
 
 from flask import abort, request
 from flask_babel import gettext as _
 
-from models import db, ExtraShoppingItem, ShoppingListCheck
+from models import db, ExtraShoppingItem, ShoppingListCheck, WeekLeftover
+from services.ingredient_aliases import get_all_aliases
+from services.leftovers import MAX_LEFTOVERS_PER_WEEK, build_leftover, leftover_payload
 from services.auth import current_plan
 from services.planning import friday_of, parse_iso_date
 from services.settings import get_display_units
@@ -104,5 +106,39 @@ def set_shopping_check(start_date):
         existing.category = category
     elif existing is not None:
         db.session.delete(existing)
+    db.session.commit()
+    return {"ok": True}
+
+
+@plan_bp.route('/plan/<start_date>/leftover/add', methods=['POST'])
+def add_leftover(start_date):
+    """Body: {"name", "amount"?, "unit"?}. Adds a leftover to the week
+    containing start_date after the fact - it only affects the shopping
+    list then, the dishes are already planned."""
+    start = parse_iso_date(start_date)
+    if start is None:
+        return {"error": _("Invalid date")}, 400
+    start = friday_of(start)
+
+    data = request.get_json() or {}
+    plan = current_plan()
+    leftover = build_leftover(get_all_aliases(plan.id), data.get('name'), data.get('amount'), data.get('unit'))
+    if leftover is None:
+        return {"error": _("Name must not be empty.")}, 400
+    if WeekLeftover.query.filter_by(plan_id=plan.id, week_start=start).count() >= MAX_LEFTOVERS_PER_WEEK:
+        return {"error": _("Too many leftovers for one week.")}, 400
+
+    item = WeekLeftover(plan_id=plan.id, week_start=start, **leftover)
+    db.session.add(item)
+    db.session.commit()
+    return leftover_payload(item, get_display_units(plan.id))
+
+
+@plan_bp.route('/leftover/<int:leftover_id>/delete', methods=['POST'])
+def delete_leftover(leftover_id):
+    item = db.session.get(WeekLeftover, leftover_id)
+    if item is None or item.plan_id != current_plan().id:
+        abort(404)
+    db.session.delete(item)
     db.session.commit()
     return {"ok": True}

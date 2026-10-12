@@ -34,6 +34,10 @@ let weeklySideRecipes = window.PLAN_DATA.sidePlan;
 // Manual shopping-list items for the whole week (not per day).
 let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 
+// This week's leftovers ({id, name, amount, unit}, display units);
+// subtracted from the shopping list (see subtractLeftovers()).
+let weeklyLeftovers = window.PLAN_DATA.leftovers || [];
+
 // Ticked-off shopping-list lines this week: item key -> {key, amount,
 // category}; amount is how much was ticked off (see applyShoppingChecks()).
 let shoppingChecks = new Map((window.PLAN_DATA.shoppingChecks || []).map(check => [check.key, check]));

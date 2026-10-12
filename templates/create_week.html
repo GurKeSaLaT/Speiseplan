@@ -64,6 +64,28 @@
             {% endfor %}
         </div>
 
+        {# Leftovers: chips with hidden leftover_*[] fields, built by
+           create_week.js (prefilled from the week's stored leftovers). #}
+        <div class="leftover-panel">
+            <div class="create-toolbar">
+                <h2>🥡 {{ _('Leftovers from last week') }}</h2>
+            </div>
+            <p class="text-muted small mb-2">{{ _('Dishes that use these up are planned first, on the earliest free days. Amounts are subtracted from the shopping list; without an amount the whole item is left off it.') }}</p>
+            <div class="leftover-inputs" onkeydown="if(event.key==='Enter'){event.preventDefault();addLeftoverFromInputs();}">
+                <input type="text" id="leftoverName" class="form-control form-control-sm" list="leftoverNameOptions" placeholder="{{ _('Ingredient...') }}" autocomplete="off">
+                <input type="text" inputmode="decimal" id="leftoverAmount" class="form-control form-control-sm" placeholder="{{ _('Amount') }}">
+                <input type="text" id="leftoverUnit" class="form-control form-control-sm" list="leftoverUnitOptions" placeholder="{{ _('Unit') }}">
+                <button type="button" class="btn btn-sm btn-success leftover-add-btn" onclick="addLeftoverFromInputs()" title="{{ _('Add leftover') }}">+</button>
+            </div>
+            <datalist id="leftoverNameOptions">
+                {% for name in ingredient_names %}<option value="{{ name }}">{% endfor %}
+            </datalist>
+            <datalist id="leftoverUnitOptions">
+                {% for unit in leftover_units %}<option value="{{ unit }}">{% endfor %}
+            </datalist>
+            <div class="leftover-chips" id="leftoverChips"></div>
+        </div>
+
         <button type="submit" class="generate-btn">🎲 {{ _('Fill Remaining Days in Balance & Create Plan') }}</button>
     </form>
 </div>
@@ -180,6 +202,16 @@
 }
 .no-side { font-size: 0.74rem; color: var(--bs-secondary-color); font-style: italic; }
 
+.leftover-panel {
+    background: var(--card-bg); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-main); padding: 1rem 1.1rem; margin-bottom: 1.4rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+.leftover-inputs { display: grid; grid-template-columns: 1fr 5.5rem 5.5rem auto; gap: 0.35rem; }
+.leftover-add-btn { background-color: var(--primary-food) !important; border-color: var(--primary-food) !important; }
+.leftover-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+.leftover-chips:empty { display: none; }
+
 .generate-btn {
     width: 100%; background: linear-gradient(155deg, var(--primary-food), var(--primary-dark));
     color: #fff; border: none; border-radius: 0.9rem; padding: 1rem;
@@ -188,5 +220,6 @@
 }
 .generate-btn:hover { filter: brightness(1.05); }
 </style>
+<script>window.INITIAL_LEFTOVERS = {{ leftovers | tojson }};</script>
 <script src="{{ url_for('static', filename='create_week.js') }}"></script>
 {% endblock %}
