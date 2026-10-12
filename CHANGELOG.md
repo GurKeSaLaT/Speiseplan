@@ -2,6 +2,13 @@
 
 One line per change, newest first.
 
+## 2026-10-12
+
+- Leftovers: the create-week page takes leftovers from last week
+  (ingredient, optional amount). Dishes using them go on the earliest free
+  days, and they are subtracted from the shopping list (no amount = the
+  whole line). The plan page lists them with the dishes that use them.
+
 ## 2026-10-02
 
 - Shopping list keeps what was already bought: a tick stores its amount.
