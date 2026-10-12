@@ -296,3 +296,57 @@ function drop(event) {
     }
     assignRecipeToZone(targetZone, id, name, category);
 }
+
+/** "300 g", "2", or "" - shared by the leftover chips. */
+function formatLeftoverAmount(amount, unit) {
+    if (amount === null || amount === undefined || amount === '') return '';
+    return unit ? `${amount} ${unit}` : `${amount}`;
+}
+
+/** One chip per leftover, carrying its hidden leftover_*[] fields (read as
+ * parallel lists by services/leftovers.py: parse_leftovers_form). */
+function addLeftover(name, amount, unit) {
+    name = (name || '').trim();
+    if (!name) return;
+    const container = document.getElementById('leftoverChips');
+
+    const chip = document.createElement('span');
+    chip.className = 'side-dish-chip leftover-chip';
+    const label = document.createElement('span');
+    const amountText = formatLeftoverAmount(amount, unit);
+    label.textContent = amountText ? `${name} · ${amountText}` : name;
+    chip.appendChild(label);
+
+    [['leftover_name[]', name], ['leftover_amount[]', amount ?? ''], ['leftover_unit[]', unit ?? '']].forEach(([fieldName, value]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = fieldName;
+        input.value = value;
+        chip.appendChild(input);
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'x';
+    removeBtn.title = window.I18N.remove_item_title;
+    removeBtn.textContent = '✕';
+    removeBtn.onclick = () => chip.remove();
+    chip.appendChild(removeBtn);
+
+    container.appendChild(chip);
+}
+
+function addLeftoverFromInputs() {
+    const nameInput = document.getElementById('leftoverName');
+    const amountInput = document.getElementById('leftoverAmount');
+    const unitInput = document.getElementById('leftoverUnit');
+    if (!nameInput.value.trim()) return;
+    const amount = amountInput.value.trim();
+    addLeftover(nameInput.value, amount, amount ? unitInput.value.trim() : '');
+    nameInput.value = '';
+    amountInput.value = '';
+    unitInput.value = '';
+    nameInput.focus();
+}
+
+(window.INITIAL_LEFTOVERS || []).forEach(lo => addLeftover(lo.name, lo.amount, lo.unit));

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-10-02 18:43+0200\n"
+"POT-Creation-Date: 2026-10-12 18:34+0200\n"
 "PO-Revision-Date: 2026-08-31 13:34+0200\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: de\n"
@@ -49,7 +49,8 @@ msgstr "Zutatenname darf nicht leer sein."
 #: routes/plan/day_actions_sides.py:30 routes/plan/day_actions_sides.py:63
 #: routes/plan/day_actions_sides.py:88 routes/plan/day_actions_sides.py:118
 #: routes/plan/day_actions_sides.py:136 routes/plan/day_actions_sides.py:156
-#: routes/plan/shopping.py:23 routes/plan/shopping.py:85
+#: routes/plan/shopping.py:25 routes/plan/shopping.py:87
+#: routes/plan/shopping.py:120
 msgid "Invalid date"
 msgstr "Ungültiges Datum"
 
@@ -86,17 +87,21 @@ msgstr "Keine weiteren Beilagen in der Datenbank verfügbar!"
 msgid "This side dish does not belong to this day."
 msgstr "Diese Beilage gehört nicht zu diesem Tag."
 
-#: routes/plan/pages.py:101 templates/plan_summary.html:43
+#: routes/plan/pages.py:105 templates/plan_summary.html:43
 msgid "(Today)"
 msgstr "(Heute)"
 
-#: routes/plan/shopping.py:29
+#: routes/plan/shopping.py:31 routes/plan/shopping.py:127
 msgid "Name must not be empty."
 msgstr "Name darf nicht leer sein."
 
-#: routes/plan/shopping.py:91
+#: routes/plan/shopping.py:93
 msgid "Invalid item"
 msgstr "Ungültiger Eintrag"
+
+#: routes/plan/shopping.py:129
+msgid "Too many leftovers for one week."
+msgstr "Zu viele Reste für eine Woche."
 
 #: routes/recipes/crud.py:266
 msgid "Please enter a link."
@@ -170,7 +175,7 @@ msgstr "Mein Konto"
 msgid "Back"
 msgstr "Zurück"
 
-#: templates/account.html:13 templates/base.html:216
+#: templates/account.html:13 templates/base.html:219
 msgid "Profile"
 msgstr "Profil"
 
@@ -241,7 +246,7 @@ msgstr ""
 "Diese Aktion kann nicht rückgängig gemacht werden. Bist du sicher, dass "
 "du alle deine Speiseplan-Daten löschen möchtest?"
 
-#: templates/account.html:73 templates/base.html:121 templates/base.html:264
+#: templates/account.html:73 templates/base.html:124 templates/base.html:267
 #: templates/recipe_form.html:324 templates/sharing.html:121
 #: templates/sharing.html:144
 msgid "Cancel"
@@ -320,329 +325,343 @@ msgid "No spices/consumables planned this week."
 msgstr "Diese Woche sind keine Gewürze/Verbrauchsartikel geplant."
 
 #: templates/base.html:90
+msgid "No leftovers entered for this week."
+msgstr "Für diese Woche sind keine Reste eingetragen."
+
+#: templates/base.html:91
+msgid "Used in:"
+msgstr "Verwertet in:"
+
+#: templates/base.html:92
+msgid "Not used by any dish this week"
+msgstr "Wird diese Woche in keinem Gericht verwertet"
+
+#: templates/base.html:93
 msgid "No ingredients on file."
 msgstr "Keine Zutaten hinterlegt."
 
-#: templates/base.html:91
+#: templates/base.html:94
 msgid "📝 Instructions"
 msgstr "📝 Zubereitung"
 
-#: templates/base.html:92
+#: templates/base.html:95
 msgid "🔗 Open source"
 msgstr "🔗 Quelle öffnen"
 
-#: templates/base.html:93
+#: templates/base.html:96
 msgid "(per serving)"
 msgstr "(pro Portion)"
 
-#: templates/base.html:94 templates/plan_summary.html:22
+#: templates/base.html:97 templates/plan_summary.html:22
 #: templates/plan_summary.html:28
 msgid "P"
 msgstr "E"
 
-#: templates/base.html:95 templates/plan_summary.html:23
+#: templates/base.html:98 templates/plan_summary.html:23
 #: templates/plan_summary.html:29
 msgid "C"
 msgstr "KH"
 
-#: templates/base.html:96 templates/plan_summary.html:24
+#: templates/base.html:99 templates/plan_summary.html:24
 #: templates/plan_summary.html:30
 msgid "F"
 msgstr "F"
 
-#: templates/base.html:97 templates/plan_summary.html:21
+#: templates/base.html:100 templates/plan_summary.html:21
 msgid "week"
 msgstr "Woche"
 
-#: templates/base.html:98
+#: templates/base.html:101
 #, python-brace-format
 msgid "per day ({count} planned)"
 msgstr "pro Tag ({count} geplant)"
 
-#: templates/base.html:99
+#: templates/base.html:102
 msgid "Adding failed."
 msgstr "Hinzufügen fehlgeschlagen."
 
-#: templates/base.html:100
+#: templates/base.html:103
 msgid "Removing failed."
 msgstr "Entfernen fehlgeschlagen."
 
-#: templates/base.html:101
+#: templates/base.html:104
 msgid "Moving failed."
 msgstr "Verschieben fehlgeschlagen."
 
-#: templates/base.html:102
+#: templates/base.html:105
 msgid "Swap failed."
 msgstr "Tauschen fehlgeschlagen."
 
-#: templates/base.html:103
+#: templates/base.html:106
 msgid "Could not be saved."
 msgstr "Konnte nicht gespeichert werden."
 
-#: templates/base.html:104
+#: templates/base.html:107
 msgid "Selection failed."
 msgstr "Auswahl fehlgeschlagen."
 
-#: templates/base.html:105
+#: templates/base.html:108
 msgid "Import failed."
 msgstr "Import fehlgeschlagen."
 
-#: templates/base.html:106
+#: templates/base.html:109
 msgid "No alternative recipe available."
 msgstr "Kein alternatives Rezept verfügbar."
 
-#: templates/base.html:107
+#: templates/base.html:110
 msgid "No side dish available."
 msgstr "Keine Beilage verfügbar."
 
-#: templates/base.html:108
+#: templates/base.html:111
 msgid "No alternative available."
 msgstr "Keine Alternative verfügbar."
 
-#: templates/base.html:109
+#: templates/base.html:112
 msgid "Show details"
 msgstr "Details anzeigen"
 
-#: templates/base.html:110
+#: templates/base.html:113
 msgid "Re-roll this day"
 msgstr "Diesen Tag neu würfeln"
 
-#: templates/base.html:111
+#: templates/base.html:114
 msgid "Select a different recipe"
 msgstr "Anderes Rezept wählen"
 
-#: templates/base.html:112
+#: templates/base.html:115
 msgid "✏️ Select recipe"
 msgstr "✏️ Rezept wählen"
 
-#: templates/base.html:113 templates/recipe_form.html:128
+#: templates/base.html:116 templates/recipe_form.html:128
 msgid "Servings"
 msgstr "Portionen"
 
-#: templates/base.html:114
+#: templates/base.html:117
 msgid "🚫 Excluded from planning"
 msgstr "🚫 Von der Planung ausgeschlossen"
 
-#: templates/base.html:115
+#: templates/base.html:118
 msgid "No matching recipe available"
 msgstr "Kein passendes Rezept verfügbar"
 
-#: templates/base.html:116 templates/recipe_form.html:142
+#: templates/base.html:119 templates/recipe_form.html:142
 msgid "Ingredients"
 msgstr "Zutaten"
 
-#: templates/base.html:117 templates/ingredient_aliases_manage.html:75
+#: templates/base.html:120 templates/ingredient_aliases_manage.html:75
 msgid "ingredient"
 msgstr "Zutat"
 
-#: templates/base.html:118 templates/ingredient_aliases_manage.html:75
+#: templates/base.html:121 templates/ingredient_aliases_manage.html:75
 msgid "ingredients"
 msgstr "Zutaten"
 
-#: templates/base.html:119
+#: templates/base.html:122
 msgid "servings"
 msgstr "Portionen"
 
-#: templates/base.html:120 templates/recipe_form.html:295
+#: templates/base.html:123 templates/recipe_form.html:295
 msgid "Untitled recipe"
 msgstr "Unbenanntes Rezept"
 
-#: templates/base.html:122
+#: templates/base.html:125
 msgid "Search side dish..."
 msgstr "Beilage suchen..."
 
-#: templates/base.html:123
+#: templates/base.html:126
 msgid "Search recipe..."
 msgstr "Rezept suchen..."
 
-#: templates/base.html:124
+#: templates/base.html:127
 msgid "Reroll this side dish"
 msgstr "Diese Beilage neu würfeln"
 
-#: templates/base.html:125
+#: templates/base.html:128
 msgid "Choose a different side dish"
 msgstr "Andere Beilage wählen"
 
-#: templates/base.html:126
+#: templates/base.html:129
 msgid "Remove side dish"
 msgstr "Beilage entfernen"
 
-#: templates/base.html:127
+#: templates/base.html:130
 msgid "Choose a side dish"
 msgstr "Beilage wählen"
 
-#: templates/base.html:128
+#: templates/base.html:131
 msgid "Roll a side dish"
 msgstr "Beilage würfeln"
 
-#: templates/base.html:129 templates/recipe_form.html:185
+#: templates/base.html:132 templates/recipe_form.html:185
 msgid "New ingredient..."
 msgstr "Neue Zutat..."
 
-#: templates/base.html:130 templates/plan.html:102
+#: templates/base.html:133 templates/create_week.html:76
+#: templates/plan.html:102 templates/plan.html:139
 #: templates/recipe_form.html:148 templates/recipe_form.html:186
 msgid "Amount"
 msgstr "Menge"
 
-#: templates/base.html:131 templates/plan.html:105
+#: templates/base.html:134 templates/create_week.html:77
+#: templates/plan.html:105 templates/plan.html:142
 #: templates/recipe_form.html:148 templates/recipe_form.html:187
 msgid "Unit"
 msgstr "Einheit"
 
-#: templates/base.html:132 templates/plan.html:108
+#: templates/base.html:135 templates/plan.html:108
 #: templates/recipe_form.html:165 templates/recipe_form.html:188
 msgid "Shopping list category"
 msgstr "Einkaufslisten-Kategorie"
 
-#: templates/base.html:133 templates/recipe_form.html:148
+#: templates/base.html:136 templates/recipe_form.html:148
 #: templates/recipe_form.html:174 templates/recipe_form.html:195
 msgid "Pantry item (not on the weekly shopping list)"
 msgstr "Vorratsartikel (nicht auf der wöchentlichen Einkaufsliste)"
 
-#: templates/base.html:134 templates/recipe_form.html:177
+#: templates/base.html:137 templates/recipe_form.html:177
 #: templates/recipe_form.html:197
 msgid "Remove ingredient"
 msgstr "Zutat entfernen"
 
-#: templates/base.html:135 templates/plan.html:109
+#: templates/base.html:138 templates/plan.html:109
 #: templates/recipe_form.html:166 templates/recipe_form.html:189
 msgid "Other"
 msgstr "Sonstiges"
 
-#: templates/base.html:136
+#: templates/base.html:139
 msgid "grouped as"
 msgstr "zusammengefasst als"
 
-#: templates/base.html:137
+#: templates/base.html:140
 msgid "🧺 Base ingredient"
 msgstr "🧺 Basiszutat"
 
-#: templates/base.html:138
+#: templates/base.html:141
 msgid "e.g. for"
 msgstr "z. B. für"
 
-#: templates/base.html:139
+#: templates/base.html:142
 msgid "Set alias, e.g. Pasta"
 msgstr "Zuordnung festlegen, z. B. Nudeln"
 
-#: templates/base.html:140
+#: templates/base.html:143
 msgid "Set"
 msgstr "Festlegen"
 
-#: templates/base.html:141
+#: templates/base.html:144
 msgid "⚠️ No nutrition data on file for"
 msgstr "⚠️ Keine Nährwerte hinterlegt für"
 
-#: templates/base.html:142
+#: templates/base.html:145
 msgid "Reference"
 msgstr "Referenz"
 
-#: templates/base.html:143 templates/ingredient_aliases_manage.html:81
+#: templates/base.html:146 templates/ingredient_aliases_manage.html:81
 #: templates/ingredient_aliases_manage.html:121
 msgid "per 100 g"
 msgstr "pro 100 g"
 
-#: templates/base.html:144 templates/ingredient_aliases_manage.html:82
+#: templates/base.html:147 templates/ingredient_aliases_manage.html:82
 #: templates/ingredient_aliases_manage.html:122
 msgid "per 100 ml"
 msgstr "pro 100 ml"
 
-#: templates/base.html:145 templates/ingredient_aliases_manage.html:83
+#: templates/base.html:148 templates/ingredient_aliases_manage.html:83
 #: templates/ingredient_aliases_manage.html:123
 msgid "per 1 pc"
 msgstr "pro 1 Stk"
 
-#: templates/base.html:146 templates/recipe_form.html:265
+#: templates/base.html:149 templates/recipe_form.html:265
 msgid "Protein (g)"
 msgstr "Protein (g)"
 
-#: templates/base.html:147 templates/recipe_form.html:269
+#: templates/base.html:150 templates/recipe_form.html:269
 msgid "Carbs (g)"
 msgstr "Kohlenhydrate (g)"
 
-#: templates/base.html:148 templates/recipe_form.html:273
+#: templates/base.html:151 templates/recipe_form.html:273
 msgid "Fat (g)"
 msgstr "Fett (g)"
 
-#: templates/base.html:149
+#: templates/base.html:152
 msgid "Save nutrition data"
 msgstr "Nährwerte speichern"
 
-#: templates/base.html:180
+#: templates/base.html:183
 msgid "Weekly Plan"
 msgstr "Wochenplan"
 
-#: templates/base.html:181 templates/manage.html:6
+#: templates/base.html:184 templates/manage.html:6
 msgid "Overview"
 msgstr "Übersicht"
 
-#: templates/base.html:187 templates/sharing.html:60
+#: templates/base.html:190 templates/sharing.html:60
 msgid "My Plans"
 msgstr "Meine Pläne"
 
-#: templates/base.html:197 templates/base.html:256
+#: templates/base.html:200 templates/base.html:259
 msgid "New Plan"
 msgstr "Neuer Plan"
 
-#: templates/base.html:202 templates/manage.html:12
+#: templates/base.html:205 templates/manage.html:12
 msgid "Recipes"
 msgstr "Rezepte"
 
-#: templates/base.html:203 templates/base.html:265
+#: templates/base.html:206 templates/base.html:268
 msgid "Create"
 msgstr "Erstellen"
 
-#: templates/base.html:204 templates/recipe_edit_list.html:54
+#: templates/base.html:207 templates/recipe_edit_list.html:54
 msgid "Edit"
 msgstr "Bearbeiten"
 
-#: templates/base.html:208
+#: templates/base.html:211
 msgid "Data"
 msgstr "Daten"
 
-#: templates/base.html:209 templates/manage.html:13
+#: templates/base.html:212 templates/manage.html:13
 msgid "Categories"
 msgstr "Kategorien"
 
-#: templates/base.html:210 templates/manage.html:34
+#: templates/base.html:213 templates/manage.html:34
 #: templates/units_manage.html:9
 msgid "Units"
 msgstr "Einheiten"
 
-#: templates/base.html:211 templates/ingredient_aliases_manage.html:34
+#: templates/base.html:214 templates/ingredient_aliases_manage.html:34
 #: templates/manage.html:38
 msgid "Ingredients & Nutrition"
 msgstr "Zutaten & Nährwerte"
 
-#: templates/base.html:215
+#: templates/base.html:218
 msgid "Account"
 msgstr "Konto"
 
-#: templates/base.html:217 templates/manage.html:42
+#: templates/base.html:220 templates/manage.html:42
 msgid "Sharing"
 msgstr "Teilen"
 
-#: templates/base.html:227
+#: templates/base.html:230
 msgid "Log Out"
 msgstr "Abmelden"
 
-#: templates/base.html:231
+#: templates/base.html:234
 msgid "Appearance"
 msgstr "Erscheinungsbild"
 
-#: templates/base.html:233
+#: templates/base.html:236
 msgid "System"
 msgstr "System"
 
-#: templates/base.html:234
+#: templates/base.html:237
 msgid "Light"
 msgstr "Hell"
 
-#: templates/base.html:235
+#: templates/base.html:238
 msgid "Dark"
 msgstr "Dunkel"
 
-#: templates/base.html:260
+#: templates/base.html:263
 msgid "Plan Name"
 msgstr "Planname"
 
@@ -724,15 +743,37 @@ msgstr "Alles zurücksetzen"
 msgid "Fill in automatically"
 msgstr "Automatisch auffüllen"
 
-#: templates/create_week.html:67
+#: templates/create_week.html:71
+msgid "Leftovers from last week"
+msgstr "Reste von letzter Woche"
+
+#: templates/create_week.html:73
+msgid ""
+"Dishes that use these up are planned first, on the earliest free days. "
+"Amounts are subtracted from the shopping list; without an amount the "
+"whole item is left off it."
+msgstr ""
+"Gerichte, die diese Reste verwerten, werden zuerst auf die frühesten "
+"freien Tage geplant. Mengen werden von der Einkaufsliste abgezogen; ohne "
+"Menge fällt die Zutat ganz von der Liste."
+
+#: templates/create_week.html:75 templates/plan.html:136
+msgid "Ingredient..."
+msgstr "Zutat..."
+
+#: templates/create_week.html:78 templates/plan.html:145
+msgid "Add leftover"
+msgstr "Rest hinzufügen"
+
+#: templates/create_week.html:89
 msgid "Fill Remaining Days in Balance & Create Plan"
 msgstr "Verbleibende Tage ausgewogen auffüllen & Plan erstellen"
 
-#: templates/create_week.html:147
+#: templates/create_week.html:169
 msgid "Will be filled in automatically"
 msgstr "Wird automatisch aufgefüllt"
 
-#: templates/create_week.html:155
+#: templates/create_week.html:177
 msgid "Excluded – no main course"
 msgstr "Ausgeschlossen – kein Hauptgericht"
 
@@ -957,10 +998,14 @@ msgid "Item..."
 msgstr "Artikel..."
 
 #: templates/plan.html:130
+msgid "Leftovers"
+msgstr "Reste"
+
+#: templates/plan.html:158
 msgid "Check pantry"
 msgstr "Vorrat prüfen"
 
-#: templates/plan.html:133
+#: templates/plan.html:161
 msgid ""
 "Usually already at home - only add to the shopping list by clicking, if "
 "needed."
@@ -968,11 +1013,11 @@ msgstr ""
 "Normalerweise schon zu Hause vorhanden - bei Bedarf durch Anklicken zur "
 "Einkaufsliste hinzufügen."
 
-#: templates/plan.html:152 templates/recipe_form.html:9
+#: templates/plan.html:180 templates/recipe_form.html:9
 msgid "Edit recipe"
 msgstr "Rezept bearbeiten"
 
-#: templates/plan.html:157
+#: templates/plan.html:185
 msgid "Cooked"
 msgstr "Gekocht"
 

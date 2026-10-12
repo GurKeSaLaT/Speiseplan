@@ -123,6 +123,34 @@
                 </ul>
             </div>
 
+            {# Leftovers of this week (WeekLeftover), subtracted from the
+               shopping list above; usually entered on the create-week page. #}
+            <div class="card shadow-sm border-0 mt-4">
+                <div class="panel-head">
+                    <h4>🥡 {{ _('Leftovers') }}</h4>
+                    <span class="count" id="leftoverCount">0</span>
+                </div>
+                <div class="p-2 border-bottom" onkeydown="if(event.key==='Enter'){event.preventDefault();addWeekLeftover();}">
+                    <div class="row g-1">
+                        <div class="col-12 col-sm-6">
+                            <input type="text" id="leftoverName" class="form-control form-control-sm" placeholder="{{ _('Ingredient...') }}">
+                        </div>
+                        <div class="col-4 col-sm-2">
+                            <input type="text" inputmode="decimal" id="leftoverAmount" class="form-control form-control-sm" placeholder="{{ _('Amount') }}">
+                        </div>
+                        <div class="col-4 col-sm-3">
+                            <input type="text" id="leftoverUnit" class="form-control form-control-sm" placeholder="{{ _('Unit') }}">
+                        </div>
+                        <div class="col-4 col-sm-1 d-grid">
+                            <button type="button" class="btn btn-sm btn-success" style="background-color: var(--primary-food) !important; border-color: var(--primary-food) !important;" onclick="addWeekLeftover()" title="{{ _('Add leftover') }}">+</button>
+                        </div>
+                    </div>
+                </div>
+                <ul class="list-group list-group-flush p-2" id="leftoverListContainer">
+                    <!-- Filled in via JavaScript -->
+                </ul>
+            </div>
+
             {# Pantry items of this week's recipes; not on the shopping list
                unless added by click. #}
             <div class="card shadow-sm border-0 mt-4 mb-4">

@@ -55,7 +55,7 @@ function categorySortIndex(category) {
  * Rebuilds the shopping list (and the nutrition summary) from state.
  *
  * Recipe ingredients are scaled to each day's servings and merged by
- * name+unit. Pantry ingredients go to the pantry list instead - except
+ * name+unit, then the week's leftovers are subtracted. Pantry ingredients go to the pantry list instead - except
  * manually added items, which always stay on the shopping list (adding
  * one is an explicit "I need to buy this").
  */
@@ -93,6 +93,8 @@ function rebuildShoppingList() {
         });
     }
 
+    subtractLeftovers(consolidated, weeklyLeftovers);
+
     // isExtra marks manual items: deletable, and never moved to the pantry list.
     const allItems = Object.values(consolidated).map(item => ({ ...item, isExtra: false }));
     weeklyExtraItems.forEach(extra => {
@@ -117,6 +119,7 @@ function rebuildShoppingList() {
     }
 
     renderPantryList(pantryItems);
+    renderLeftoverList();
 }
 
 // Float noise from scaling must not split a line into "500 g + 0.0001 g".
@@ -394,6 +397,132 @@ function removeExtraShoppingItem(itemId) {
     .then(response => {
         if (!response.ok) throw new Error(window.I18N.removing_failed);
         weeklyExtraItems = weeklyExtraItems.filter(item => item.id !== itemId);
+        rebuildShoppingList();
+    })
+    .catch(err => {
+        alert(window.I18N.note_prefix + ' ' + err.message);
+    });
+}
+
+/**
+ * Subtracts the week's leftovers from the merged needs, in place.
+ * Names are canonical on both sides; units match case-insensitively and
+ * are never converted (300 g never covers "2 Stück"). A leftover without
+ * an amount means "enough", so every line of that name goes; a line whose
+ * need drops to (about) zero goes too. Pantry lines are included.
+ */
+function subtractLeftovers(consolidated, leftovers) {
+    (leftovers || []).forEach(leftover => {
+        const name = (leftover.name || '').trim();
+        const hasAmount = leftover.amount !== null && leftover.amount !== undefined;
+        const unit = (leftover.unit || '').trim().toLowerCase();
+        Object.keys(consolidated).forEach(key => {
+            const item = consolidated[key];
+            if (item.name.trim() !== name) return;
+            if (!hasAmount) {
+                delete consolidated[key];
+                return;
+            }
+            if ((item.unit || '').trim().toLowerCase() !== unit) return;
+            item.amount -= leftover.amount;
+            if (item.amount <= AMOUNT_EPSILON) delete consolidated[key];
+        });
+    });
+}
+
+/** "Sat: Ratatouille" for every dish this week that uses the leftover. */
+function leftoverUsage(leftover) {
+    const uses = [];
+    for (let i = 0; i < 7; i++) {
+        [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach(recipe => {
+            if (recipe && (recipe.ingredients || []).some(ing => ing.name.trim() === leftover.name.trim())) {
+                uses.push(`${dayLabels[i].split(',')[0]}: ${recipe.name}`);
+            }
+        });
+    }
+    return uses;
+}
+
+function renderLeftoverList() {
+    const container = document.getElementById('leftoverListContainer');
+    const counterBadge = document.getElementById('leftoverCount');
+    if (!container) return;
+
+    container.innerHTML = '';
+    if (counterBadge) counterBadge.textContent = weeklyLeftovers.length;
+    if (weeklyLeftovers.length === 0) {
+        container.innerHTML = `<li class="list-group-item text-center text-muted my-3">${escapeHtml(window.I18N.no_leftovers)}</li>`;
+        return;
+    }
+
+    weeklyLeftovers.forEach(leftover => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center py-2 px-3';
+
+        const left = document.createElement('div');
+        const nameSpan = document.createElement('div');
+        nameSpan.className = 'text-dark fs-5';
+        nameSpan.textContent = leftover.name;
+        const usage = document.createElement('div');
+        usage.className = 'small text-muted';
+        const uses = leftoverUsage(leftover);
+        usage.textContent = uses.length
+            ? `${window.I18N.leftover_used_in} ${uses.join(', ')}`
+            : window.I18N.leftover_not_used;
+        left.appendChild(nameSpan);
+        left.appendChild(usage);
+
+        const right = document.createElement('div');
+        right.className = 'd-flex align-items-center';
+        const badge = buildAmountBadge(leftover);
+        if (badge) right.appendChild(badge);
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn btn-sm text-danger border-0 p-1 ms-1';
+        deleteBtn.title = window.I18N.remove_item_title;
+        deleteBtn.textContent = '❌';
+        deleteBtn.onclick = () => removeWeekLeftover(leftover.id);
+        right.appendChild(deleteBtn);
+
+        li.appendChild(left);
+        li.appendChild(right);
+        container.appendChild(li);
+    });
+}
+
+/** The leftovers card's add form; only the name is required. */
+function addWeekLeftover() {
+    const nameInput = document.getElementById('leftoverName');
+    const amountInput = document.getElementById('leftoverAmount');
+    const unitInput = document.getElementById('leftoverUnit');
+    if (!nameInput || !nameInput.value.trim()) return;
+
+    postWithCsrf(`/plan/${dayDates[0]}/leftover/add`, {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nameInput.value, amount: amountInput.value, unit: unitInput.value }),
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(window.I18N.adding_failed);
+        return response.json();
+    })
+    .then(newLeftover => {
+        weeklyLeftovers.push(newLeftover);
+        rebuildShoppingList();
+        nameInput.value = '';
+        amountInput.value = '';
+        unitInput.value = '';
+        nameInput.focus();
+    })
+    .catch(err => {
+        alert(window.I18N.note_prefix + ' ' + err.message);
+    });
+}
+
+function removeWeekLeftover(leftoverId) {
+    postWithCsrf(`/leftover/${leftoverId}/delete`)
+    .then(response => {
+        if (!response.ok) throw new Error(window.I18N.removing_failed);
+        weeklyLeftovers = weeklyLeftovers.filter(leftover => leftover.id !== leftoverId);
         rebuildShoppingList();
     })
     .catch(err => {

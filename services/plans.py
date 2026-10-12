@@ -3,7 +3,7 @@
 from models import (
     Category, ExtraShoppingItem, IngredientAlias, IngredientNutrition,
     AppSettings, PendingPlanInvite, Plan, PlanDay, PlanDaySide, PlanMembership,
-    Recipe, RecipePlanLink, ShoppingListCheck, db,
+    Recipe, RecipePlanLink, ShoppingListCheck, WeekLeftover, db,
 )
 
 DEFAULT_CATEGORIES = ["Fleisch", "Fisch", "Vegetarisch", "Vegan", "Nudeln/Pasta", "Suppe/Eintopf", "Schnelle Küche"]
@@ -59,6 +59,7 @@ def delete_plan(plan):
 
     ExtraShoppingItem.query.filter_by(plan_id=plan.id).delete()
     ShoppingListCheck.query.filter_by(plan_id=plan.id).delete()
+    WeekLeftover.query.filter_by(plan_id=plan.id).delete()
     AppSettings.query.filter_by(plan_id=plan.id).delete()
     IngredientAlias.query.filter_by(plan_id=plan.id).delete()
     IngredientNutrition.query.filter_by(plan_id=plan.id).delete()
