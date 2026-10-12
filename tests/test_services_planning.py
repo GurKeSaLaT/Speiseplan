@@ -303,7 +303,7 @@ def test_jsonify_recipe_normalizes_ingredient_names(app, test_plan_id, make_reci
         assert data["name"] == "Suppe"
         assert data["calories"] == 300
         assert data["ingredients"] == [
-            {"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren", "is_pantry": False}
+            {"name": "Nudeln", "amount": 200, "unit": "g", "category": "Teigwaren", "is_pantry": False, "from_previous": False}
         ]
 
 

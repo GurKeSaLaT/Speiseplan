@@ -495,7 +495,7 @@ def test_swap_days_swaps_main_recipe_excluded_and_sides(client, app, make_recipe
 
     resp = client.post("/day/2026-06-15/swap/2026-06-16")
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"ok": True, "links_changed": False}
 
     with app.app_context():
         row_a = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()

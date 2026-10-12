@@ -10,15 +10,15 @@ db = SQLAlchemy()
 
 from models.user import User
 from models.plan import Plan, PlanMembership, PendingPlanInvite
-from models.recipe import Category, Recipe, RecipePlanLink, RecipeSeason, Ingredient
-from models.calendar import PlanDay, PlanDaySide, ExtraShoppingItem, ShoppingListCheck, WeekLeftover
+from models.recipe import Category, Recipe, RecipePlanLink, RecipeSeason, Ingredient, RecipeFollowUp
+from models.calendar import PlanDay, PlanDaySide, ExtraShoppingItem, ShoppingListCheck, WeekLeftover, PendingFollowUp
 from models.settings import AppSettings, IngredientAlias, IngredientNutrition
 
 __all__ = [
     'db',
     'User',
     'Plan', 'PlanMembership', 'PendingPlanInvite',
-    'Category', 'Recipe', 'RecipePlanLink', 'RecipeSeason', 'Ingredient',
-    'PlanDay', 'PlanDaySide', 'ExtraShoppingItem', 'ShoppingListCheck', 'WeekLeftover',
+    'Category', 'Recipe', 'RecipePlanLink', 'RecipeSeason', 'Ingredient', 'RecipeFollowUp',
+    'PlanDay', 'PlanDaySide', 'ExtraShoppingItem', 'ShoppingListCheck', 'WeekLeftover', 'PendingFollowUp',
     'AppSettings', 'IngredientAlias', 'IngredientNutrition',
 ]

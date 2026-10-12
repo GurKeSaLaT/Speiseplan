@@ -184,3 +184,60 @@ def test_literal_amount_placeholders_scale_and_keep_their_unit():
         '<strong class="instruction-amount">6</strong> Knödel, '
         '<strong class="instruction-amount">1 Stück</strong>'
     )
+
+
+_PLAN_PAGE_STUBS = """
+var document = {
+    addEventListener() {}, getElementById() { return null; },
+    createElement() {
+        let text = '';
+        return {
+            set textContent(value) { text = String(value); },
+            get innerHTML() { return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+        };
+    },
+};
+"""
+
+
+def _plan_js(expression, plan_data):
+    stubs = _PLAN_PAGE_STUBS + f"window.PLAN_DATA = {json.dumps(plan_data)}; window.CSRF_TOKEN = '';" + _ESCAPE_HTML_JS
+    return _run_js("plan.js", expression, stubs)
+
+
+def _week_data(**overrides):
+    data = {
+        "planId": 1, "weekDates": [f"2026-06-{12 + i}" for i in range(7)], "dayLabels": [f"D{i}" for i in range(7)],
+        "excludedDays": [False] * 7, "servingsList": [2, 2, 3, 2, 2, 2, 2], "cookedMain": [False] * 7,
+        "plan": [None] * 7, "sidePlan": [[] for _ in range(7)],
+    }
+    data.update(overrides)
+    return data
+
+
+@needs_node
+def test_extra_servings_count_in_week_and_outside_follow_ups():
+    data = _week_data(
+        followUpOf=[None, None, {"date": "2026-06-12", "index": 0, "name": "A", "label": "D0"}, None, None, None, None],
+        followUpsOut=[
+            [{"date": "2026-06-14", "index": 2, "name": "B", "label": "D2", "servings": 9, "pending": False},
+             {"date": "2026-06-20", "index": None, "name": "C", "label": "Sa", "servings": 4, "pending": True}],
+            [], [], [], [], [], [],
+        ],
+    )
+    # In-week follow-up: its live servings (3); outside: the stored 4.
+    assert _plan_js("extraServingsFor(0)", data) == 7
+    assert _plan_js("extraServingsFor(1)", data) == 0
+
+
+@needs_node
+def test_follow_up_notes_text():
+    data = _week_data(
+        followUpOf=[None, None, {"date": "2026-06-12", "index": 0, "name": "Ofengemüse", "label": "Fr"}, None, None, None, None],
+        followUpsOut=[[{"date": "2026-06-14", "index": 2, "name": "Nudeln", "label": "So", "servings": 2, "pending": False}],
+                      [], [], [], [], [], []],
+    )
+    stubs_i18n = "window.I18N = {follow_up_of: 'aus {name} ({day})', follow_up_on: '{name} am {day}', follow_up_pending: '{name} am {day} (später)'};"
+    html = _run_js("plan.js", "renderFollowUpNotes(0) + '|' + renderFollowUpNotes(2)",
+                   _PLAN_PAGE_STUBS + f"window.PLAN_DATA = {json.dumps(data)};" + _ESCAPE_HTML_JS + stubs_i18n)
+    assert html == '<div class="follow-up-note">↪ Nudeln am So</div>|<div class="follow-up-note">↪ aus Ofengemüse (Fr)</div>'

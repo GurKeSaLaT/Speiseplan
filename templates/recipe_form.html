@@ -145,7 +145,7 @@
                 <div class="rform-section-body">
                     <p class="text-muted small mb-2">{{ _('Units are automatically normalized (g/kg, ml/l/tbsp/tsp/cup) - which unit is displayed can be set under ⚙️ Settings → 📏 Units.') }}</p>
                     <div class="ing-col-labels">
-                        <span>{{ _('Ingredient') }}</span><span>{{ _('Amount') }}</span><span>{{ _('Unit') }}</span><span>{{ _('Category') }}</span><span title="{{ _('Pantry item (not on the weekly shopping list)') }}">{{ _('Pantry') }}</span><span></span>
+                        <span>{{ _('Ingredient') }}</span><span>{{ _('Amount') }}</span><span>{{ _('Unit') }}</span><span>{{ _('Category') }}</span><span title="{{ _('Pantry item (not on the weekly shopping list)') }}">{{ _('Pantry') }}</span><span title="{{ _('From the previous dish: not bought when this recipe is planned as a follow-up dish') }}">↪</span><span></span>
                     </div>
                     <div id="ingredientsContainer">
                         {% if recipe %}
@@ -174,6 +174,10 @@
                                 <input type="checkbox" class="ing-pantry-checkbox" title="{{ _('Pantry item (not on the weekly shopping list)') }}"
                                        {% if ing.is_pantry %}checked{% endif %}
                                        onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
+                                <input type="hidden" name="ing_from_previous[]" value="{{ '1' if ing.from_previous else '0' }}">
+                                <input type="checkbox" class="ing-from-previous-checkbox" title="{{ _('From the previous dish: not bought when this recipe is planned as a follow-up dish') }}"
+                                       {% if ing.from_previous %}checked{% endif %}
+                                       onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
                                 <button type="button" class="rform-ing-del" title="{{ _('Remove ingredient') }}" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
                             </div>
                             <div class="ingredient-alias-hint small mt-1"></div>
@@ -194,12 +198,43 @@
                                 <input type="hidden" name="ing_pantry[]" value="0">
                                 <input type="checkbox" class="ing-pantry-checkbox" title="{{ _('Pantry item (not on the weekly shopping list)') }}"
                                        onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
+                                <input type="hidden" name="ing_from_previous[]" value="0">
+                                <input type="checkbox" class="ing-from-previous-checkbox" title="{{ _('From the previous dish: not bought when this recipe is planned as a follow-up dish') }}"
+                                       onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
                                 <button type="button" class="rform-ing-del" title="{{ _('Remove ingredient') }}" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
                             </div>
                             <div class="ingredient-alias-hint small mt-1"></div>
                         </div>
                     </div>
                     <button type="button" class="rform-add-ing" onclick="rformAddIngredientRow()">+ {{ _('Add ingredient') }}</button>
+                </div>
+            </div>
+
+            <!-- Follow-up dishes (optional, collapsed; services/follow_ups.py) -->
+            <div class="rform-section{{ '' if recipe and recipe.follow_ups else ' rform-collapsed' }}" id="followUpSection">
+                <div class="rform-section-head rform-toggle-row" onclick="rformToggleSection(this)">
+                    <h2>↪ {{ _('Follow-up dishes') }} <span class="hint">{{ _('optional') }}</span></h2>
+                    <span class="rform-chevron">▾</span>
+                </div>
+                <div class="rform-section-body">
+                    <p class="text-muted small mb-2">{{ _('Cook more of this dish and make one of these from what is left a few days later. When this dish is planned, one of them goes on the first free day in its window, and this dish is bought for both days. Follow-up dishes are never rolled on their own.') }}</p>
+                    <div class="rform-follow-up-head"><span>{{ _('Follow-up dish') }}</span><span>{{ _('from day') }}</span><span>{{ _('to day') }}</span><span></span></div>
+                    <div id="followUpContainer">
+                        {% for link in (recipe.follow_ups if recipe else []) %}
+                        <div class="rform-follow-up-row">
+                            <select name="fu_recipe[]" class="rform-field">
+                                {% for choice in follow_up_choices %}
+                                <option value="{{ choice.id }}" {% if choice.id == link.follow_up_recipe_id %}selected{% endif %}>{{ choice.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="number" name="fu_min[]" class="rform-field" min="1" max="14" value="{{ link.min_days }}">
+                            <input type="number" name="fu_max[]" class="rform-field" min="1" max="14" value="{{ link.max_days }}">
+                            <button type="button" class="rform-ing-del" title="{{ _('Remove') }}" onclick="this.closest('.rform-follow-up-row').remove(); rformScheduleAutosave();">✕</button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <button type="button" class="rform-add-ing" onclick="rformAddFollowUpRow()">+ {{ _('Add follow-up dish') }}</button>
+                    <p class="text-muted small mt-2 mb-0">{{ _('Mark the follow-up recipe\'s ingredients that come from this dish with ↪ there - they are then left off the shopping list.') }}</p>
                 </div>
             </div>
 
@@ -343,6 +378,8 @@
 </datalist>
 
 <script>
+window.FOLLOW_UP_CHOICES = {{ follow_up_choices | map(attribute='id') | list | tojson }};
+window.FOLLOW_UP_CHOICE_NAMES = {{ follow_up_choices | map(attribute='name') | list | tojson }};
 window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};
 window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 {% if recipe %}

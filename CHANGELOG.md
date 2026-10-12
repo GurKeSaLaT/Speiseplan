@@ -4,6 +4,16 @@ One line per change, newest first.
 
 ## 2026-10-12
 
+- Linked recipes: a recipe can list follow-up dishes with a day window
+  (default 2-3 days later). When it is planned (pinned, rolled, re-rolled
+  or picked), one follow-up goes on the earliest free day of its window,
+  ahead of normal filling; without a free day the dish stays alone.
+  Follow-ups are never rolled on their own. The source dish is bought and
+  shown for both days' servings, and follow-up ingredients marked "from the
+  previous dish" are left off the shopping list. Re-rolling or removing the
+  source re-rolls its follow-up's day; re-rolling the follow-up just drops
+  the link; links move with swapped dishes. A follow-up in a week that
+  doesn't exist yet is offered as a fixed dish when that week is created.
 - Amount placeholders in recipe instructions: `{Name}`, `{Name*0.5}`,
   `{Name*1/4}`, `{Name#2}` show that ingredient line's amount, scaled to
   the day's servings, in the plan's recipe window. Names match exactly,

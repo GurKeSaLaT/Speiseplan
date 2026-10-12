@@ -18,6 +18,7 @@ from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
 from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name
+from services.follow_ups import forget_recipe, save_follow_up_links
 from services.instruction_placeholders import unresolved_placeholders
 from services.nutrition import compute_calories, compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
@@ -68,7 +69,16 @@ def recipe_create_view():
         selected_presets=set(), custom_start='', custom_end='',
         linkable_plans=[], linked_plan_ids=set(),
         plan_id=plan_id, user_plans=user_plan_memberships(user),
+        follow_up_choices=_follow_up_choices(plan_id),
     )
+
+
+def _follow_up_choices(plan_id, recipe=None):
+    """Main dishes plan_id can see, for the follow-up dish selects."""
+    query = visible_recipes_query(plan_id).filter(Recipe.is_side_dish.is_(False))
+    if recipe is not None:
+        query = query.filter(Recipe.id != recipe.id)
+    return query.order_by(Recipe.name).all()
 
 
 @recipes_bp.route('/manage/recipe/edit/<int:id>')
@@ -105,6 +115,7 @@ def recipe_edit_view(id):
         ingredient_display=ingredient_display,
         linkable_plans=linkable_plans, linked_plan_ids=linked_plan_ids,
         plan_id=plan_id, unresolved_placeholders=_unresolved_placeholders(recipe, plan_id),
+        follow_up_choices=_follow_up_choices(plan_id, recipe),
     )
 
 
@@ -132,13 +143,15 @@ def recipe_edit_list_view():
 
 def _parse_ingredient_rows(form):
     """Ingredients arrive as parallel ing_*[] lists; rows without a name are
-    skipped. ing_pantry[] has exactly one entry per row (a hidden mirror
-    input), so unchecked boxes don't shift the alignment."""
+    skipped. ing_pantry[] and ing_from_previous[] have exactly one entry per
+    row (hidden mirror inputs), so unchecked boxes don't shift the
+    alignment."""
     ing_names = form.getlist('ing_name[]')
     ing_amounts = form.getlist('ing_amount[]')
     ing_units = form.getlist('ing_unit[]')
     ing_categories = form.getlist('ing_category[]')
     ing_pantry_flags = form.getlist('ing_pantry[]')
+    ing_from_previous_flags = form.getlist('ing_from_previous[]')
 
     ingredients = []
     for i in range(len(ing_names)):
@@ -146,10 +159,11 @@ def _parse_ingredient_rows(form):
             amount = _parse_float(ing_amounts[i])
             category = ing_categories[i].strip() or None if i < len(ing_categories) else None
             is_pantry = ing_pantry_flags[i] == '1' if i < len(ing_pantry_flags) else False
+            from_previous = ing_from_previous_flags[i] == '1' if i < len(ing_from_previous_flags) else False
             amount, unit = normalize_amount_unit(amount, ing_units[i])
             ingredients.append({
                 "name": ing_names[i], "amount": amount, "unit": unit,
-                "category": category, "is_pantry": is_pantry,
+                "category": category, "is_pantry": is_pantry, "from_previous": from_previous,
             })
     return ingredients
 
@@ -171,7 +185,7 @@ def _add_ingredients(recipe_id, ingredients):
     for ing in ingredients:
         db.session.add(Ingredient(
             recipe_id=recipe_id, name=ing["name"], amount=ing["amount"], unit=ing["unit"],
-            category=ing["category"], is_pantry=ing["is_pantry"],
+            category=ing["category"], is_pantry=ing["is_pantry"], from_previous=ing.get("from_previous", False),
         ))
 
 
@@ -203,6 +217,7 @@ def add_recipe():
 
     save_recipe_seasons(new_recipe.id, request.form)
     _add_ingredients(new_recipe.id, ingredients)
+    save_follow_up_links(new_recipe, request.form, plan_id)
 
     db.session.commit()
     return redirect(url_for('recipes.recipe_edit_view', id=new_recipe.id, plan_id=plan_id))
@@ -231,6 +246,7 @@ def edit_recipe(id):
     recipe.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     save_recipe_seasons(recipe.id, request.form)
+    save_follow_up_links(recipe, request.form, plan_id)
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
     ingredients = _parse_ingredient_rows(request.form)
@@ -259,6 +275,7 @@ def delete_recipe(id):
     if not user_has_plan_access(user, recipe.owner_plan_id):
         abort(403)
     owner_plan_id = recipe.owner_plan_id
+    forget_recipe(recipe.id)
     PlanDay.query.filter_by(main_recipe_id=recipe.id).update({"main_recipe_id": None, "cooked": False})
     PlanDaySide.query.filter_by(recipe_id=recipe.id).delete()
     db.session.delete(recipe)

@@ -445,6 +445,18 @@ def _migrate_ensure_starred_membership():
         db.session.commit()
 
 
+def _migrate_follow_up_columns():
+    """plan_day.follow_up_of_date and ingredient.from_previous (linked
+    recipes); the new tables come from create_all."""
+    plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
+    if 'follow_up_of_date' not in plan_day_columns:
+        db.session.execute(text("ALTER TABLE plan_day ADD COLUMN follow_up_of_date DATE"))
+    ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
+    if 'from_previous' not in ingredient_columns:
+        db.session.execute(text("ALTER TABLE ingredient ADD COLUMN from_previous BOOLEAN NOT NULL DEFAULT 0"))
+    db.session.commit()
+
+
 def init_db():
     db.create_all()
 
@@ -459,6 +471,7 @@ def init_db():
     _migrate_plan_day_side_table()
     _migrate_plan_day_cooked_columns()
     _migrate_shopping_list_check_amount_columns()
+    _migrate_follow_up_columns()
 
     seeded_plans_by_username = {}
 

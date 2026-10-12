@@ -426,7 +426,7 @@ body {
 
 /* Ingredient rows as a CSS grid. */
 .rform-section .ing-col-labels {
-    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto auto; gap: 0.55rem;
+    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto auto auto; gap: 0.55rem;
     font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--bs-secondary-color); padding-bottom: 0.5rem;
 }
@@ -434,9 +434,10 @@ body {
 .rform-section .ingredient-row { padding: 0.4rem 0; border-bottom: 1px dashed var(--border-subtle); }
 .rform-section .ingredient-row:last-of-type { border-bottom: none; }
 .rform-section .ingredient-row .ing-fields {
-    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto auto; gap: 0.55rem; align-items: center;
+    display: grid; grid-template-columns: 2.2fr 0.9fr 0.9fr 1.3fr auto auto auto; gap: 0.55rem; align-items: center;
 }
-.rform-section .ingredient-row .ing-pantry-checkbox {
+.rform-section .ingredient-row .ing-pantry-checkbox,
+.rform-section .ingredient-row .ing-from-previous-checkbox {
     width: 1.2rem; height: 1.2rem; margin: 0 auto; accent-color: var(--primary-food);
 }
 .rform-section .ingredient-row input,
@@ -653,3 +654,9 @@ body {
     background: var(--bs-warning-bg-subtle, #fff3cd); color: var(--bs-warning-text-emphasis, #664d03);
 }
 .instruction-amount { color: var(--primary-food); }
+
+/* Recipe form: follow-up dishes (recipe_form.js). */
+.rform-follow-up-row { display: grid; grid-template-columns: 1fr 4.2rem 4.2rem auto; gap: 0.45rem; align-items: center; margin-bottom: 0.45rem; }
+.rform-follow-up-row .rform-field { padding: 0.45rem 0.6rem; }
+.rform-follow-up-head { display: grid; grid-template-columns: 1fr 4.2rem 4.2rem 30px; gap: 0.45rem; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; color: var(--bs-secondary-color); margin-bottom: 0.3rem; }
+.follow-up-note { font-size: 0.78rem; color: var(--bs-secondary-color); margin-top: 0.35rem; }

@@ -21,6 +21,11 @@ class PlanDay(db.Model):
     # carried along when days are swapped.
     cooked = db.Column(db.Boolean, default=False, nullable=False)
 
+    # Set on a follow-up dish's day: the date of the day (same plan) whose
+    # dish it is made from. That dish is then bought for both days'
+    # servings. Follows the dish on swaps (services/follow_ups.py).
+    follow_up_of_date = db.Column(db.Date, nullable=True)
+
     main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
     sides = db.relationship('PlanDaySide', cascade="all, delete-orphan", order_by='PlanDaySide.id')
 
@@ -88,3 +93,20 @@ class WeekLeftover(db.Model):
     name = db.Column(db.String(100), nullable=False)
     amount = db.Column(db.Float, nullable=True)
     unit = db.Column(db.String(20), nullable=True)
+
+
+
+class PendingFollowUp(db.Model):
+    """A follow-up dish for a day whose week doesn't exist yet. Creating that
+    week offers it as a fixed dish (and links it); servings is what the
+    source dish is bought for until then (PlanDay's default)."""
+    id = db.Column(db.Integer, primary_key=True)
+    plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False, index=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
+    source_date = db.Column(db.Date, nullable=False)
+    servings = db.Column(db.Integer, nullable=False, default=2)
+
+    __table_args__ = (db.UniqueConstraint('plan_id', 'date', name='uq_pending_follow_up_plan_date'),)
+
+    recipe = db.relationship('Recipe')

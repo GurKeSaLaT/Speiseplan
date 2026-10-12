@@ -220,6 +220,9 @@
 }
 .generate-btn:hover { filter: brightness(1.05); }
 </style>
-<script>window.INITIAL_LEFTOVERS = {{ leftovers | tojson }};</script>
+<script>
+window.INITIAL_LEFTOVERS = {{ leftovers | tojson }};
+window.INCOMING_FOLLOW_UPS = {{ incoming_follow_ups | tojson }};
+</script>
 <script src="{{ url_for('static', filename='create_week.js') }}"></script>
 {% endblock %}

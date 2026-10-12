@@ -350,3 +350,14 @@ function addLeftoverFromInputs() {
 }
 
 (window.INITIAL_LEFTOVERS || []).forEach(lo => addLeftover(lo.name, lo.amount, lo.unit));
+
+// Follow-ups of earlier weeks' dishes (services/follow_ups.py:
+// incoming_follow_ups) start out as fixed dishes; they stay linked to
+// their source dish only if left on their day.
+(window.INCOMING_FOLLOW_UPS || []).forEach(entry => {
+    const zone = document.getElementById('day-zone-' + entry.dayIndex);
+    if (!zone) return;
+    assignRecipeToZone(zone, String(entry.recipeId), entry.name, entry.category);
+    const card = zone.querySelector('.assigned-pill');
+    if (card) card.title = window.I18N.follow_up_of.replace('{name}', entry.sourceName).replace(' ({day})', '');
+});

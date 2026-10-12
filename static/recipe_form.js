@@ -83,12 +83,52 @@ function rformAddIngredientRow() {
             <input type="hidden" name="ing_pantry[]" value="0">
             <input type="checkbox" class="ing-pantry-checkbox" title="${window.I18N.pantry_item_title}"
                    onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
+            <input type="hidden" name="ing_from_previous[]" value="0">
+            <input type="checkbox" class="ing-from-previous-checkbox" title="${window.I18N.from_previous_title}"
+                   onchange="this.previousElementSibling.value = this.checked ? '1' : '0';">
             <button type="button" class="rform-ing-del" title="${window.I18N.remove_ingredient_title}" onclick="this.closest('.ingredient-row').remove(); rformUpdateIngredientCount();">✕</button>
         </div>
         <div class="ingredient-alias-hint small mt-1"></div>
     `;
     container.appendChild(div);
     rformUpdateIngredientCount();
+}
+
+/** One more follow-up dish row (select + day window), see
+ * services/follow_ups.py: save_follow_up_links. */
+function rformAddFollowUpRow() {
+    const container = document.getElementById('followUpContainer');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.className = 'rform-follow-up-row';
+    const select = document.createElement('select');
+    select.name = 'fu_recipe[]';
+    select.className = 'rform-field';
+    (window.FOLLOW_UP_CHOICES || []).forEach((id, i) => {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = window.FOLLOW_UP_CHOICE_NAMES[i];
+        select.appendChild(option);
+    });
+    row.appendChild(select);
+    [['fu_min[]', 2], ['fu_max[]', 3]].forEach(([name, value]) => {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.name = name;
+        input.className = 'rform-field';
+        input.min = 1;
+        input.max = 14;
+        input.value = value;
+        row.appendChild(input);
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'rform-ing-del';
+    remove.textContent = '✕';
+    remove.onclick = () => { row.remove(); rformScheduleAutosave(); };
+    row.appendChild(remove);
+    container.appendChild(row);
+    rformScheduleAutosave();
 }
 
 function rformUpdateIngredientCount() {
