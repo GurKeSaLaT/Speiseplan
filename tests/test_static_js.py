@@ -58,16 +58,22 @@ NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="node not installed")
 
 
-def _run_js(filename, expression, globals_js=""):
-    """Evaluates expression after loading static/<filename> into a fresh vm
-    context (top-level function/const declarations become callable) and
-    returns its JSON-decoded result."""
+def _run_js(filenames, expression, globals_js=""):
+    """Evaluates expression after loading static/<filename> (one name or a
+    list, in order) into a fresh vm context (top-level function/const
+    declarations become callable) and returns its JSON-decoded result."""
+    if isinstance(filenames, str):
+        filenames = [filenames]
+    loads = "\n".join(
+        f"vm.runInContext(fs.readFileSync({json.dumps(str(STATIC_DIR / name))}, 'utf8'), ctx);"
+        for name in filenames
+    )
     script = f"""
 const vm = require('vm');
 const fs = require('fs');
 const ctx = vm.createContext({{ window: {{ I18N: {{}} }}, console }});
 vm.runInContext({json.dumps(globals_js)}, ctx);
-vm.runInContext(fs.readFileSync({json.dumps(str(STATIC_DIR / filename))}, 'utf8'), ctx);
+{loads}
 process.stdout.write(JSON.stringify(vm.runInContext({json.dumps(expression)}, ctx)));
 """
     result = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=30, check=True)
@@ -113,3 +119,68 @@ def test_subtract_leftovers_without_amount_drops_every_line_of_that_name():
 def test_subtract_leftovers_unit_match_is_case_insensitive():
     result = _subtract(_line("Eier", 6, "Stück"), [{"name": "Eier", "amount": 2, "unit": "stück"}])
     assert result["Eier|||Stück"]["amount"] == 4
+
+
+# A minimal escapeHtml (plan.js has the real one, which needs the DOM).
+_ESCAPE_HTML_JS = """
+function escapeHtml(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+"""
+
+
+def _render_instructions(recipe, factor):
+    return _run_js(
+        ["plan-shopping.js", "plan-detail.js"],
+        f"renderInstructionParts({json.dumps(recipe)}, {factor})",
+        _ESCAPE_HTML_JS,
+    )
+
+
+@needs_node
+def test_instruction_placeholders_scale_with_servings_and_share():
+    recipe = {
+        "instructions": "x",
+        "ingredients": [
+            {"name": "Mehl", "amount": 400, "unit": "g"},
+            {"name": "Eier", "amount": 2, "unit": "Stück"},
+            {"name": "Salz", "amount": 0, "unit": ""},
+        ],
+        "instruction_parts": [
+            {"text": "Erst "}, {"ing": 0, "factor": 1, "raw": "{Mehl}"},
+            {"text": " Mehl, davon "}, {"ing": 0, "factor": 0.25, "raw": "{Mehl*1/4}"},
+            {"text": " beiseite; "}, {"ing": 1, "factor": 1, "raw": "{Eier}"},
+            {"text": " Eier <roh>, "}, {"ing": 2, "factor": 1, "raw": "{Salz}"}, {"text": "Salz"},
+        ],
+    }
+    html = _render_instructions(recipe, 1.5)
+    assert html == (
+        'Erst <strong class="instruction-amount">600 g</strong> Mehl, davon '
+        '<strong class="instruction-amount">150 g</strong> beiseite; '
+        '<strong class="instruction-amount">3</strong> Eier &lt;roh&gt;, '
+        'Salz'
+    )
+
+
+@needs_node
+def test_instructions_without_parts_render_escaped_text():
+    html = _render_instructions({"instructions": "a < b {Mehl}", "ingredients": []}, 2)
+    assert html == "a &lt; b {Mehl}"
+
+
+@needs_node
+def test_literal_amount_placeholders_scale_and_keep_their_unit():
+    recipe = {
+        "instructions": "x", "ingredients": [],
+        "instruction_parts": [
+            {"amount": 500, "unit": "ml", "raw": "{500 ml}"}, {"text": " Wasser, "},
+            {"amount": 12, "unit": "", "raw": "{12}"}, {"text": " Knödel, "},
+            {"amount": 2, "unit": "Stück", "raw": "{2 Stück}"},
+        ],
+    }
+    html = _render_instructions(recipe, 0.5)
+    assert html == (
+        '<strong class="instruction-amount">250 ml</strong> Wasser, '
+        '<strong class="instruction-amount">6</strong> Knödel, '
+        '<strong class="instruction-amount">1 Stück</strong>'
+    )

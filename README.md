@@ -28,6 +28,9 @@ in, and get a combined shopping list.
   by hand.
 - **Units**: amounts are stored in g/ml and shown in g/kg or ml/l as
   configured.
+- **Scaling amounts in instructions**: placeholders like `{Flour}` or
+  `{Butter*1/2}` in the instructions show the ingredient's amount, scaled
+  to the day's servings.
 - **Recipe import** from chefkoch.de, lecker.de, essen-und-trinken.de,
   eatsmarter.de, kuechengoetter.de, gutekueche.de/.at, daskochrezept.de,
   brigitte.de and emmikochteinfach.de (schema.org JSON-LD).

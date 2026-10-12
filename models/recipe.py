@@ -46,7 +46,11 @@ class Recipe(db.Model):
 
     category = db.relationship('Category', backref=db.backref('recipes', lazy=True))
     owner_plan = db.relationship('Plan', foreign_keys=[owner_plan_id])
-    ingredients = db.relationship('Ingredient', backref='recipe', cascade="all, delete-orphan")
+    # Ordered: instruction placeholders address lines by position
+    # (services/instruction_placeholders.py).
+    ingredients = db.relationship(
+        'Ingredient', backref='recipe', cascade="all, delete-orphan", order_by='Ingredient.id'
+    )
     # No rows = available year-round. Only restricts automatic selection.
     seasons = db.relationship('RecipeSeason', backref='recipe', cascade="all, delete-orphan")
     plan_links = db.relationship('RecipePlanLink', backref='recipe', cascade="all, delete-orphan")
