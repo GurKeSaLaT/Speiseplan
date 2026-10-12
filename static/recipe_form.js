@@ -98,6 +98,7 @@ function rformUpdateIngredientCount() {
     const pvIngCount = document.getElementById('pvIngCount');
     if (pvIngCount) pvIngCount.textContent = n;
     rformUpdateChecklist();
+    rformRenderPlaceholderChips();
     // Adding/removing rows fires no input/change event, so trigger autosave here.
     rformScheduleAutosave();
 }
@@ -164,6 +165,7 @@ function rformApplyImportedRecipe(data) {
         lastRow.querySelector('[name="ing_unit[]"]').value = ing.unit || '';
     });
 
+    rformRenderPlaceholderChips();
     rformUpdatePreview();
 }
 
@@ -199,6 +201,49 @@ function rformUpdateChecklist() {
     ciInstr?.classList.toggle('done', !!instructions);
 }
 
+// --- Amount placeholders in the instructions ---
+// Syntax and matching live in services/instruction_placeholders.py; the
+// form only offers insertion and shows the server's list of placeholders
+// that match no ingredient.
+
+/** One chip per named ingredient row; clicking inserts {name} at the
+ * cursor. Rebuilt whenever the ingredient rows change. */
+function rformRenderPlaceholderChips() {
+    const container = document.getElementById('placeholderChips');
+    if (!container) return;
+    container.innerHTML = '';
+    const names = [...document.querySelectorAll('#ingredientsContainer input[name="ing_name[]"]')]
+        .map(input => input.value.trim())
+        .filter(name => name && !/[{}*#]/.test(name));
+    names.forEach(name => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.textContent = `{${name}}`;
+        chip.title = window.I18N.insert_amount_placeholder_title;
+        chip.onclick = () => rformInsertPlaceholder(`{${name}}`);
+        container.appendChild(chip);
+    });
+}
+
+function rformInsertPlaceholder(placeholder) {
+    const textarea = document.getElementById('instructionsInput');
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    textarea.value = textarea.value.slice(0, start) + placeholder + textarea.value.slice(end);
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = start + placeholder.length;
+    // Programmatic edits fire no input event; autosave and checklist need one.
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function rformShowPlaceholderWarning(unresolved) {
+    const box = document.getElementById('placeholderWarning');
+    if (!box) return;
+    box.hidden = !unresolved || unresolved.length === 0;
+    box.textContent = box.hidden ? '' : `⚠️ ${window.I18N.unresolved_placeholders} ${unresolved.join(', ')}`;
+}
+
 // --- Autosave (existing recipes only) ---
 // A new recipe is created with one explicit submit; after that, every change
 // resubmits the whole form (debounced). X-Requested-With makes the server
@@ -225,7 +270,10 @@ function rformAutosave() {
     })
     .then(response => response.json().then(data => ({ ok: response.ok, data })))
     .then(({ ok, data }) => {
-        if (ok) rformUpdateNutritionBadge(data.calories, data.protein, data.carbs, data.fat);
+        if (ok) {
+            rformUpdateNutritionBadge(data.calories, data.protein, data.carbs, data.fat);
+            rformShowPlaceholderWarning(data.unresolved_placeholders);
+        }
         if (indicator) {
             indicator.textContent = ok ? '✓' : '⚠️';
             indicator.className = 'rform-autosave-indicator ' + (ok ? 'autosave-ok' : 'autosave-error');
@@ -249,6 +297,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(id)?.addEventListener('change', rformUpdatePreview);
     });
     document.getElementById('instructionsInput')?.addEventListener('input', rformUpdateChecklist);
+    rformRenderPlaceholderChips();
+    document.getElementById('ingredientsContainer')?.addEventListener('input', rformRenderPlaceholderChips);
+    rformShowPlaceholderWarning(window.RECIPE_UNRESOLVED_PLACEHOLDERS);
 
     if (window.RECIPE_NUTRITION) {
         const n = window.RECIPE_NUTRITION;

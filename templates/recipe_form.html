@@ -282,6 +282,11 @@
                 <div class="rform-section-head"><h2>📝 {{ _('Instructions') }}</h2></div>
                 <div class="rform-section-body">
                     <textarea name="instructions" id="instructionsInput" class="rform-field" rows="8" placeholder="{{ _('Preparation steps...') }}">{{ recipe.instructions or '' if recipe else '' }}</textarea>
+                    {# Amount placeholders (services/instruction_placeholders.py);
+                       chips and warning are maintained by recipe_form.js. #}
+                    <p class="rform-placeholder-help">{{ _('Amounts that should scale with the servings: click an ingredient to insert a placeholder like {Flour}. {Flour*0.5} or {Flour*1/2} uses part of it, {Butter#2} the second line named Butter. A name prefix is enough if it is unique.') }}</p>
+                    <div class="rform-placeholder-chips" id="placeholderChips"></div>
+                    <div class="rform-placeholder-warning" id="placeholderWarning" hidden></div>
                 </div>
             </div>
         </form>
@@ -343,6 +348,7 @@ window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 {% if recipe %}
 window.RECIPE_ID = {{ recipe.id }};
 window.RECIPE_NUTRITION = {{ {'calories': recipe.calories, 'protein': recipe.protein, 'carbs': recipe.carbs, 'fat': recipe.fat} | tojson }};
+window.RECIPE_UNRESOLVED_PLACEHOLDERS = {{ unresolved_placeholders | tojson }};
 {% endif %}
 </script>
 <script src="{{ url_for('static', filename='ingredient_category_select.js') }}"></script>

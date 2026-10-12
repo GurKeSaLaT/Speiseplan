@@ -40,7 +40,7 @@ function renderRecipeDetailBody(recipe, targetServings) {
         : `<span class="text-muted">${escapeHtml(window.I18N.no_ingredients_on_file)}</span>`;
 
     const instructionsHtml = recipe.instructions
-        ? `<h6 class="fw-bold text-dark mt-3 mb-1">${escapeHtml(window.I18N.instructions_heading)}</h6><p class="mb-0" style="white-space: pre-line;">${escapeHtml(recipe.instructions)}</p>`
+        ? `<h6 class="fw-bold text-dark mt-3 mb-1">${escapeHtml(window.I18N.instructions_heading)}</h6><p class="mb-0" style="white-space: pre-line;">${renderInstructionParts(recipe, factor)}</p>`
         : '';
 
     const sourceHtml = recipe.source_url
@@ -60,6 +60,32 @@ function renderRecipeDetailBody(recipe, targetServings) {
         ${instructionsHtml}
         ${sourceHtml}
     `;
+}
+
+// Units that read better as a bare count in running text ("2 Eier").
+const COUNT_UNITS = new Set(['', 'st', 'st.', 'stk', 'stk.', 'stück']);
+
+/** "200 g", "2" (count units), or "" when the line has no amount. */
+function formatPlaceholderAmount(ingredient, factor) {
+    const amount = roundedAmount({ amount: ingredient.amount * factor });
+    if (!amount) return '';
+    const unit = (ingredient.unit || '').trim();
+    return COUNT_UNITS.has(unit.toLowerCase()) ? `${amount}` : `${amount} ${unit}`;
+}
+
+/** Instructions as escaped HTML with every placeholder replaced by its
+ * ingredient's amount, scaled like the ingredient list (factor) and by the
+ * placeholder's own share. Parts come from the server
+ * (services/instruction_placeholders.py); unknown ones are plain text. */
+function renderInstructionParts(recipe, factor) {
+    const parts = recipe.instruction_parts || [{ text: recipe.instructions || '' }];
+    return parts.map(part => {
+        if (part.text !== undefined) return escapeHtml(part.text);
+        const ingredient = recipe.ingredients[part.ing];
+        if (!ingredient) return escapeHtml(part.raw || '');
+        const amount = formatPlaceholderAmount(ingredient, part.factor * factor);
+        return amount ? `<strong class="instruction-amount">${escapeHtml(amount)}</strong>` : '';
+    }).join('');
 }
 
 /** Saves the cooked checkbox; the window stays open. */

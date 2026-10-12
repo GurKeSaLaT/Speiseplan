@@ -10,7 +10,8 @@ from flask_babel import lazy_gettext as _l
 from models import db, Recipe, PlanDay, PlanDaySide
 from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
-from services.ingredient_aliases import normalize_ingredient_name
+from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name
+from services.instruction_placeholders import tokenize_instructions
 from services.settings import get_display_units
 from services.shopping import group_category_map
 from services.units import convert_for_display
@@ -213,8 +214,20 @@ def jsonify_recipe(recipe, plan_id, group_categories=None):
         "is_favorite": recipe.is_favorite,
         "source_url": recipe.source_url,
         "instructions": recipe.instructions,
+        "instruction_parts": instruction_parts(recipe, plan_id),
         "ingredients": ingredients
     }
+
+
+def instruction_parts(recipe, plan_id):
+    """The instructions split into text and amount placeholders that point
+    into the "ingredients" list (same order); see
+    services/instruction_placeholders.py. Plain text skips the alias query."""
+    text = recipe.instructions or ''
+    if '{' not in text:
+        return [{"text": text}] if text else []
+    names = [ing.name for ing in recipe.ingredients]
+    return tokenize_instructions(text, names, get_all_aliases(plan_id))
 
 
 def jsonify_side(plan_day_side, plan_id, group_categories=None):

@@ -4,6 +4,11 @@ One line per change, newest first.
 
 ## 2026-10-12
 
+- Amount placeholders in recipe instructions: `{Name}`, `{Name*0.5}`,
+  `{Name*1/4}`, `{Name#2}` show that ingredient line's amount, scaled to
+  the day's servings, in the plan's recipe window. Names match exactly,
+  by unique prefix or by whole word; the recipe form inserts them by
+  click and warns about ones that match no ingredient.
 - Leftovers: the create-week page takes leftovers from last week
   (ingredient, optional amount). Dishes using them go on the earliest free
   days, and they are subtracted from the shopping list (no amount = the

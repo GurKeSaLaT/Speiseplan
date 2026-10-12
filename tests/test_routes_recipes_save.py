@@ -203,7 +203,8 @@ def test_edit_recipe_returns_json_for_autosave_requests(client, app, make_recipe
     resp = client.post(f"/edit-recipe/{recipe_id}", data=form, headers={"X-Requested-With": "XMLHttpRequest"})
 
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True, "calories": 290, "protein": 20.0, "carbs": 30.0, "fat": 10.0}
+    assert resp.get_json() == {"ok": True, "calories": 290, "protein": 20.0, "carbs": 30.0, "fat": 10.0,
+                               "unresolved_placeholders": []}
 
     with app.app_context():
         assert db.session.get(Recipe, recipe_id).name == "Geändertes Gericht"

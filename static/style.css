@@ -638,3 +638,18 @@ body {
 .autosave-ok { color: var(--primary-food); }
 .autosave-error { color: #C1443B; }
 [data-bs-theme="dark"] .autosave-error { color: #E27168; }
+
+/* Recipe form: amount placeholders in the instructions (recipe_form.js). */
+.rform-placeholder-help { font-size: 0.76rem; color: var(--bs-secondary-color); margin: 0.5rem 0 0.35rem; }
+.rform-placeholder-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.rform-placeholder-chips button {
+    background: var(--bg-warm); border: 1px solid var(--border-subtle); border-radius: 999px;
+    padding: 0.15rem 0.6rem; font-size: 0.74rem; font-weight: 600; color: var(--text-dark); cursor: pointer;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rform-placeholder-chips button:hover { border-color: var(--primary-food); }
+.rform-placeholder-warning {
+    margin-top: 0.5rem; padding: 0.45rem 0.7rem; border-radius: 0.6rem; font-size: 0.8rem;
+    background: var(--bs-warning-bg-subtle, #fff3cd); color: var(--bs-warning-text-emphasis, #664d03);
+}
+.instruction-amount { color: var(--primary-food); }

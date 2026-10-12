@@ -17,7 +17,8 @@ from services.auth import current_plan, current_user, default_plan_id, selected_
 from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
-from services.ingredient_aliases import normalize_ingredient_name
+from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name
+from services.instruction_placeholders import unresolved_placeholders
 from services.nutrition import compute_calories, compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.recipe_visibility import visible_recipes_query
@@ -103,7 +104,15 @@ def recipe_edit_view(id):
         custom_end=f"2000-{custom_range.end_month:02d}-{custom_range.end_day:02d}" if custom_range else '',
         ingredient_display=ingredient_display,
         linkable_plans=linkable_plans, linked_plan_ids=linked_plan_ids,
-        plan_id=plan_id,
+        plan_id=plan_id, unresolved_placeholders=_unresolved_placeholders(recipe, plan_id),
+    )
+
+
+def _unresolved_placeholders(recipe, plan_id):
+    """Placeholders in the instructions that match no ingredient line (shown
+    as a warning in the form, they'd appear verbatim in the plan)."""
+    return unresolved_placeholders(
+        recipe.instructions, [ing.name for ing in recipe.ingredients], get_all_aliases(plan_id)
     )
 
 
@@ -236,6 +245,7 @@ def edit_recipe(id):
         return {
             "ok": True, "calories": recipe.calories, "protein": recipe.protein,
             "carbs": recipe.carbs, "fat": recipe.fat,
+            "unresolved_placeholders": _unresolved_placeholders(recipe, plan_id),
         }
     return redirect(url_for('recipes.recipe_edit_list_view', plan_id=plan_id))
 
