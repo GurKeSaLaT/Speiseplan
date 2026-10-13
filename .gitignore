@@ -31,3 +31,8 @@ instance/secret_key
 # push/deploy instead.
 BUGS.md
 messages.pot
+
+# Coverage data and mutmut work directory
+.coverage
+.coverage.*
+mutants/

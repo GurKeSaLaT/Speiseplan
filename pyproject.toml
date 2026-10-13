@@ -1,0 +1,35 @@
+# Tool configuration only (pytest itself is configured in pytest.ini).
+
+[tool.coverage.run]
+# Production code only; the tests are not measured.
+source = ["app", "migrations", "models", "routes", "services"]
+branch = true
+
+[tool.coverage.report]
+precision = 1
+# No fail_under on purpose: coverage shows gaps, it is not a target.
+
+[tool.mutmut]
+# On demand only, never part of the normal test run: `mutmut run`
+# (all of services/ and routes/) or `mutmut run "services.shopping.*"`
+# (one module). See README "Tests".
+# mutmut 3 does not mutate decorated functions, so Flask route handlers
+# (@bp.route) are skipped; only their undecorated helpers get mutants.
+source_paths = ["services/", "routes/"]
+also_copy = [
+    "app.py",
+    "migrations.py",
+    "models/",
+    "templates/",
+    "static/",
+    "translations/",
+    "fixtures/",
+    "babel.cfg",
+    "pytest.ini",
+]
+pytest_add_cli_args = [
+    "--no-cov",
+    # Reads every _() string from the source tree, so mutmut's string
+    # mutants would always fail it and abort the stats run.
+    "--deselect=tests/test_translations.py::test_every_source_string_has_a_german_translation",
+]
