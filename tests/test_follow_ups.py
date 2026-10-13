@@ -761,6 +761,11 @@ def test_setting_source_side_releases_and_places_anew(app, client, make_recipe, 
     assert body["shopping_servings"][0]["sides"][str(k_id)]["followUpServings"] == 2
     _assert_consistent(app, client.plan_id)
 
+    salat = make_recipe("Salat", category_id=make_category("Salate"), is_side_dish=True)
+    body = client.post(f"/day/2026-06-12/side/{k_id}/set", json={"recipe_id": salat}).get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id) == [[(salat, None)], [], [], [], [], [], []]
+
 
 def test_removing_source_side_releases_its_follow_ups(app, client, make_recipe, make_category):
     k, b, r, g, fillers = _side_source_week(app, client, make_recipe, make_category)
@@ -786,10 +791,15 @@ def test_moving_source_side_keeps_coupling(app, client, make_recipe, make_catego
     assert body["shopping_servings"][0]["sides"] == {
         str(k_id): {"servings": 4, "followUpServings": 2, "skipPrecooked": False}}
 
+    body = client.post(f"/day/2026-06-12/side/{k_id}/move/2026-06-13").get_json()
+    assert body["links_changed"] is True
+    assert _days(app, client.plan_id)[2] == (b, FRIDAY + timedelta(days=1), False)
+
     # Swapping days carries the sides and their couplings along.
     client.post("/day/2026-06-12/swap/2026-06-13")
-    assert _days(app, client.plan_id)[2] == (b, FRIDAY + timedelta(days=1), False)
+    assert _days(app, client.plan_id)[2] == (b, FRIDAY, False)
     assert _sides(app, client.plan_id)[2] == [(g, FRIDAY)]
+    _assert_consistent(app, client.plan_id)
 
 
 def test_generate_places_follow_ups_of_pinned_sides(app, client, make_recipe, make_category):

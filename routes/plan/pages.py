@@ -4,6 +4,7 @@ week creation. Weeks are addressed by their start date (always a Friday)."""
 from datetime import date, timedelta
 
 from flask import render_template, request, redirect, url_for, abort, session
+from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
 from models import db, Category, Plan, PlanDay, PlanDaySide, ExtraShoppingItem, PendingFollowUp, ShoppingListCheck
@@ -19,8 +20,8 @@ from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
 from services.follow_ups import (
-    add_side, assign_follow_up, couple, incoming_follow_ups, refill_released, release_follow_ups, week_follow_up_data,
-    week_days, week_shopping_servings,
+    add_side, assign_follow_up, couple, incoming_follow_ups, refill_released, release_week, week_follow_up_data,
+    week_shopping_servings,
 )
 from services.week_generation import generate_week
 from routes.plan import plan_bp
@@ -221,7 +222,7 @@ def week_create_view(start_date):
 
 
 @plan_bp.route('/plan/<start_date>/generate', methods=['POST'])
-def week_generate(start_date):
+def week_generate(start_date: str) -> ResponseReturnValue:
     """Saves a week from the create form: pinned days stay, the remaining
     main dishes are generated (services/week_generation.py), using up the
     entered leftovers first (stored for the week's shopping list). Side dishes are
@@ -272,13 +273,9 @@ def week_generate(start_date):
     }
     PendingFollowUp.query.filter(PendingFollowUp.plan_id == plan.id, PendingFollowUp.date.in_(dates)).delete(
         synchronize_session=False)
-    # Recreating replaces this week's dishes (main dishes and sides), so
-    # their follow-ups elsewhere are released (and re-rolled below unless a
-    # new follow-up takes them).
-    freed_days = []
-    for day in week_days(plan.id, dates):
-        for source in [day, *day.sides]:
-            freed_days += [pd for pd in release_follow_ups(source).freed_days if pd.date not in dates]
+    # Recreating replaces this week's dishes, so their follow-ups elsewhere
+    # are released (and re-rolled below unless a new follow-up takes them).
+    freed_days = release_week(plan.id, dates)
     db.session.flush()
 
     generated = generate_week(
@@ -308,19 +305,16 @@ def week_generate(start_date):
         ])
     db.session.flush()  # assigns the sides' ids, for couplings to them
 
-    def dish(ref):
-        return plan_days[ref.day] if ref.side is None else pinned_sides[ref.day][ref.side]
-
     for i, plan_day in enumerate(plan_days):
         if i in generated.follow_up_couplings:
-            source = dish(generated.follow_up_couplings[i])
+            source = generated.follow_up_couplings[i].resolve(plan_days, pinned_sides)
         else:
             source = incoming_sources.get(i) if final_plan[i] is not None else None
         couple(plan_day, source)
     for i, recipe, source in generated.side_follow_ups:
-        add_side(plan_days[i], recipe.id, dish(source))
+        add_side(plan_days[i], recipe.id, source.resolve(plan_days, pinned_sides))
     for day, recipe, source in generated.outside_follow_ups:
-        assign_follow_up(plan.id, recipe, day, dish(source))
+        assign_follow_up(plan.id, recipe, day, source.resolve(plan_days, pinned_sides))
     db.session.flush()
     refill_released(plan.id, freed_days)
 

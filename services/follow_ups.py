@@ -31,7 +31,10 @@ from datetime import date, timedelta
 
 from flask_babel import gettext as _
 
+from sqlalchemy import ColumnElement
+
 from models import db, PendingFollowUp, PlanDay, PlanDaySide, Recipe
+from models.calendar import CoupledDish
 from services.planning import (  # noqa: F401 - follow_up_target_ids re-exported
     follow_up_target_ids, friday_of, recent_usage_counts, reroll_choice, weighted_recipe_choice, week_dates_for,
 )
@@ -111,7 +114,7 @@ def _dish_name(dish):
     return recipe.name if recipe else ''
 
 
-def _coupled_to(model: type, source: PlanDay | PlanDaySide):
+def _coupled_to(model: type, source: PlanDay | PlanDaySide) -> ColumnElement[bool]:
     """Filter for the rows of model (PlanDay, PlanDaySide or
     PendingFollowUp) coupled to source."""
     if isinstance(source, PlanDay):
@@ -260,7 +263,7 @@ def remove_side_dish(plan_id: int, side: PlanDaySide) -> bool:
     return changed or released
 
 
-def reroll_refill(plan_day: PlanDay) -> None:
+def _refill_day(plan_day: PlanDay) -> None:
     """Rolls a normal dish for a day whose follow-up dish was released
     (services/planning.py: reroll_choice). No commit."""
     chosen = reroll_choice(plan_day.plan_id, plan_day.date)
@@ -268,13 +271,24 @@ def reroll_refill(plan_day: PlanDay) -> None:
     plan_day.cooked = False
 
 
+def release_week(plan_id: int, dates: list[date]) -> list[PlanDay]:
+    """The week `dates` is recreated: all its main dishes and sides release
+    their follow-ups. Returns the freed days outside the week, for
+    refill_released once the new week is saved. No commit."""
+    freed = []
+    for plan_day in week_days(plan_id, dates):
+        for source in [plan_day, *plan_day.sides]:
+            freed += [pd for pd in release_follow_ups(source).freed_days if pd.date not in dates]
+    return freed
+
+
 def refill_released(plan_id: int, freed_days: list[PlanDay]) -> None:
     """Rolls a dish for released follow-up days that are still empty
-    (reroll_refill); a refilled dish with follow-ups gets one placed like
+    (_refill_day); a refilled dish with follow-ups gets one placed like
     any planned dish. No commit."""
     for freed_day in freed_days:
         if freed_day.main_recipe_id is None and not freed_day.excluded:
-            reroll_refill(freed_day)
+            _refill_day(freed_day)
             db.session.flush()
             if freed_day.main_recipe_id is not None:
                 db.session.refresh(freed_day)
@@ -360,16 +374,16 @@ def week_days(plan_id, dates):
 FollowUpDish = namedtuple('FollowUpDish', 'date name servings pending')
 
 
-def _follow_ups_by_source(days: list[PlanDay]) -> dict:
+def _follow_ups_by_source(days: list[PlanDay]) -> dict[PlanDay | PlanDaySide, list[FollowUpDish]]:
     """The follow-ups of the main dishes and sides of days, in any week or
     still pending: {PlanDay or PlanDaySide: [FollowUpDish]}, by date."""
     sources = {('day', pd.id): pd for pd in days} | {('side', side.id): side for pd in days for side in pd.sides}
 
-    def coupled(model):
+    def coupled(model: type) -> ColumnElement[bool]:
         return (model.source_day_id.in_([i for kind, i in sources if kind == 'day'])
                 | model.source_side_id.in_([i for kind, i in sources if kind == 'side']))
 
-    def source_of(dish):
+    def source_of(dish: CoupledDish) -> PlanDay | PlanDaySide:
         return sources[('side', dish.source_side_id) if dish.source_side_id is not None else ('day', dish.source_day_id)]
 
     result = defaultdict(list)
@@ -385,14 +399,16 @@ def _follow_ups_by_source(days: list[PlanDay]) -> dict:
     return result
 
 
-def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
+def week_follow_up_data(
+    plan_id: int, dates: list[date], ordered_days: list[PlanDay | None], day_labels: list[str],
+) -> dict:
     """plan_data entries for the follow-up notes on the week page (plan.js):
     followUpOf[i]: the source dish (main dish or side) of day i's follow-up
     main dish, or null; followUpsOut[i]: day i's main dish's follow-ups
     (main dishes and sides), in this week (index set) or elsewhere;
     sideFollowUpsOut: the same per source side, by side id. Amounts come
     from week_shopping_servings."""
-    def place(day):
+    def place(day: date) -> dict:
         in_week = day in dates
         return {
             "date": day.isoformat(),
@@ -400,7 +416,7 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
             "label": day_labels[dates.index(day)] if in_week else _day_label(day),
         }
 
-    def notes(dishes):
+    def notes(dishes: list[FollowUpDish]) -> list[dict]:
         return [
             {**place(dish.date), **({"index": None} if dish.pending else {}), "name": dish.name, "pending": dish.pending}
             for dish in dishes
@@ -422,7 +438,7 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
     }
 
 
-def week_shopping_servings(plan_id, day):
+def week_shopping_servings(plan_id: int, day: date) -> list[dict]:
     """Per day of the week containing day: {"main": ..., "sides": {side id:
     ...}} with the servings each dish is bought for (plan.js:
     shoppingServings; the client only multiplies). A source dish (main
@@ -438,7 +454,7 @@ def week_shopping_servings(plan_id, day):
     days = {pd.date: pd for pd in week_days(plan_id, dates)}
     follow_ups = _follow_ups_by_source(list(days.values()))
 
-    def entry(own_servings, source, skip_precooked):
+    def entry(own_servings: int, source: PlanDay | PlanDaySide, skip_precooked: bool) -> dict:
         follow_up_servings = sum(dish.servings for dish in follow_ups.get(source, ()))
         return {
             "servings": own_servings + follow_up_servings,
@@ -611,7 +627,7 @@ def save_follow_up_links(recipe, form, plan_id):
         complete_tree(recipe.id)
 
 
-def forget_recipe(recipe_id):
+def forget_recipe(recipe_id: int) -> None:
     """Before deleting a recipe: drop links that would dangle - follow-up
     definitions pointing at it, couplings to main dishes and sides where it
     is the dish (those follow-ups stay as normal dishes), its own couplings
