@@ -20,6 +20,7 @@ from services.settings import get_display_units
 from services.units import convert_for_display
 from services.follow_ups import (
     assign_follow_up, incoming_follow_ups, refill_released, release_follow_ups, week_follow_up_data,
+    week_shopping_servings,
 )
 from services.planning import reroll_choice
 from services.week_generation import generate_week
@@ -169,6 +170,7 @@ def week_view(start_date):
         'shoppingChecks': shopping_checks,
         'leftovers': week_leftovers_payload(active_plan.id, normalized),
         **week_follow_up_data(active_plan.id, dates, ordered, day_labels),
+        'shoppingServings': week_shopping_servings(active_plan.id, normalized),
         'allRecipes': [
             {"id": r.id, "name": r.name, "category_name": r.category.name, "is_side_dish": r.is_side_dish}
             for r in all_recipes

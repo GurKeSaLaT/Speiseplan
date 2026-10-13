@@ -37,17 +37,25 @@ let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 // Linked dishes (services/follow_ups.py). followUpOf[i]: the dish day i's
 // dish is made from ({date, index|null, name, label}) or null.
 // followUpsOut[i]: dishes made from day i's dish ({date, index|null, name,
-// label, servings, pending}); index set = in this week (servings live).
+// label, pending}); index set = in this week.
 let followUpOf = window.PLAN_DATA.followUpOf || [null, null, null, null, null, null, null];
 let followUpsOut = window.PLAN_DATA.followUpsOut || [[], [], [], [], [], [], []];
 
-/** Extra servings day i's main dish is bought and cooked for: its
- * follow-ups' servings (only in-week ones that still link back count). */
-function extraServingsFor(dayIndex) {
-    return (followUpsOut[dayIndex] || []).reduce((sum, entry) => {
-        if (entry.index === null || entry.index === undefined) return sum + (entry.servings || 0);
-        return followUpOf[entry.index] ? sum + dayServings[entry.index] : sum;
-    }, 0);
+// What each dish is bought for, computed on the server
+// (services/follow_ups.py: week_shopping_servings): shoppingServings[i] =
+// {main, sides: {side_id: ...}}, each {servings, followUpServings,
+// skipPrecooked}. Replaced from every answer that carries it.
+let shoppingServings = window.PLAN_DATA.shoppingServings || Array.from({ length: 7 }, () => ({ main: null, sides: {} }));
+
+function applyShoppingServings(data) {
+    if (data && data.shopping_servings) shoppingServings = data.shopping_servings;
+}
+
+/** Shopping servings of day i's main dish (sideId null) or one side. */
+function dishShopping(dayIndex, sideId) {
+    const day = shoppingServings[dayIndex];
+    const entry = sideId ? day.sides[sideId] : day.main;
+    return entry || { servings: dayServings[dayIndex], followUpServings: 0, skipPrecooked: false };
 }
 
 /** The "made from / goes into" lines under a day's main dish. */
@@ -128,6 +136,7 @@ function rerollSingleDay(dayIndex) {
     })
     .then(newRecipe => {
         if (reloadIfLinksChanged(newRecipe)) return;
+        applyShoppingServings(newRecipe);
         weeklyPlanRecipes[dayIndex] = newRecipe;
         dayCooked[dayIndex] = false;
         refreshDayCard(dayIndex);
@@ -242,6 +251,7 @@ function setMainRecipe(dayIndex, recipeId) {
     })
     .then(newRecipe => {
         if (reloadIfLinksChanged(newRecipe)) return;
+        applyShoppingServings(newRecipe);
         weeklyPlanRecipes[dayIndex] = newRecipe;
         dayExcluded[dayIndex] = false;
         dayCooked[dayIndex] = false;
@@ -276,18 +286,33 @@ function renderOtherPlanMeals(dayIndex) {
     return `<div class="other-plan-meals mt-2 pt-2 border-top">${rows}</div>`;
 }
 
-/** Optimistic: updates the shopping list right away and only reports a
- * failed save, without resetting the typed value. */
+// Only the latest servings answer rebuilds the shopping list, so quick
+// changes can't be overtaken by an older answer.
+let servingsRequestSeq = 0;
+
+/** The typed value stays even if saving fails (only reported); the shopping
+ * list follows once the server sends the new shopping servings (a change can
+ * also touch the source dish of a follow-up). */
 function updateDayServings(dayIndex, value) {
     const n = parseInt(value);
     const servings = (isNaN(n) || n < 1) ? 1 : n;
     dayServings[dayIndex] = servings;
-    rebuildShoppingList();
+    const seq = ++servingsRequestSeq;
 
     postWithCsrf(`/day/${dayDates[dayIndex]}/servings`, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ servings: servings })
-    }).catch(() => {
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(window.I18N.could_not_save_servings);
+        return response.json();
+    })
+    .then(data => {
+        if (seq !== servingsRequestSeq) return;
+        applyShoppingServings(data);
+        rebuildShoppingList();
+    })
+    .catch(() => {
         alert(window.I18N.note_prefix + ' ' + window.I18N.could_not_save_servings);
     });
 }
@@ -353,6 +378,7 @@ function daySwap(i, j) {
     })
     .then(data => {
         if (reloadIfLinksChanged(data)) return;
+        applyShoppingServings(data);
         [weeklyPlanRecipes[i], weeklyPlanRecipes[j]] = [weeklyPlanRecipes[j], weeklyPlanRecipes[i]];
         [weeklySideRecipes[i], weeklySideRecipes[j]] = [weeklySideRecipes[j], weeklySideRecipes[i]];
         [dayExcluded[i], dayExcluded[j]] = [dayExcluded[j], dayExcluded[i]];

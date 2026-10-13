@@ -8,8 +8,8 @@ from flask_babel import gettext as _
 
 from models import db, PlanDay, PlanDaySide
 from services.auth import current_plan
-from services.follow_ups import move_links_on_swap, replace_main_dish
-from services.planning import parse_iso_date, jsonify_recipe, reroll_choice
+from services.follow_ups import move_links_on_swap, replace_main_dish, week_shopping_servings
+from services.planning import friday_of, parse_iso_date, jsonify_recipe, reroll_choice
 from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
 
@@ -19,6 +19,13 @@ def _refill(plan_day):
     chosen = reroll_choice(plan_day.plan_id, plan_day.date)
     plan_day.main_recipe_id = chosen.id if chosen else None
     plan_day.cooked = False
+
+
+def _shopping_servings(plan_id, day):
+    """Fresh shopping servings for the week of day, sent with every answer
+    that places a dish or changes servings (plan.js: applyShoppingServings).
+    Removing a dish needs none: a link change makes the page reload."""
+    return week_shopping_servings(plan_id, friday_of(day))
 
 
 @plan_bp.route('/day/<day_date>/reroll-main', methods=['POST'])
@@ -43,7 +50,10 @@ def reroll_day(day_date):
 
     links_changed = replace_main_dish(plan.id, plan_day, chosen, _refill)
     db.session.commit()
-    return {**jsonify_recipe(chosen, plan.id), "links_changed": links_changed}
+    return {
+        **jsonify_recipe(chosen, plan.id), "links_changed": links_changed,
+        "shopping_servings": _shopping_servings(plan.id, target_date),
+    }
 
 
 @plan_bp.route('/day/<day_date>/set-main', methods=['POST'])
@@ -74,7 +84,10 @@ def set_main_day(day_date):
     plan_day.excluded = False
     links_changed = replace_main_dish(plan.id, plan_day, recipe, _refill)
     db.session.commit()
-    return {**jsonify_recipe(recipe, plan.id), "links_changed": links_changed}
+    return {
+        **jsonify_recipe(recipe, plan.id), "links_changed": links_changed,
+        "shopping_servings": _shopping_servings(plan.id, target_date),
+    }
 
 
 @plan_bp.route('/day/<day_date>/toggle-exclude', methods=['POST'])
@@ -122,7 +135,7 @@ def set_day_servings(day_date):
         db.session.add(plan_day)
     plan_day.servings = servings
     db.session.commit()
-    return {"ok": True, "servings": servings}
+    return {"ok": True, "servings": servings, "shopping_servings": _shopping_servings(plan.id, target_date)}
 
 
 @plan_bp.route('/day/<date_a>/swap/<date_b>', methods=['POST'])
@@ -159,7 +172,7 @@ def swap_days(date_a, date_b):
         side.plan_day_id = plan_day_a.id
 
     db.session.commit()
-    return {"ok": True, "links_changed": links_changed}
+    return {"ok": True, "links_changed": links_changed, "shopping_servings": _shopping_servings(plan.id, parsed_a)}
 
 
 @plan_bp.route('/day/<day_date>/cooked', methods=['POST'])

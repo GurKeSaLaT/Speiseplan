@@ -20,10 +20,10 @@ function openRecipeDetail(dayIndex, sideId) {
 
     document.getElementById('recipeDetailTitle').textContent = (recipe.is_favorite ? '⭐ ' : '') + recipe.name;
     document.getElementById('recipeDetailEditLink').href = `/manage/recipe/edit/${recipe.id}`;
-    const extra = sideId ? 0 : extraServingsFor(dayIndex);
+    const shopping = dishShopping(dayIndex, sideId);
     document.getElementById('recipeDetailBody').innerHTML = renderRecipeDetailBody(
-        recipe, dayServings[dayIndex] + extra,
-        sideId ? null : { dayIndex, extra, isFollowUp: !!followUpOf[dayIndex] }
+        recipe, shopping.servings,
+        sideId ? null : { dayIndex, extra: shopping.followUpServings, isFollowUp: shopping.skipPrecooked }
     );
 
     const checkbox = document.getElementById('recipeDetailCookedCheckbox');

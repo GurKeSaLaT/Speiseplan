@@ -23,7 +23,7 @@ from flask_babel import gettext as _
 
 from models import db, PendingFollowUp, PlanDay, Recipe
 from services.planning import (  # noqa: F401 - follow_up_target_ids re-exported
-    follow_up_target_ids, friday_of, recent_usage_counts, weighted_recipe_choice,
+    follow_up_target_ids, friday_of, recent_usage_counts, weighted_recipe_choice, week_dates_for,
 )
 from services.recipe_trees import complete_tree
 from services.recipe_visibility import visible_recipes_query
@@ -243,10 +243,10 @@ def incoming_follow_ups(plan_id, dates):
 
 
 def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
-    """plan_data entries for the week page (plan.js / plan-shopping.js):
+    """plan_data entries for the follow-up notes on the week page (plan.js):
     followUpOf[i]: the source dish of day i's follow-up dish, or null;
-    followUpsOut[i]: day i's dish's follow-ups - in this week (index set,
-    servings read live from the page) or elsewhere (servings fixed here)."""
+    followUpsOut[i]: day i's dish's follow-ups, in this week (index set) or
+    elsewhere. Amounts come from week_shopping_servings."""
     follow_up_of = []
     for i, plan_day in enumerate(ordered_days):
         source = plan_day.follow_up_of_date if plan_day and plan_day.main_recipe_id else None
@@ -271,7 +271,6 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
             "index": dates.index(plan_day.date) if in_week else None,
             "name": plan_day.main_recipe.name,
             "label": day_labels[dates.index(plan_day.date)] if in_week else _day_label(plan_day.date),
-            "servings": plan_day.servings,
             "pending": False,
         })
     pending = PendingFollowUp.query.filter(
@@ -280,11 +279,47 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
     for row in pending:
         follow_ups_out[dates.index(row.source_date)].append({
             "date": row.date.isoformat(), "index": None, "name": row.recipe.name,
-            "label": _day_label(row.date), "servings": row.servings, "pending": True,
+            "label": _day_label(row.date), "pending": True,
         })
     for entries in follow_ups_out:
         entries.sort(key=lambda e: e["date"])
     return {"followUpOf": follow_up_of, "followUpsOut": follow_ups_out}
+
+
+def week_shopping_servings(plan_id, week_start):
+    """Per day of the week starting week_start: {"main": ..., "sides":
+    {side id: ...}} with the servings each dish is bought for (plan.js:
+    shoppingServings; the client only multiplies). A source dish is bought
+    for its own servings plus those of its follow-up dishes, in any week or
+    still pending (followUpServings); a follow-up dish skips its pre-cooked
+    ingredients. main is None on a day without a main dish."""
+    dates = week_dates_for(week_start)
+    days = {pd.date: pd for pd in PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates))}
+
+    follow_up_servings = dict.fromkeys(dates, 0)
+    for plan_day in PlanDay.query.filter(
+        PlanDay.plan_id == plan_id, PlanDay.follow_up_of_date.in_(dates), PlanDay.main_recipe_id.isnot(None)
+    ):
+        follow_up_servings[plan_day.follow_up_of_date] += plan_day.servings
+    for row in PendingFollowUp.query.filter(
+        PendingFollowUp.plan_id == plan_id, PendingFollowUp.source_date.in_(dates)
+    ):
+        follow_up_servings[row.source_date] += row.servings
+
+    def entry(servings, extra=0, skip=False):
+        return {"servings": servings + extra, "followUpServings": extra, "skipPrecooked": skip}
+
+    result = []
+    for day in dates:
+        plan_day = days.get(day)
+        if plan_day is None:
+            result.append({"main": None, "sides": {}})
+            continue
+        main = None
+        if plan_day.main_recipe_id is not None:
+            main = entry(plan_day.servings, follow_up_servings[day], plan_day.follow_up_of_date is not None)
+        result.append({"main": main, "sides": {str(side.id): entry(plan_day.servings) for side in plan_day.sides}})
+    return result
 
 
 class FollowUpRuleError(ValueError):

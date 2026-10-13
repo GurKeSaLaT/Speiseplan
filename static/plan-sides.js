@@ -76,6 +76,7 @@ function addSide(dayIndex, recipeId) {
         return response.json();
     })
     .then(newSide => {
+        applyShoppingServings(newSide);
         weeklySideRecipes[dayIndex].push(newSide);
         refreshSidesSection(dayIndex);
         rebuildShoppingList();
@@ -96,6 +97,7 @@ function rerollOneSide(dayIndex, sideId) {
         return response.json();
     })
     .then(newSide => {
+        applyShoppingServings(newSide);
         const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
         if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
         refreshSidesSection(dayIndex);
@@ -116,6 +118,7 @@ function setOneSide(dayIndex, sideId, recipeId) {
         return response.json();
     })
     .then(newSide => {
+        applyShoppingServings(newSide);
         const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
         if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
         refreshSidesSection(dayIndex);
@@ -159,6 +162,7 @@ function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
         return response.json();
     })
     .then(movedSide => {
+        applyShoppingServings(movedSide);
         weeklySideRecipes[sourceDayIndex] = weeklySideRecipes[sourceDayIndex].filter(s => s.side_id !== sideId);
         weeklySideRecipes[targetDayIndex].push(movedSide);
         refreshSidesSection(sourceDayIndex);
