@@ -290,13 +290,19 @@ function renderOtherPlanMeals(dayIndex) {
 // changes can't be overtaken by an older answer.
 let servingsRequestSeq = 0;
 
-/** The typed value stays even if saving fails (only reported); the shopping
- * list follows once the server sends the new shopping servings (a change can
- * also touch the source dish of a follow-up). */
+/** Optimistic for the day's own dishes (their follow-up servings as last
+ * sent); the server's answer then also updates a source dish this day's
+ * follow-up dish is made from. A failed save is only reported, without
+ * resetting the typed value. */
 function updateDayServings(dayIndex, value) {
     const n = parseInt(value);
     const servings = (isNaN(n) || n < 1) ? 1 : n;
     dayServings[dayIndex] = servings;
+    const day = shoppingServings[dayIndex];
+    [day.main, ...Object.values(day.sides)].forEach(entry => {
+        if (entry) entry.servings = servings + entry.followUpServings;
+    });
+    rebuildShoppingList();
     const seq = ++servingsRequestSeq;
 
     postWithCsrf(`/day/${dayDates[dayIndex]}/servings`, {

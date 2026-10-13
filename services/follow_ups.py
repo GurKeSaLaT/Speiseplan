@@ -286,28 +286,35 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
     return {"followUpOf": follow_up_of, "followUpsOut": follow_ups_out}
 
 
-def week_shopping_servings(plan_id, week_start):
-    """Per day of the week starting week_start: {"main": ..., "sides":
-    {side id: ...}} with the servings each dish is bought for (plan.js:
+def week_shopping_servings(plan_id, day):
+    """Per day of the week containing day: {"main": ..., "sides": {side id:
+    ...}} with the servings each dish is bought for (plan.js:
     shoppingServings; the client only multiplies). A source dish is bought
     for its own servings plus those of its follow-up dishes, in any week or
-    still pending (followUpServings); a follow-up dish skips its pre-cooked
-    ingredients. main is None on a day without a main dish."""
-    dates = week_dates_for(week_start)
+    still pending (followUpServings); a coupled follow-up dish skips its
+    pre-cooked ingredients. main is None on a day without a main dish.
+
+    Also sent with every day action that places a dish or changes servings
+    (plan.js: applyShoppingServings); removing a dish needs none, since a
+    coupling change makes the page reload."""
+    dates = week_dates_for(friday_of(day))
     days = {pd.date: pd for pd in PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates))}
 
-    follow_up_servings = dict.fromkeys(dates, 0)
+    servings_of_follow_ups = dict.fromkeys(dates, 0)
     for plan_day in PlanDay.query.filter(
         PlanDay.plan_id == plan_id, PlanDay.follow_up_of_date.in_(dates), PlanDay.main_recipe_id.isnot(None)
     ):
-        follow_up_servings[plan_day.follow_up_of_date] += plan_day.servings
+        servings_of_follow_ups[plan_day.follow_up_of_date] += plan_day.servings
     for row in PendingFollowUp.query.filter(
         PendingFollowUp.plan_id == plan_id, PendingFollowUp.source_date.in_(dates)
     ):
-        follow_up_servings[row.source_date] += row.servings
+        servings_of_follow_ups[row.source_date] += row.servings
 
-    def entry(servings, extra=0, skip=False):
-        return {"servings": servings + extra, "followUpServings": extra, "skipPrecooked": skip}
+    def entry(own_servings, follow_up_servings=0, skip_precooked=False):
+        return {
+            "servings": own_servings + follow_up_servings,
+            "followUpServings": follow_up_servings, "skipPrecooked": skip_precooked,
+        }
 
     result = []
     for day in dates:
@@ -317,7 +324,7 @@ def week_shopping_servings(plan_id, week_start):
             continue
         main = None
         if plan_day.main_recipe_id is not None:
-            main = entry(plan_day.servings, follow_up_servings[day], plan_day.follow_up_of_date is not None)
+            main = entry(plan_day.servings, servings_of_follow_ups[day], plan_day.follow_up_of_date is not None)
         result.append({"main": main, "sides": {str(side.id): entry(plan_day.servings) for side in plan_day.sides}})
     return result
 
