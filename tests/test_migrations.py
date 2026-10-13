@@ -306,3 +306,41 @@ def test_day_level_couplings_are_moved_to_the_dishes(app, test_plan_id, make_rec
         pending = PendingFollowUp.query.one()
         assert (pending.date.isoformat(), pending.source_day_id, pending.source_side_id, pending.is_side) == (
             "2026-06-19", days["2026-06-17"].id, None, False)
+
+
+def test_pending_follow_ups_may_share_a_day(app, test_plan_id, make_recipe):
+    """Old databases have UNIQUE (plan_id, date) on pending_follow_up; a main
+    dish and sides may now wait for the same day. Rows are kept."""
+    from sqlalchemy import text
+
+    from migrations import _migrate_pending_follow_up_unique_date
+    from models import PendingFollowUp, db
+
+    ragout = make_recipe("Ragout")
+    reis = make_recipe("Reis", is_side_dish=True)
+    with app.app_context():
+        db.session.execute(text("DROP TABLE pending_follow_up"))
+        db.session.execute(text(
+            "CREATE TABLE pending_follow_up (id INTEGER NOT NULL PRIMARY KEY, plan_id INTEGER NOT NULL,"
+            " date DATE NOT NULL, recipe_id INTEGER NOT NULL, is_side BOOLEAN NOT NULL DEFAULT 0,"
+            " servings INTEGER NOT NULL, source_day_id INTEGER, source_side_id INTEGER,"
+            " CONSTRAINT uq_pending_follow_up_plan_date UNIQUE (plan_id, date))"))
+        db.session.execute(text("CREATE INDEX ix_pending_follow_up_plan_id ON pending_follow_up (plan_id)"))
+        db.session.execute(text("CREATE INDEX ix_pending_follow_up_date ON pending_follow_up (date)"))
+        db.session.execute(text(
+            "INSERT INTO pending_follow_up (id, plan_id, date, recipe_id, is_side, servings, source_day_id)"
+            " VALUES (7, :plan_id, '2026-06-19', :recipe_id, 0, 3, 42)"
+        ), {"plan_id": test_plan_id, "recipe_id": ragout})
+        db.session.commit()
+
+        _migrate_pending_follow_up_unique_date()
+        _migrate_pending_follow_up_unique_date()  # idempotent
+
+        kept = PendingFollowUp.query.one()
+        assert (kept.id, kept.recipe_id, kept.servings, kept.source_day_id, kept.is_side) == (7, ragout, 3, 42, False)
+        db.session.add(PendingFollowUp(plan_id=test_plan_id, date=kept.date, recipe_id=reis, is_side=True,
+                                       source_day_id=42))
+        db.session.commit()
+        assert PendingFollowUp.query.count() == 2
+        indexes = {row[1] for row in db.session.execute(text("PRAGMA index_list(pending_follow_up)"))}
+        assert {"ix_pending_follow_up_plan_id", "ix_pending_follow_up_date"} <= indexes

@@ -322,7 +322,8 @@ def test_recipe_form_saves_follow_ups_and_from_previous(app, client, make_recipe
     assert resp.status_code == 200
     with app.app_context():
         recipe = db.session.get(Recipe, a)
-        assert [(l.follow_up_recipe_id, l.min_days, l.max_days) for l in recipe.follow_ups] == [(b, 1, 14)]
+        assert [(l.follow_up_recipe_id, l.min_days, l.max_days) for l in recipe.follow_ups] == [
+            (b, 1, 14), (side, 2, 3)]
         assert recipe.ingredients[0].from_previous is True
 
     html = client.get(f"/manage/recipe/edit/{a}").data.decode("utf-8")
@@ -421,3 +422,223 @@ def test_dish_actions_return_fresh_shopping_servings(app, client, make_recipe, m
     assert rerolled["links_changed"] is False
     assert rerolled["shopping_servings"][1]["main"]["servings"] == 2
     assert client.post("/day/2026-06-17/swap/2026-06-18").get_json()["shopping_servings"][0]["main"]["servings"] == 4
+
+
+# --- side dishes as follow-up dishes ---
+
+def _sides(app, plan_id, start=FRIDAY):
+    """[[(side recipe_id, source dish date)]] for the 7 days from start."""
+    from models import PlanDay
+    with app.app_context():
+        rows = {pd.date: pd for pd in PlanDay.query.filter_by(plan_id=plan_id).all()}
+        return [
+            [(side.recipe_id, _source_date(side)) for side in rows[d].sides] if d in rows else []
+            for d in (start + timedelta(days=i) for i in range(7))
+        ]
+
+
+def _side_id(app, plan_id, recipe_id):
+    from models import PlanDay, PlanDaySide
+    with app.app_context():
+        return PlanDaySide.query.join(PlanDay).filter(
+            PlanDay.plan_id == plan_id, PlanDaySide.recipe_id == recipe_id).one().id
+
+
+def _week_with_side_link(app, client, make_recipe, make_category):
+    """Ofengemüse on Friday, its follow-up side Gemüsereis on Sunday."""
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    _link(app, a, s)
+    fillers = _fillers(make_recipe, cat, count=10)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(a)})
+    return a, s, fillers
+
+
+def test_recipe_form_accepts_side_dish_follow_ups(app, client, make_recipe, make_category):
+    from models import Recipe, db
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    side = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    html = client.get(f"/manage/recipe/edit/{a}").data.decode("utf-8")
+    choices = json.loads(re.search(r"window\.FOLLOW_UP_CHOICES = (.*?);\n", html).group(1))
+    assert side in choices
+
+    form = _recipe_form(cat, **{"fu_recipe[]": [str(side)], "fu_min[]": ["1"], "fu_max[]": ["2"]})
+    resp = client.post(f"/edit-recipe/{a}", data=form, headers={"X-Requested-With": "XMLHttpRequest"})
+    assert resp.status_code == 200
+    with app.app_context():
+        assert [(l.follow_up_recipe_id, l.min_days, l.max_days)
+                for l in db.session.get(Recipe, a).follow_ups] == [(side, 1, 2)]
+
+
+def test_generate_adds_follow_up_side_as_extra_side(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    days = _days(app, client.plan_id)
+    # Sunday keeps a normal main dish of its own; the side comes on top.
+    assert days[2][0] in fillers and days[2][1] is None
+    assert _sides(app, client.plan_id) == [[], [], [(s, FRIDAY)], [], [], [], []]
+
+
+def test_follow_up_side_skips_excluded_days(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    _link(app, a, s)
+    _fillers(make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data=MultiDict([("day_recipe_0", str(a))] + _exclude(2)))
+    assert _sides(app, client.plan_id) == [[], [], [], [(s, FRIDAY)], [], [], []]
+
+
+def test_day_action_places_follow_up_side(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    _fillers(make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data={})
+    _link(app, a, s)
+
+    resp = client.post("/day/2026-06-13/set-main", json={"recipe_id": a})
+    assert resp.get_json()["links_changed"] is True
+    assert _sides(app, client.plan_id)[3] == [(s, FRIDAY + timedelta(days=1))]
+
+
+def test_side_rolls_never_draw_follow_up_recipes(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    normal = make_recipe("Salat", category_id=cat, is_side_dish=True)
+    _link(app, a, s)
+    _fillers(make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data=MultiDict(_exclude(0, 1, 2, 3, 4, 5, 6)))
+
+    added = client.post("/day/2026-06-12/side/add", json={}).get_json()
+    assert added["id"] == normal
+    # Salat is the only drawable side and already in the week.
+    assert client.post(f"/day/2026-06-12/side/{added['side_id']}/reroll").status_code == 400
+
+
+def test_follow_up_side_shopping_servings(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-14/servings", json={"servings": 3})
+    side_id = _side_id(app, client.plan_id, s)
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    assert _shopping(data, 0)["main"] == {"servings": 5, "followUpServings": 3, "skipPrecooked": False}
+    assert _shopping(data, 2)["sides"] == {
+        str(side_id): {"servings": 3, "followUpServings": 0, "skipPrecooked": True}}
+    # Sunday's own main dish is not coupled.
+    assert _shopping(data, 2)["main"]["skipPrecooked"] is False
+    out = data["followUpsOut"][0]
+    assert [(e["index"], e["name"], e["pending"]) for e in out] == [(2, "Gemüsereis", False)]
+
+
+def test_removing_follow_up_side_drops_coupling(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    side_id = _side_id(app, client.plan_id, s)
+    resp = client.post(f"/day/2026-06-14/side/{side_id}/remove")
+    assert resp.get_json()["links_changed"] is True
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 0)["main"]["servings"] == 2
+
+
+def test_rerolling_follow_up_side_drops_coupling(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    normal = make_recipe("Salat", category_id=make_category("Beilagen"), is_side_dish=True)
+    side_id = _side_id(app, client.plan_id, s)
+    body = client.post(f"/day/2026-06-14/side/{side_id}/reroll").get_json()
+    assert body["id"] == normal and body["links_changed"] is True
+    assert _sides(app, client.plan_id)[2] == [(normal, None)]
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+
+
+def test_setting_follow_up_side_by_hand_drops_coupling(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    normal = make_recipe("Salat", category_id=make_category("Beilagen"), is_side_dish=True)
+    side_id = _side_id(app, client.plan_id, s)
+    body = client.post(f"/day/2026-06-14/side/{side_id}/set", json={"recipe_id": normal}).get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id)[2] == [(normal, None)]
+
+
+def test_moving_follow_up_side_keeps_coupling(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    side_id = _side_id(app, client.plan_id, s)
+    body = client.post(f"/day/2026-06-14/side/{side_id}/move/2026-06-15").get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id)[3] == [(s, FRIDAY)]
+    assert body["shopping_servings"][0]["main"]["servings"] == 4
+
+
+def test_replacing_source_releases_follow_up_side(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    body = client.post("/day/2026-06-12/reroll-main").get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id) == [[]] * 7
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+
+
+def test_swap_carries_follow_up_side_coupling(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-12/swap/2026-06-13")
+    assert _sides(app, client.plan_id)[2] == [(s, FRIDAY + timedelta(days=1))]
+
+
+def test_follow_up_side_across_week_boundary(app, client, make_recipe, make_category):
+    from models import PendingFollowUp
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    b = make_recipe("Braten", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    n = make_recipe("Nudeln", category_id=cat)
+    _link(app, a, s)
+    _link(app, b, n, min_days=1, max_days=1)
+    _fillers(make_recipe, cat, count=12)
+
+    # Ofengemüse on Wednesday -> its side waits for next Friday; Braten on
+    # Thursday -> its main follow-up waits for the same Friday.
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(a), "day_recipe_6": str(b)})
+    with app.app_context():
+        pending = sorted((p.date, p.recipe_id, _source_date(p), p.is_side) for p in PendingFollowUp.query)
+    assert pending == sorted([
+        (NEXT_FRIDAY, s, FRIDAY + timedelta(days=5), True),
+        (NEXT_FRIDAY, n, FRIDAY + timedelta(days=6), False),
+    ])
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    assert _shopping(data, 5)["main"]["servings"] == 4
+    assert [(e["name"], e["pending"]) for e in data["followUpsOut"][5]] == [("Gemüsereis", True)]
+
+    html = client.get("/plan/2026-06-19/create").data.decode("utf-8")
+    incoming = json.loads(re.search(r"window\.INCOMING_FOLLOW_UPS = (.*?);\n", html).group(1))
+    assert sorted((e["dayIndex"], e["recipeId"], e["isSide"], e["sourceName"]) for e in incoming) == sorted([
+        (0, s, True, "Ofengemüse"), (0, n, False, "Braten")])
+
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(n), "day_side_recipes_0[]": str(s)})
+    assert _sides(app, client.plan_id, NEXT_FRIDAY)[0] == [(s, FRIDAY + timedelta(days=5))]
+    assert _days(app, client.plan_id, NEXT_FRIDAY)[0] == (n, FRIDAY + timedelta(days=6), False)
+    with app.app_context():
+        assert PendingFollowUp.query.count() == 0
+
+    # Recreating next week keeps the coupling while the side stays pinned...
+    client.post("/plan/2026-06-19/generate", data={"day_side_recipes_0[]": str(s)})
+    assert _sides(app, client.plan_id, NEXT_FRIDAY)[0] == [(s, FRIDAY + timedelta(days=5))]
+    # ...and drops it once it isn't.
+    client.post("/plan/2026-06-19/generate", data={})
+    assert _sides(app, client.plan_id, NEXT_FRIDAY)[0] == []
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 2
+
+
+def test_follow_up_side_into_existing_week(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    _link(app, a, s)
+    _fillers(make_recipe, cat, count=14)
+    client.post("/plan/2026-06-19/generate", data={})  # next week full of main dishes
+
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(a)})
+    assert _sides(app, client.plan_id, NEXT_FRIDAY)[0] == [(s, FRIDAY + timedelta(days=5))]
+
+
+def test_deleting_source_recipe_keeps_follow_up_side_uncoupled(app, client, make_recipe, make_category):
+    a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    client.post(f"/delete-recipe/{a}")
+    assert _sides(app, client.plan_id)[2] == [(s, None)]

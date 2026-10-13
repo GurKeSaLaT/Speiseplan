@@ -12,7 +12,7 @@ from flask import current_app
 from sqlalchemy import text
 
 from models import (
-    db, ExtraShoppingItem, Plan, PlanMembership, Recipe, RecipeSeason, PlanDaySide, User,
+    db, ExtraShoppingItem, PendingFollowUp, Plan, PlanMembership, Recipe, RecipeSeason, PlanDaySide, User,
 )
 from services.follow_ups import remove_tree_rule_breaks
 from services.plans import seed_default_categories
@@ -502,6 +502,26 @@ def _migrate_couplings_to_dishes():
     db.session.commit()
 
 
+def _migrate_pending_follow_up_unique_date():
+    """pending_follow_up used to be UNIQUE (plan_id, date); now a main dish
+    and sides can wait for the same day. SQLite can't drop a table
+    constraint, so the table is rebuilt from the model (ids kept)."""
+    unique_constraints = [
+        row for row in db.session.execute(text("PRAGMA index_list(pending_follow_up)")) if row[3] == 'u'
+    ]
+    if not unique_constraints:
+        return
+    columns = "id, plan_id, date, recipe_id, is_side, servings, source_day_id, source_side_id"
+    db.session.execute(text("ALTER TABLE pending_follow_up RENAME TO pending_follow_up_old"))
+    for index in PendingFollowUp.__table__.indexes:
+        db.session.execute(text(f"DROP INDEX IF EXISTS {_identifier(index.name)}"))
+    PendingFollowUp.__table__.create(db.session.connection())
+    db.session.execute(text(
+        f"INSERT INTO pending_follow_up ({columns}) SELECT {columns} FROM pending_follow_up_old"))
+    db.session.execute(text("DROP TABLE pending_follow_up_old"))
+    db.session.commit()
+
+
 def _migrate_follow_up_links_to_tree_rules():
     """Brings follow-up links from before the recipe tree rules (ADR 0001)
     in line: rule-breaking links are removed, then every tree is linked
@@ -542,6 +562,7 @@ def init_db():
     _migrate_shopping_list_check_amount_columns()
     _migrate_follow_up_columns()
     _migrate_couplings_to_dishes()
+    _migrate_pending_follow_up_unique_date()
 
     seeded_plans_by_username = {}
 

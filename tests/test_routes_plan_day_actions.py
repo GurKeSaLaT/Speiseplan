@@ -382,7 +382,7 @@ def test_remove_one_side_deletes_existing(client, app, make_recipe):
 
     resp = client.post(f"/day/2026-06-15/side/{side_id}/remove")
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"ok": True, "links_changed": False}
     with app.app_context():
         assert PlanDaySide.query.count() == 0
 
@@ -390,7 +390,7 @@ def test_remove_one_side_deletes_existing(client, app, make_recipe):
 def test_remove_one_side_missing_id_still_returns_ok(client):
     resp = client.post("/day/2026-06-15/side/999999/remove")
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"ok": True, "links_changed": False}
 
 
 # --- side/<id>/move/<target_date> ---

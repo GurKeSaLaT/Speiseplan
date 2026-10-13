@@ -164,13 +164,12 @@ def follow_up_target_ids(plan_id):
 def choose_recipe(is_side_dish, exclude_ids, plan_id, category_id=None, prefer_season=True, reference_date=None):
     """Picks one recipe visible to plan_id, or None if nothing is left.
 
-    exclude_ids and follow-up dishes (follow_up_target_ids) are the only
-    hard filters. Currently seasonal recipes are
+    exclude_ids and follow-up dishes (follow_up_target_ids, main dishes
+    and sides alike) are the only hard filters. Currently seasonal recipes are
     preferred but never required (falls back to all candidates), and the
     draw is weighted by favorites and recent use before reference_date.
     """
-    if not is_side_dish:
-        exclude_ids = set(exclude_ids) | follow_up_target_ids(plan_id)
+    exclude_ids = set(exclude_ids) | follow_up_target_ids(plan_id)
     base_query = visible_recipes_query(plan_id).filter(
         Recipe.is_side_dish.is_(is_side_dish),
         ~Recipe.id.in_(exclude_ids)

@@ -96,16 +96,20 @@ function rerollOneSide(dayIndex, sideId) {
         if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.no_alternative_available); });
         return response.json();
     })
-    .then(newSide => {
-        applyShoppingServings(newSide);
-        const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
-        if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
-        refreshSidesSection(dayIndex);
-        rebuildShoppingList();
-    })
+    .then(newSide => replaceSideInState(dayIndex, sideId, newSide))
     .catch(err => {
         alert(window.I18N.note_prefix + ' ' + err.message);
     });
+}
+
+/** A rerolled or replaced side; a dropped coupling reloads the page. */
+function replaceSideInState(dayIndex, sideId, newSide) {
+    if (reloadIfLinksChanged(newSide)) return;
+    applyShoppingServings(newSide);
+    const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
+    if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
+    refreshSidesSection(dayIndex);
+    rebuildShoppingList();
 }
 
 function setOneSide(dayIndex, sideId, recipeId) {
@@ -117,13 +121,7 @@ function setOneSide(dayIndex, sideId, recipeId) {
         if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.selection_failed); });
         return response.json();
     })
-    .then(newSide => {
-        applyShoppingServings(newSide);
-        const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
-        if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
-        refreshSidesSection(dayIndex);
-        rebuildShoppingList();
-    })
+    .then(newSide => replaceSideInState(dayIndex, sideId, newSide))
     .catch(err => {
         alert(window.I18N.note_prefix + ' ' + err.message);
     });
@@ -133,8 +131,10 @@ function removeOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/remove`)
     .then(response => {
         if (!response.ok) throw new Error(window.I18N.removing_failed);
+        return response.json();
     })
-    .then(() => {
+    .then(data => {
+        if (reloadIfLinksChanged(data)) return;
         weeklySideRecipes[dayIndex] = weeklySideRecipes[dayIndex].filter(s => s.side_id !== sideId);
         refreshSidesSection(dayIndex);
         rebuildShoppingList();
@@ -162,6 +162,7 @@ function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
         return response.json();
     })
     .then(movedSide => {
+        if (reloadIfLinksChanged(movedSide)) return;
         applyShoppingServings(movedSide);
         weeklySideRecipes[sourceDayIndex] = weeklySideRecipes[sourceDayIndex].filter(s => s.side_id !== sideId);
         weeklySideRecipes[targetDayIndex].push(movedSide);

@@ -13,10 +13,13 @@ from services.planning import (
 from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
 
-# final_plan / final_side_plan: indexed 0=Friday..6=Thursday.
-# follow_up_couplings: {day index of a follow-up dish: day index of its source dish}.
+# final_plan / final_side_plan: indexed 0=Friday..6=Thursday; final_side_plan
+#   holds the pinned sides only.
+# follow_up_couplings: {day index of a follow-up main dish: day index of its source dish}.
+# side_follow_ups: [(day index, follow-up side Recipe, source day index)], extra sides.
 # outside_follow_ups: [(date, follow-up Recipe, source day index)] beyond this week.
-GeneratedWeek = namedtuple('GeneratedWeek', 'final_plan final_side_plan follow_up_couplings outside_follow_ups')
+GeneratedWeek = namedtuple(
+    'GeneratedWeek', 'final_plan final_side_plan follow_up_couplings side_follow_ups outside_follow_ups')
 
 
 def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids,
@@ -31,8 +34,8 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
     fill_leftover_days), then every other non-excluded day gets a balanced
     category (counting the days already set) and a recipe from it - or
     from any category if that one has nothing left - placing its follow-up
-    as it goes. Sides are never generated. Recipe ids arrive as strings
-    from the form.
+    as it goes. Sides are never generated, except follow-up sides placed
+    on top of a day's sides. Recipe ids arrive as strings from the form.
     """
     all_categories = Category.query.filter_by(plan_id=plan.id).all()
 
@@ -60,32 +63,38 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
                 recipe = side_recipes_by_id.get(rid)
                 if recipe:
                     final_side_plan[day_index].append(recipe)
+                    used_recipe_ids.add(recipe.id)  # no follow-up side twice in a week
 
     couplings = {}
+    side_follow_ups = []
     outside = []
     outside_taken = set()
 
-    def is_free(day):
+    def is_free(day, is_side):
         if dates[0] <= day <= dates[6]:
             i = (day - dates[0]).days
-            return i not in excluded_days and final_plan[i] is None
-        if day < dates[0] or day in outside_taken:
+            return i not in excluded_days and (is_side or final_plan[i] is None)
+        if day < dates[0] or (day in outside_taken and not is_side):
             return False
-        return live_slot_free(plan.id, day)
+        return live_slot_free(plan.id, day, is_side)
 
     def place_follow_up(i):
         picked = pick_follow_up(final_plan[i], plan.id, dates[i], is_free, exclude_ids=used_recipe_ids)
         if picked is None:
             return
         recipe, day = picked
-        if dates[0] <= day <= dates[6]:
-            j = (day - dates[0]).days
+        if not dates[0] <= day <= dates[6]:
+            outside.append((day, recipe, i))
+            if not recipe.is_side_dish:
+                outside_taken.add(day)
+            return
+        j = (day - dates[0]).days
+        if recipe.is_side_dish:
+            side_follow_ups.append((j, recipe, i))
+        else:
             final_plan[j] = recipe
             couplings[j] = i
-            used_recipe_ids.add(recipe.id)
-        else:
-            outside.append((day, recipe, i))
-            outside_taken.add(day)
+        used_recipe_ids.add(recipe.id)
 
     for i in sorted(day_recipe_ids):
         if final_plan[i] is not None and i not in couplings and i not in incoming_days:
@@ -126,7 +135,7 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
             used_recipe_ids.add(chosen.id)
             place_follow_up(day_index)
 
-    return GeneratedWeek(final_plan, final_side_plan, couplings, outside)
+    return GeneratedWeek(final_plan, final_side_plan, couplings, side_follow_ups, outside)
 
 
 def fill_leftover_days(plan_id, dates, days_to_fill, final_plan, final_side_plan, used_recipe_ids, leftover_names,

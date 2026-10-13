@@ -120,14 +120,14 @@ class PendingFollowUp(CoupledDish, db.Model):
     source dish (CoupledDish). Creating that week offers it as a fixed dish
     (and couples it); servings is what the source dish is bought for until
     then (PlanDay's default). is_side: it will be planned as a side dish
-    rather than as the day's main dish."""
+    rather than as the day's main dish. No unique date: a day can wait for
+    a main dish and any number of sides (at most one main dish is an
+    application rule, services/follow_ups.py: live_slot_free)."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     date = db.Column(db.Date, nullable=False, index=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
     is_side = db.Column(db.Boolean, default=False, nullable=False)
     servings = db.Column(db.Integer, nullable=False, default=2)
-
-    __table_args__ = (db.UniqueConstraint('plan_id', 'date', name='uq_pending_follow_up_plan_date'),)
 
     recipe = db.relationship('Recipe')
