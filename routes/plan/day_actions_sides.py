@@ -6,6 +6,7 @@ from flask_babel import gettext as _
 
 from models import db, PlanDay, PlanDaySide
 from services.auth import current_plan
+from services.follow_ups import week_shopping_servings
 from services.planning import parse_iso_date, week_side_recipe_ids, choose_recipe, jsonify_side
 from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
@@ -52,7 +53,7 @@ def add_side(day_date):
     plan_day_side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=chosen.id)
     db.session.add(plan_day_side)
     db.session.commit()
-    return jsonify_side(plan_day_side, plan.id)
+    return {**jsonify_side(plan_day_side, plan.id), "shopping_servings": week_shopping_servings(plan.id, target_date)}
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/reroll', methods=['POST'])
@@ -77,7 +78,7 @@ def reroll_one_side(day_date, side_id):
     plan_day_side.recipe_id = chosen.id
     plan_day_side.cooked = False
     db.session.commit()
-    return jsonify_side(plan_day_side, plan.id)
+    return {**jsonify_side(plan_day_side, plan.id), "shopping_servings": week_shopping_servings(plan.id, target_date)}
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/set', methods=['POST'])
@@ -107,7 +108,7 @@ def set_one_side(day_date, side_id):
     plan_day_side.recipe_id = recipe.id
     plan_day_side.cooked = False
     db.session.commit()
-    return jsonify_side(plan_day_side, plan.id)
+    return {**jsonify_side(plan_day_side, plan.id), "shopping_servings": week_shopping_servings(plan.id, target_date)}
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/remove', methods=['POST'])
@@ -145,7 +146,7 @@ def move_one_side(day_date, side_id, target_date_str):
     target_plan_day = _get_or_create_plan_day(target_date, plan.id)
     plan_day_side.plan_day_id = target_plan_day.id
     db.session.commit()
-    return jsonify_side(plan_day_side, plan.id)
+    return {**jsonify_side(plan_day_side, plan.id), "shopping_servings": week_shopping_servings(plan.id, source_date)}
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/cooked', methods=['POST'])

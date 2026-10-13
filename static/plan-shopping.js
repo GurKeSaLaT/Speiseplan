@@ -51,11 +51,20 @@ function categorySortIndex(category) {
     return idx === -1 ? categories.length : idx;
 }
 
+/** A dish's ingredients as bought: amounts scaled to its shopping servings
+ * (see dishShopping), pre-cooked ones left out when flagged. */
+function dishShoppingLines(recipe, shopping) {
+    const factor = recipe.servings ? shopping.servings / recipe.servings : 1;
+    return recipe.ingredients
+        .filter(ing => !(shopping.skipPrecooked && ing.from_previous))
+        .map(ing => ({ ...ing, amount: ing.amount * factor }));
+}
+
 /**
  * Rebuilds the shopping list (and the nutrition summary) from state.
  *
- * Recipe ingredients are scaled to each day's servings (a main dish's plus
- * its follow-ups', see extraServingsFor) and merged by name+unit, then the week's leftovers are subtracted. Pantry ingredients go to the pantry list instead - except
+ * Recipe ingredients are scaled to each dish's shopping servings (see
+ * dishShoppingLines) and merged by name+unit, then the week's leftovers are subtracted. Pantry ingredients go to the pantry list instead - except
  * manually added items, which always stay on the shopping list (adding
  * one is an explicit "I need to buy this").
  */
@@ -72,25 +81,18 @@ function rebuildShoppingList() {
     for (let i = 0; i < 7; i++) {
         [weeklyPlanRecipes[i], ...weeklySideRecipes[i]].forEach((recipe, position) => {
             if (recipe && recipe.ingredients) {
-                const isMain = position === 0;
-                // A main dish with follow-ups is bought for their servings too;
-                // a follow-up dish skips what comes from its source dish.
-                const servings = dayServings[i] + (isMain ? extraServingsFor(i) : 0);
-                const factor = recipe.servings ? servings / recipe.servings : 1;
-                const linkedFollowUp = isMain && !!followUpOf[i];
-                recipe.ingredients.forEach(ing => {
-                    if (linkedFollowUp && ing.from_previous) return;
+                const shopping = dishShopping(i, position === 0 ? null : recipe.side_id);
+                dishShoppingLines(recipe, shopping).forEach(ing => {
                     // Different units are never added up.
                     const key = `${ing.name.trim()}|||${ing.unit.trim()}`;
-                    const scaledAmount = ing.amount * factor;
                     if (consolidated[key]) {
-                        consolidated[key].amount += scaledAmount;
+                        consolidated[key].amount += ing.amount;
                         // Last non-empty category wins; pantry is OR'd.
                         if (ing.category) consolidated[key].category = ing.category;
                         if (ing.is_pantry) consolidated[key].is_pantry = true;
                     } else {
                         consolidated[key] = {
-                            key: `item:${key}`, name: ing.name, amount: scaledAmount, unit: ing.unit,
+                            key: `item:${key}`, name: ing.name, amount: ing.amount, unit: ing.unit,
                             category: ing.category || null, is_pantry: !!ing.is_pantry,
                         };
                     }
