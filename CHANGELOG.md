@@ -4,6 +4,11 @@ One line per change, newest first.
 
 ## 2026-10-13
 
+- Swapping days or moving a side now checks follow-up dishes: one that
+  ends up before the dish it is made from, or too many days after it,
+  loses that coupling and looks for another fitting dish before it, like
+  a follow-up you pick yourself. A follow-up dish moved onto a day where a
+  fitting dish lies a few days before it is coupled to that one.
 - A follow-up dish you pick yourself (as main dish or side, or as a fixed
   dish when creating a week) now finds the dish it is made from: the most
   recent one a few days before it (as set in the recipe) that isn't cooked

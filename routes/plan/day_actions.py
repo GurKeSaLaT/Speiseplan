@@ -8,7 +8,7 @@ from flask_babel import gettext as _
 
 from models import db, PlanDay, PlanDaySide
 from services.auth import current_plan
-from services.follow_ups import move_couplings_on_swap, replace_main_dish, week_shopping_servings
+from services.follow_ups import move_couplings_on_swap, recouple_moved, replace_main_dish, week_shopping_servings
 from services.planning import parse_iso_date, jsonify_recipe, reroll_choice
 from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
@@ -130,7 +130,9 @@ def set_day_servings(day_date):
 def swap_days(date_a, date_b):
     """Swaps main dish, all side dishes, excluded and cooked between two
     days. Servings stay: they belong to the weekday, not the dish. Follow-up
-    links travel with the dishes."""
+    links travel with the dishes; one that ends up outside its window or
+    before its source is released and searched anew (services/follow_ups.py:
+    recouple_moved)."""
     parsed_a = parse_iso_date(date_a)
     parsed_b = parse_iso_date(date_b)
     if parsed_a is None or parsed_b is None:
@@ -158,6 +160,8 @@ def swap_days(date_a, date_b):
         side.plan_day_id = plan_day_b.id
     for side in sides_b:
         side.plan_day_id = plan_day_a.id
+    if recouple_moved(plan.id, [plan_day_a, plan_day_b, *sides_a, *sides_b]):
+        links_changed = True
 
     db.session.commit()
     return {"ok": True, "links_changed": links_changed, "shopping_servings": week_shopping_servings(plan.id, parsed_a)}

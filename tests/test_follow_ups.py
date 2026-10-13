@@ -278,16 +278,17 @@ def test_excluding_follow_up_day_unlinks(app, client, make_recipe, make_category
 
 def test_swap_moves_links_with_dishes(app, client, make_recipe, make_category):
     a, b, fillers = _week_with_link(app, client, make_recipe, make_category)
-    # Source to Saturday: the follow-up now points to Saturday.
-    resp = client.post("/day/2026-06-12/swap/2026-06-13")
+    # Follow-up to Monday, still in its 2-3 day window: its link travels along.
+    resp = client.post("/day/2026-06-14/swap/2026-06-15")
     assert resp.get_json()["links_changed"] is True
     days = _days(app, client.plan_id)
-    assert days[1][0] == a and days[2] == (b, FRIDAY + timedelta(days=1), False)
-    # Follow-up to Thursday: its link travels along.
-    client.post("/day/2026-06-14/swap/2026-06-18")
-    days = _days(app, client.plan_id)
-    assert days[6] == (b, FRIDAY + timedelta(days=1), False)
+    assert days[3] == (b, FRIDAY, False)
     assert days[2][1] is None
+    # Source to Saturday: the follow-up now points to Saturday.
+    client.post("/day/2026-06-12/swap/2026-06-13")
+    days = _days(app, client.plan_id)
+    assert days[1][0] == a and days[3] == (b, FRIDAY + timedelta(days=1), False)
+    _assert_consistent(app, client.plan_id)
 
 
 def test_recreating_week_rerolls_follow_ups_in_next_week(app, client, make_recipe, make_category):
@@ -591,8 +592,10 @@ def test_replacing_source_releases_follow_up_side(app, client, make_recipe, make
 
 def test_swap_carries_follow_up_side_coupling(app, client, make_recipe, make_category):
     a, s, fillers = _week_with_side_link(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-14/swap/2026-06-15")
+    assert _sides(app, client.plan_id)[3] == [(s, FRIDAY)]
     client.post("/day/2026-06-12/swap/2026-06-13")
-    assert _sides(app, client.plan_id)[2] == [(s, FRIDAY + timedelta(days=1))]
+    assert _sides(app, client.plan_id)[3] == [(s, FRIDAY + timedelta(days=1))]
 
 
 def test_follow_up_side_across_week_boundary(app, client, make_recipe, make_category):
@@ -786,6 +789,11 @@ def test_moving_source_side_keeps_coupling(app, client, make_recipe, make_catego
     k_id = client.post("/day/2026-06-12/side/add", json={"recipe_id": k}).get_json()["side_id"]
     r_id = client.post("/day/2026-06-12/side/add", json={"recipe_id": r}).get_json()["side_id"]
     assert _sides(app, client.plan_id)[2] == [(g, FRIDAY)]
+    # Windows of 1-3 days, so Sunday's follow-ups stay in them from Saturday.
+    from models import RecipeFollowUp, db
+    with app.app_context():
+        RecipeFollowUp.query.update({"min_days": 1})
+        db.session.commit()
 
     body = client.post(f"/day/2026-06-12/side/{r_id}/move/2026-06-13").get_json()
     assert body["links_changed"] is True
@@ -1217,13 +1225,13 @@ def _today(monkeypatch, day):
 
 def _sources_week(app, client, make_recipe, make_category, monkeypatch):
     """Ofengemüse on Friday and Saturday, linked to its follow-up Nudeln (2-3
-    days) only afterwards, so nothing was placed automatically; today is
-    Friday."""
+    days) only afterwards, so nothing was placed automatically and no filler
+    is a Nudeln; today is Friday."""
     cat = make_category("Alles")
     a = make_recipe("Ofengemüse", category_id=cat)
-    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
     fillers = _fillers(make_recipe, cat, count=10)
     client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(a), "day_recipe_1": str(a)})
+    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
     _link(app, a, b)
     _today(monkeypatch, FRIDAY)
     return a, b, fillers
@@ -1362,3 +1370,162 @@ def test_retroactive_coupling_keeps_ticked_lines(app, client, make_recipe, make_
     assert data["shoppingChecks"] == [{"key": "item:Kartoffeln|||g", "amount": 500.0, "category": None}]
     with app.app_context():
         assert ShoppingListCheck.query.one().amount == 500
+
+
+# --- retroactive coupling on swap and move ---
+
+def test_swap_out_of_the_window_couples_anew(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-14/set-main", json={"recipe_id": b})
+    assert _days(app, client.plan_id)[2] == (b, FRIDAY, False)  # Saturday is only 1 day before
+
+    # To Tuesday: Friday is 4 days before (out of 2-3), Saturday 3 days.
+    body = client.post("/day/2026-06-14/swap/2026-06-16").get_json()
+    assert body["links_changed"] is True
+    assert _days(app, client.plan_id)[4] == (b, FRIDAY + timedelta(days=1), False)
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+    assert body["shopping_servings"][1]["main"]["servings"] == 4
+    _assert_consistent(app, client.plan_id)
+
+
+def test_swap_out_of_every_window_leaves_a_normal_dish(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-15/set-main", json={"recipe_id": b})
+    body = client.post("/day/2026-06-15/swap/2026-06-18").get_json()
+    assert body["links_changed"] is True
+    assert _days(app, client.plan_id)[6][:2] == (b, None)
+    assert body["shopping_servings"][1]["main"]["servings"] == 2
+    assert body["shopping_servings"][6]["main"]["skipPrecooked"] is False
+
+
+def test_swap_before_the_source_couples_anew(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-15/set-main", json={"recipe_id": b})
+    assert _days(app, client.plan_id)[3] == (b, FRIDAY + timedelta(days=1), False)
+
+    # Saturday's source moves to Wednesday, after its follow-up: Friday takes over.
+    body = client.post("/day/2026-06-13/swap/2026-06-17").get_json()
+    assert body["links_changed"] is True
+    days = _days(app, client.plan_id)
+    assert days[5][0] == a and days[3] == (b, FRIDAY, False)
+    assert body["shopping_servings"][0]["main"]["servings"] == 4
+    assert body["shopping_servings"][5]["main"]["servings"] == 2
+    _assert_consistent(app, client.plan_id)
+
+
+def test_swap_couples_a_follow_up_recipe_moved_into_a_window(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-18/set-main", json={"recipe_id": b})
+    assert _days(app, client.plan_id)[6][:2] == (b, None)
+
+    body = client.post("/day/2026-06-18/swap/2026-06-15").get_json()
+    assert body["links_changed"] is True
+    assert _days(app, client.plan_id)[3] == (b, FRIDAY + timedelta(days=1), False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_swapping_a_source_with_its_follow_up_uncouples_both(app, client, make_recipe, make_category):
+    a, b, fillers = _week_with_link(app, client, make_recipe, make_category)
+    body = client.post("/day/2026-06-12/swap/2026-06-14").get_json()
+    assert body["links_changed"] is True
+    days = _days(app, client.plan_id)
+    assert days[0] == (b, None, False) and days[2] == (a, None, False)
+    assert body["shopping_servings"][2]["main"]["servings"] == 2
+    assert body["shopping_servings"][0]["main"]["skipPrecooked"] is False
+    _assert_consistent(app, client.plan_id)
+
+
+def test_swap_leaves_a_cooked_follow_up_recipe_uncoupled(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-18/set-main", json={"recipe_id": b})
+    client.post("/day/2026-06-18/cooked", json={"cooked": True})
+    body = client.post("/day/2026-06-18/swap/2026-06-15").get_json()
+    assert _days(app, client.plan_id)[3][:2] == (b, None)
+    assert body["shopping_servings"][1]["main"]["servings"] == 2
+
+
+def test_swap_within_the_window_keeps_the_coupling(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-14/set-main", json={"recipe_id": b})
+    # Monday is 3 days after Friday: still in the window, even though
+    # Saturday would now be the latest fitting source.
+    client.post("/day/2026-06-14/swap/2026-06-15")
+    assert _days(app, client.plan_id)[3] == (b, FRIDAY, False)
+
+
+def test_swapping_a_source_away_from_a_pending_follow_up_drops_it(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _pending_chain(app, client, make_recipe, make_category)
+    # Braten to Friday: next Friday's Ragout is 7 days later, out of 2-3.
+    body = client.post("/day/2026-06-17/swap/2026-06-12").get_json()
+    assert body["links_changed"] is True
+    assert _days(app, client.plan_id)[0][0] == braten
+    assert _pending(app) == []
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+
+
+def _side_follow_up_week(app, client, make_recipe, make_category, monkeypatch):
+    """Ofengemüse on Friday and Saturday; its follow-up side Gemüsereis (2-3
+    days) added by hand on Sunday, coupled to Friday."""
+    from models import Recipe, db
+    a, b, fillers = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    with app.app_context():
+        cat = db.session.get(Recipe, a).category_id
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    _link(app, a, s)
+    side_id = client.post("/day/2026-06-14/side/add", json={"recipe_id": s}).get_json()["side_id"]
+    assert _sides(app, client.plan_id)[2] == [(s, FRIDAY)]
+    return a, s, side_id
+
+
+def test_moving_a_follow_up_side_out_of_the_window_couples_anew(
+        app, client, make_recipe, make_category, monkeypatch):
+    a, s, side_id = _side_follow_up_week(app, client, make_recipe, make_category, monkeypatch)
+    body = client.post(f"/day/2026-06-14/side/{side_id}/move/2026-06-16").get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id)[4] == [(s, FRIDAY + timedelta(days=1))]
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+    assert body["shopping_servings"][1]["main"]["servings"] == 4
+    _assert_consistent(app, client.plan_id)
+
+
+def test_moving_a_follow_up_side_out_of_every_window_uncouples_it(
+        app, client, make_recipe, make_category, monkeypatch):
+    a, s, side_id = _side_follow_up_week(app, client, make_recipe, make_category, monkeypatch)
+    body = client.post(f"/day/2026-06-14/side/{side_id}/move/2026-06-18").get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id)[6] == [(s, None)]
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+    assert body["shopping_servings"][6]["sides"][str(side_id)]["skipPrecooked"] is False
+
+
+def test_moving_a_follow_up_side_before_its_source_uncouples_it(
+        app, client, make_recipe, make_category, monkeypatch):
+    from models import PlanDaySide, db
+    a, s, side_id = _side_follow_up_week(app, client, make_recipe, make_category, monkeypatch)
+    body = client.post(f"/day/2026-06-14/side/{side_id}/move/2026-06-11").get_json()
+    assert body["links_changed"] is True
+    with app.app_context():
+        assert db.session.get(PlanDaySide, side_id).is_coupled is False
+    _assert_consistent(app, client.plan_id)
+
+
+def test_moving_an_uncoupled_follow_up_side_into_a_window_couples_it(
+        app, client, make_recipe, make_category, monkeypatch):
+    a, s, side_id = _side_follow_up_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post(f"/day/2026-06-14/side/{side_id}/move/2026-06-18")
+    body = client.post(f"/day/2026-06-18/side/{side_id}/move/2026-06-15").get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id)[3] == [(s, FRIDAY + timedelta(days=1))]
+
+
+def test_moving_a_source_side_after_its_follow_up_uncouples_it(app, client, make_recipe, make_category):
+    k, b, r, g, fillers = _side_source_week(app, client, make_recipe, make_category)
+    k_id = client.post("/day/2026-06-12/side/add", json={"recipe_id": k}).get_json()["side_id"]
+    assert _days(app, client.plan_id)[2] == (b, FRIDAY, False)
+
+    body = client.post(f"/day/2026-06-12/side/{k_id}/move/2026-06-15").get_json()
+    assert body["links_changed"] is True
+    # Bratkartoffeln stays as a normal dish, bought completely.
+    assert _days(app, client.plan_id)[2] == (b, None, False)
+    assert body["shopping_servings"][0]["sides"] == {}
+    _assert_consistent(app, client.plan_id)

@@ -24,9 +24,12 @@ Rules (decided with the household):
   is rolled normally) or removes B if it is a side, and so on down the
   chain; replacing or removing B drops its coupling, so A is no longer
   bought for B's servings, and releases B's own follow-ups.
-- Couplings follow the dishes on swaps and when a side is moved.
+- Couplings follow the dishes on swaps and when a side is moved, as long
+  as the follow-up stays in its source's window after it; otherwise the
+  coupling is released and searched anew (recouple_moved).
 - Nachträgliche Kopplung: a follow-up recipe that lands on a day without a
-  coupling (picked by hand, set as a side, pinned in the create form)
+  coupling (picked by hand, set as a side, pinned in the create form,
+  moved by a swap or a side move)
   couples to the latest dish of its source recipe in the link's window
   that isn't cooked and isn't before today, even if that dish has
   follow-ups already (couple_retroactively). No such dish -> it stays a
@@ -244,16 +247,18 @@ def continue_chain(plan_id: int, dish: Dish) -> date | None:
 
 def couple_retroactively(plan_id: int, dish: PlanDay | PlanDaySide) -> bool:
     """Nachträgliche Kopplung: dish (a PlanDay's main dish or a side) landed
-    without a coupling - picked by hand, set as a side or pinned in the
-    create form. If its recipe is a follow-up recipe, dish is coupled to
-    the latest dish (main dish before side on the same day) of its source
-    recipe in the link's window before it that isn't cooked and isn't
-    before today, even if that source has follow-ups already. Returns True
-    if dish was coupled. No commit."""
+    without a coupling - picked by hand, set as a side, pinned in the
+    create form, or moved by a swap or side move (recouple_moved). If its
+    recipe is a follow-up recipe, dish is coupled to the latest dish (main
+    dish before side on the same day) of its source recipe in the link's
+    window before it that isn't cooked and isn't before today, even if that
+    source has follow-ups already. A dish already cooked (carried along by
+    a swap) stays uncoupled: its source isn't bought for more any more.
+    Returns True if dish was coupled. No commit."""
     db.session.flush()
     db.session.refresh(dish)  # its recipe may just have been set by id
     recipe = _dish_recipe(dish)
-    if recipe is None or dish.is_coupled:
+    if recipe is None or dish.is_coupled or dish.cooked:
         return False
     day = _dish_date(dish)
     candidates = []
@@ -414,6 +419,53 @@ def move_couplings_on_swap(day_a, day_b):
     for dish in followers[day_b.id]:
         dish.source_day_id = day_a.id
     return involved or bool(followers[day_a.id] or followers[day_b.id])
+
+
+def _fits_window(follow_up: Dish, source: Dish) -> bool:
+    """Whether follow_up lies in the window of source's link to it (at
+    least a day after source if the link is gone)."""
+    gap = (_dish_date(follow_up) - _dish_date(source)).days
+    source_recipe, recipe = _dish_recipe(source), _dish_recipe(follow_up)
+    link = None if source_recipe is None or recipe is None else RecipeFollowUp.query.filter_by(
+        recipe_id=source_recipe.id, follow_up_recipe_id=recipe.id).first()
+    low, high = _window(link) if link else (1, MAX_WINDOW_DAYS)
+    return low <= gap <= high
+
+
+def recouple_moved(plan_id: int, moved: list[PlanDay | PlanDaySide]) -> bool:
+    """After a swap or a side move (couplings already carried along): a
+    moved dish that left its source's window or now lies before it loses
+    its coupling, and so does a follow-up of a moved dish that its source
+    left behind; both then look for a source anew (couple_retroactively),
+    like a follow-up recipe that moved onto a day without a coupling. A
+    pending follow-up that falls out is dropped with its chain (released
+    days rolled anew). Returns True if any coupling changed. No commit."""
+    db.session.flush()
+    for dish in moved:
+        db.session.refresh(dish)  # a moved side's day relationship is stale
+    changed = False
+    needs_source = list(moved)
+    freed_days = []
+    for dish in moved:
+        source = source_dish(dish)
+        if source is not None and not _fits_window(dish, source):
+            couple(dish, None)
+            changed = True
+        for follower in _followers(dish):
+            if _fits_window(follower, dish):
+                continue
+            changed = True
+            if isinstance(follower, PendingFollowUp):
+                freed_days += release_follow_ups(follower).freed_days
+                db.session.delete(follower)
+            else:
+                couple(follower, None)
+                needs_source.append(follower)
+    for dish in needs_source:
+        if couple_retroactively(plan_id, dish):
+            changed = True
+    refill_released(plan_id, freed_days)
+    return changed
 
 
 def _day_label(day):
