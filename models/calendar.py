@@ -1,7 +1,27 @@
 from models import db
 
 
-class PlanDay(db.Model):
+class CoupledDish:
+    """A dish that can be coupled to its source dish (a Kopplung, CONTEXT.md):
+    the main dish of a PlanDay, a PlanDaySide or, in a chain that reaches
+    into a week not created yet, a PendingFollowUp. The source dish is the
+    main dish of source_day_id, the side source_side_id or the pending
+    follow-up source_pending_id, at most one of them set; none set means
+    not coupled (services/follow_ups.py).
+
+    Plain ids without a foreign key: the tables would reference each
+    other, and SQLite doesn't enforce them here anyway."""
+    source_day_id = db.Column(db.Integer, nullable=True)
+    source_side_id = db.Column(db.Integer, nullable=True)
+    source_pending_id = db.Column(db.Integer, nullable=True)
+
+    @property
+    def is_coupled(self):
+        return (self.source_day_id is not None or self.source_side_id is not None
+                or self.source_pending_id is not None)
+
+
+class PlanDay(CoupledDish, db.Model):
     """One calendar day of a plan. A week without any PlanDay rows was never
     created; once created, all 7 days get a row.
 
@@ -21,18 +41,20 @@ class PlanDay(db.Model):
     # carried along when days are swapped.
     cooked = db.Column(db.Boolean, default=False, nullable=False)
 
-    # Set on a follow-up dish's day: the date of the day (same plan) whose
-    # dish it is made from. That dish is then bought for both days'
-    # servings. Follows the dish on swaps (services/follow_ups.py).
-    follow_up_of_date = db.Column(db.Date, nullable=True)
+    # source_day_id/source_side_id (CoupledDish) belong to the main dish:
+    # cleared when it is replaced, carried along when days are swapped.
 
     main_recipe = db.relationship('Recipe', foreign_keys=[main_recipe_id])
-    sides = db.relationship('PlanDaySide', cascade="all, delete-orphan", order_by='PlanDaySide.id')
+    sides = db.relationship(
+        'PlanDaySide', cascade="all, delete-orphan", order_by='PlanDaySide.id',
+        foreign_keys='PlanDaySide.plan_day_id', back_populates='day',
+    )
 
 
-class PlanDaySide(db.Model):
+class PlanDaySide(CoupledDish, db.Model):
     """A side dish on a day. No unique (plan_day_id, recipe_id): avoiding
-    duplicates in a week is an application rule, not a constraint."""
+    duplicates in a week is an application rule, not a constraint.
+    Its coupling (CoupledDish) stays when the side is moved to another day."""
     id = db.Column(db.Integer, primary_key=True)
     plan_day_id = db.Column(db.Integer, db.ForeignKey('plan_day.id'), nullable=False)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
@@ -41,6 +63,7 @@ class PlanDaySide(db.Model):
     cooked = db.Column(db.Boolean, default=False, nullable=False)
 
     recipe = db.relationship('Recipe')
+    day = db.relationship('PlanDay', foreign_keys=[plan_day_id], back_populates='sides')
 
 
 class ExtraShoppingItem(db.Model):
@@ -96,17 +119,19 @@ class WeekLeftover(db.Model):
 
 
 
-class PendingFollowUp(db.Model):
-    """A follow-up dish for a day whose week doesn't exist yet. Creating that
-    week offers it as a fixed dish (and links it); servings is what the
-    source dish is bought for until then (PlanDay's default)."""
+class PendingFollowUp(CoupledDish, db.Model):
+    """A follow-up dish for a day whose week doesn't exist yet, coupled to its
+    source dish (CoupledDish). Creating that week offers it as a fixed dish
+    (and couples it); servings is what the source dish is bought for until
+    then (PlanDay's default). is_side: it will be planned as a side dish
+    rather than as the day's main dish. No unique date: a day can wait for
+    a main dish and any number of sides (at most one main dish is an
+    application rule, services/follow_ups.py: live_slot_free)."""
     id = db.Column(db.Integer, primary_key=True)
     plan_id = db.Column(db.Integer, db.ForeignKey('plan.id'), nullable=False, index=True)
     date = db.Column(db.Date, nullable=False, index=True)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'), nullable=False)
-    source_date = db.Column(db.Date, nullable=False)
+    is_side = db.Column(db.Boolean, default=False, nullable=False)
     servings = db.Column(db.Integer, nullable=False, default=2)
-
-    __table_args__ = (db.UniqueConstraint('plan_id', 'date', name='uq_pending_follow_up_plan_date'),)
 
     recipe = db.relationship('Recipe')

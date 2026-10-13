@@ -231,3 +231,134 @@ def test_tree_rules_migration_leaves_valid_data_alone(app, make_user, make_recip
     assert _links(app) == sorted([(braten, ragout), (braten, sauce)])
     assert _linked_into(app, other_plan) == sorted([braten, ragout, sauce])
     assert caplog.text == ""
+
+
+# --- couplings move from the day to the dish ---
+
+def _old_coupling_schema():
+    """Turns the freshly created tables back into the day-level layout
+    (plan_day.follow_up_of_date, pending_follow_up.source_date). The
+    migration under test restores the current layout for later tests."""
+    from sqlalchemy import text
+
+    from models import db
+    for table, columns in (
+        ("plan_day", ("source_day_id", "source_side_id")),
+        ("plan_day_side", ("source_day_id", "source_side_id")),
+        ("pending_follow_up", ("source_day_id", "source_side_id", "is_side")),
+    ):
+        for column in columns:
+            db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+    db.session.execute(text("ALTER TABLE plan_day ADD COLUMN follow_up_of_date DATE"))
+    db.session.execute(text(
+        "ALTER TABLE pending_follow_up ADD COLUMN source_date DATE NOT NULL DEFAULT '2000-01-01'"))
+    db.session.commit()
+
+
+def test_day_level_couplings_are_moved_to_the_dishes(app, test_plan_id, make_recipe):
+    from sqlalchemy import text
+
+    from migrations import _migrate_couplings_to_dishes
+    from models import PendingFollowUp, PlanDay, db
+
+    braten = make_recipe("Braten")
+    ragout = make_recipe("Ragout")
+    with app.app_context():
+        _old_coupling_schema()
+        for day, recipe_id, source in (
+            ("2026-06-12", braten, None),
+            ("2026-06-14", ragout, "2026-06-12"),   # coupled to Friday's main dish
+            ("2026-06-15", ragout, "2026-06-13"),   # source day doesn't exist: dropped
+            ("2026-06-16", None, None),
+            ("2026-06-18", ragout, "2026-06-16"),   # no main dish on the source day: dropped
+            ("2026-06-17", braten, None),
+        ):
+            db.session.execute(text(
+                "INSERT INTO plan_day (plan_id, date, excluded, servings, main_recipe_id, cooked, follow_up_of_date)"
+                " VALUES (:plan_id, :date, 0, 2, :recipe_id, 0, :source)"
+            ), {"plan_id": test_plan_id, "date": day, "recipe_id": recipe_id, "source": source})
+        for day, source in (("2026-06-19", "2026-06-17"), ("2026-06-20", "2026-06-11")):
+            db.session.execute(text(
+                "INSERT INTO pending_follow_up (plan_id, date, recipe_id, source_date, servings)"
+                " VALUES (:plan_id, :date, :recipe_id, :source, 2)"
+            ), {"plan_id": test_plan_id, "date": day, "recipe_id": ragout, "source": source})
+        db.session.commit()
+
+        _migrate_couplings_to_dishes()
+        _migrate_couplings_to_dishes()  # idempotent
+
+        columns = {
+            table: {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+            for table in ("plan_day", "plan_day_side", "pending_follow_up")
+        }
+        assert "follow_up_of_date" not in columns["plan_day"]
+        assert "source_date" not in columns["pending_follow_up"]
+        assert {"source_day_id", "source_side_id"} <= columns["plan_day"] & columns["plan_day_side"]
+        assert {"source_day_id", "source_side_id", "is_side"} <= columns["pending_follow_up"]
+
+        db.session.expire_all()
+        days = {pd.date.isoformat(): pd for pd in PlanDay.query.filter_by(plan_id=test_plan_id)}
+        assert days["2026-06-14"].source_day_id == days["2026-06-12"].id
+        assert days["2026-06-15"].source_day_id is None
+        assert days["2026-06-18"].source_day_id is None
+        assert all(pd.source_side_id is None for pd in days.values())
+        # The pending follow-up whose source day doesn't exist is dropped.
+        pending = PendingFollowUp.query.one()
+        assert (pending.date.isoformat(), pending.source_day_id, pending.source_side_id, pending.is_side) == (
+            "2026-06-19", days["2026-06-17"].id, None, False)
+
+
+def test_pending_follow_ups_may_share_a_day(app, test_plan_id, make_recipe):
+    """Old databases have UNIQUE (plan_id, date) on pending_follow_up; a main
+    dish and sides may now wait for the same day. Rows are kept."""
+    from sqlalchemy import text
+
+    from migrations import _migrate_pending_follow_up_unique_date
+    from models import PendingFollowUp, db
+
+    ragout = make_recipe("Ragout")
+    reis = make_recipe("Reis", is_side_dish=True)
+    with app.app_context():
+        db.session.execute(text("DROP TABLE pending_follow_up"))
+        db.session.execute(text(
+            "CREATE TABLE pending_follow_up (id INTEGER NOT NULL PRIMARY KEY, plan_id INTEGER NOT NULL,"
+            " date DATE NOT NULL, recipe_id INTEGER NOT NULL, is_side BOOLEAN NOT NULL DEFAULT 0,"
+            " servings INTEGER NOT NULL, source_day_id INTEGER, source_side_id INTEGER,"
+            " CONSTRAINT uq_pending_follow_up_plan_date UNIQUE (plan_id, date))"))
+        db.session.execute(text("CREATE INDEX ix_pending_follow_up_plan_id ON pending_follow_up (plan_id)"))
+        db.session.execute(text("CREATE INDEX ix_pending_follow_up_date ON pending_follow_up (date)"))
+        db.session.execute(text(
+            "INSERT INTO pending_follow_up (id, plan_id, date, recipe_id, is_side, servings, source_day_id)"
+            " VALUES (7, :plan_id, '2026-06-19', :recipe_id, 0, 3, 42)"
+        ), {"plan_id": test_plan_id, "recipe_id": ragout})
+        db.session.commit()
+
+        _migrate_pending_follow_up_unique_date()
+        _migrate_pending_follow_up_unique_date()  # idempotent
+
+        kept = PendingFollowUp.query.one()
+        assert (kept.id, kept.recipe_id, kept.servings, kept.source_day_id, kept.is_side) == (7, ragout, 3, 42, False)
+        db.session.add(PendingFollowUp(plan_id=test_plan_id, date=kept.date, recipe_id=reis, is_side=True,
+                                       source_day_id=42))
+        db.session.commit()
+        assert PendingFollowUp.query.count() == 2
+        indexes = {row[1] for row in db.session.execute(text("PRAGMA index_list(pending_follow_up)"))}
+        assert {"ix_pending_follow_up_plan_id", "ix_pending_follow_up_date"} <= indexes
+
+
+def test_pending_source_column_is_added(app):
+    from sqlalchemy import text
+
+    from migrations import _migrate_pending_source_column
+    from models import db
+    tables = ("plan_day", "plan_day_side", "pending_follow_up")
+    with app.app_context():
+        for table in tables:
+            db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN source_pending_id"))
+        db.session.commit()
+
+        _migrate_pending_source_column()
+        _migrate_pending_source_column()  # idempotent
+
+        for table in tables:
+            assert "source_pending_id" in {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}

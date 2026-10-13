@@ -382,7 +382,7 @@ def test_remove_one_side_deletes_existing(client, app, make_recipe):
 
     resp = client.post(f"/day/2026-06-15/side/{side_id}/remove")
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"ok": True, "links_changed": False}
     with app.app_context():
         assert PlanDaySide.query.count() == 0
 
@@ -390,7 +390,7 @@ def test_remove_one_side_deletes_existing(client, app, make_recipe):
 def test_remove_one_side_missing_id_still_returns_ok(client):
     resp = client.post("/day/2026-06-15/side/999999/remove")
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True}
+    assert resp.get_json() == {"ok": True, "links_changed": False}
 
 
 # --- side/<id>/move/<target_date> ---
@@ -453,7 +453,8 @@ def test_set_day_servings_valid_value(client, app):
 
     resp = client.post("/day/2026-06-15/servings", json={"servings": 5})
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True, "servings": 5}
+    body = resp.get_json()
+    assert body["ok"] is True and body["servings"] == 5
     with app.app_context():
         row = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()
         assert row.servings == 5
@@ -495,7 +496,12 @@ def test_swap_days_swaps_main_recipe_excluded_and_sides(client, app, make_recipe
 
     resp = client.post("/day/2026-06-15/swap/2026-06-16")
     assert resp.status_code == 200
-    assert resp.get_json() == {"ok": True, "links_changed": False}
+    body = resp.get_json()
+    assert body["ok"] is True and body["links_changed"] is False
+    # Dishes moved, servings stayed with the weekday (Monday = index 3).
+    monday, tuesday = body["shopping_servings"][3], body["shopping_servings"][4]
+    assert monday == {"main": {"servings": 2, "followUpServings": 0, "skipPrecooked": False}, "sides": {}}
+    assert tuesday["main"]["servings"] == 3 and [s["servings"] for s in tuesday["sides"].values()] == [3]
 
     with app.app_context():
         row_a = PlanDay.query.filter_by(date=date(2026, 6, 15)).first()

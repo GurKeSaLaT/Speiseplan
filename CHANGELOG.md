@@ -4,6 +4,44 @@ One line per change, newest first.
 
 ## 2026-10-13
 
+- Swapping days or moving a side now checks follow-up dishes: one that
+  ends up before the dish it is made from, or too many days after it,
+  loses that coupling and looks for another fitting dish before it, like
+  a follow-up you pick yourself. A follow-up dish moved onto a day where a
+  fitting dish lies a few days before it is coupled to that one.
+- A follow-up dish you pick yourself (as main dish or side, or as a fixed
+  dish when creating a week) now finds the dish it is made from: the most
+  recent one a few days before it (as set in the recipe) that isn't cooked
+  yet and isn't in the past, even if that dish already feeds another
+  follow-up. That dish is then bought for more servings: lines already
+  ticked off stay ticked and only the extra amount shows up as a new
+  open line. If there is no such dish, the follow-up stays a normal dish
+  and all its ingredients are bought.
+- Follow-up chains (e.g. roast -> ragout -> lasagne): a planned follow-up
+  dish plans its own follow-up, whether it was placed by generating the
+  week or picked by hand, and also while it still waits for its week:
+  creating that week offers the waiting chain as fixed dishes and keeps
+  it. A source dish is bought for its own servings plus the whole chain
+  below it (lasagne 2, ragout 4, roast 6), waiting dishes included. Re-rolling, replacing,
+  excluding or removing a dish releases every follow-up below it;
+  replacing a dish in the middle also drops its own coupling.
+- A side dish can be a source dish (e.g. boiled potatoes -> fried
+  potatoes, rice -> fried rice): adding, rolling or replacing a side, or
+  setting it as a fixed side when creating a week, plans one of its
+  follow-ups (a main dish on a free day or an extra side), and the side is
+  bought for the follow-up's servings too. Re-rolling, replacing or
+  removing the side releases its follow-ups (a released main dish day gets
+  a new dish), moving it keeps them. Side cards show where their
+  follow-ups are planned.
+- A follow-up dish can be a side dish (e.g. rice -> fried rice): the
+  recipe form offers side dishes as follow-ups. When the source dish is
+  planned, the side is added as an extra side on the earliest day of its
+  window that isn't excluded, whatever main dish that day has; in a week
+  not created yet it waits and is offered as a fixed side. The source dish
+  is bought for the side's servings too and the side's pre-cooked
+  ingredients are left off the shopping list. Re-rolling, replacing or
+  removing the side drops the coupling, moving it keeps it; replacing the
+  source removes the side. Rolling sides never draws a follow-up recipe.
 - Recipe trees are linked into other plans only as a whole: adding or
   removing a plan for any recipe of a tree does it for all of them (a plan
   that owns one of them can't be removed). A follow-up link that joins two

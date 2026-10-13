@@ -19,6 +19,7 @@ function renderSidesSection(dayIndex) {
                     <span class="fw-bold text-dark side-dish-name">🥗 ${escapeHtml(side.name)}</span>
                     <span class="badge badge-category side-dish-category ms-1">${escapeHtml(side.category_name)}</span>
                     <span class="text-muted small side-dish-kcal">(${side.calories} kcal)</span>
+                    ${renderFollowUpsOutNotes(sideFollowUpsOut[side.side_id])}
                 </div>
                 <div class="d-flex align-items-center gap-1">
                     <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="${escapeHtml(window.I18N.reroll_side_title)}" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
@@ -65,7 +66,8 @@ function openSideManualSelect(dayIndex, sideId) {
     );
 }
 
-/** Adds a side; without recipeId the server picks one at random. */
+/** Adds a side; without recipeId the server picks one at random. A side
+ * that places a follow-up reloads the page. */
 function addSide(dayIndex, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/add`, {
         headers: { 'Content-Type': 'application/json' },
@@ -76,6 +78,8 @@ function addSide(dayIndex, recipeId) {
         return response.json();
     })
     .then(newSide => {
+        if (reloadIfLinksChanged(newSide)) return;
+        applyShoppingServings(newSide);
         weeklySideRecipes[dayIndex].push(newSide);
         refreshSidesSection(dayIndex);
         rebuildShoppingList();
@@ -95,15 +99,20 @@ function rerollOneSide(dayIndex, sideId) {
         if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.no_alternative_available); });
         return response.json();
     })
-    .then(newSide => {
-        const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
-        if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
-        refreshSidesSection(dayIndex);
-        rebuildShoppingList();
-    })
+    .then(newSide => replaceSideInState(dayIndex, sideId, newSide))
     .catch(err => {
         alert(window.I18N.note_prefix + ' ' + err.message);
     });
+}
+
+/** A rerolled or replaced side; a dropped coupling reloads the page. */
+function replaceSideInState(dayIndex, sideId, newSide) {
+    if (reloadIfLinksChanged(newSide)) return;
+    applyShoppingServings(newSide);
+    const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
+    if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
+    refreshSidesSection(dayIndex);
+    rebuildShoppingList();
 }
 
 function setOneSide(dayIndex, sideId, recipeId) {
@@ -115,12 +124,7 @@ function setOneSide(dayIndex, sideId, recipeId) {
         if (!response.ok) return response.json().then(data => { throw new Error(data.error || window.I18N.selection_failed); });
         return response.json();
     })
-    .then(newSide => {
-        const idx = weeklySideRecipes[dayIndex].findIndex(s => s.side_id === sideId);
-        if (idx !== -1) weeklySideRecipes[dayIndex][idx] = newSide;
-        refreshSidesSection(dayIndex);
-        rebuildShoppingList();
-    })
+    .then(newSide => replaceSideInState(dayIndex, sideId, newSide))
     .catch(err => {
         alert(window.I18N.note_prefix + ' ' + err.message);
     });
@@ -130,8 +134,10 @@ function removeOneSide(dayIndex, sideId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/${sideId}/remove`)
     .then(response => {
         if (!response.ok) throw new Error(window.I18N.removing_failed);
+        return response.json();
     })
-    .then(() => {
+    .then(data => {
+        if (reloadIfLinksChanged(data)) return;
         weeklySideRecipes[dayIndex] = weeklySideRecipes[dayIndex].filter(s => s.side_id !== sideId);
         refreshSidesSection(dayIndex);
         rebuildShoppingList();
@@ -159,6 +165,8 @@ function moveSideDish(sourceDayIndex, sideId, targetDayIndex) {
         return response.json();
     })
     .then(movedSide => {
+        if (reloadIfLinksChanged(movedSide)) return;
+        applyShoppingServings(movedSide);
         weeklySideRecipes[sourceDayIndex] = weeklySideRecipes[sourceDayIndex].filter(s => s.side_id !== sideId);
         weeklySideRecipes[targetDayIndex].push(movedSide);
         refreshSidesSection(sourceDayIndex);

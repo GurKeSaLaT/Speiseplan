@@ -77,15 +77,13 @@ def recipe_create_view():
 
 
 def _follow_up_choices(plan_id, recipe=None):
-    """Main dishes plan_id can see that recipe may take as follow-up (recipe
+    """Recipes plan_id can see that recipe may take as follow-up (recipe
     tree rules, services/follow_ups.py), plus the ones it already has so
     their rows keep showing them."""
     unavailable = unavailable_follow_up_ids(recipe.id if recipe else None)
     if recipe is not None:
         unavailable -= {link.follow_up_recipe_id for link in recipe.follow_ups}
-    query = visible_recipes_query(plan_id).filter(
-        Recipe.is_side_dish.is_(False), Recipe.id.notin_(unavailable)
-    )
+    query = visible_recipes_query(plan_id).filter(Recipe.id.notin_(unavailable))
     return query.order_by(Recipe.name).all()
 
 

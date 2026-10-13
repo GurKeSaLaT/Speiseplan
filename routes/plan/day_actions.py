@@ -8,17 +8,10 @@ from flask_babel import gettext as _
 
 from models import db, PlanDay, PlanDaySide
 from services.auth import current_plan
-from services.follow_ups import move_links_on_swap, replace_main_dish
+from services.follow_ups import move_couplings_on_swap, recouple_moved, replace_main_dish, week_shopping_servings
 from services.planning import parse_iso_date, jsonify_recipe, reroll_choice
 from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
-
-
-def _refill(plan_day):
-    """Rolls a normal dish for a day whose follow-up dish was released."""
-    chosen = reroll_choice(plan_day.plan_id, plan_day.date)
-    plan_day.main_recipe_id = chosen.id if chosen else None
-    plan_day.cooked = False
 
 
 @plan_bp.route('/day/<day_date>/reroll-main', methods=['POST'])
@@ -41,16 +34,21 @@ def reroll_day(day_date):
     if not chosen:
         return {"error": _("No more recipes available in the database!")}, 400
 
-    links_changed = replace_main_dish(plan.id, plan_day, chosen, _refill)
+    links_changed = replace_main_dish(plan.id, plan_day, chosen)
     db.session.commit()
-    return {**jsonify_recipe(chosen, plan.id), "links_changed": links_changed}
+    return {
+        **jsonify_recipe(chosen, plan.id), "links_changed": links_changed,
+        "shopping_servings": week_shopping_servings(plan.id, target_date),
+    }
 
 
 @plan_bp.route('/day/<day_date>/set-main', methods=['POST'])
 def set_main_day(day_date):
-    """Sets a manually chosen main dish - none of the automatic rules apply
-    (a follow-up dish picked by hand is just a normal dish). Also
-    un-excludes the day; links are kept right like on reroll."""
+    """Sets a manually chosen main dish - no category or neighbor rules
+    apply. A follow-up recipe couples to the latest fitting source dish
+    before it, if there is one (services/follow_ups.py:
+    couple_retroactively), otherwise it is a normal dish. Also un-excludes
+    the day; links are kept right like on reroll."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -72,9 +70,12 @@ def set_main_day(day_date):
         db.session.add(plan_day)
 
     plan_day.excluded = False
-    links_changed = replace_main_dish(plan.id, plan_day, recipe, _refill)
+    links_changed = replace_main_dish(plan.id, plan_day, recipe)
     db.session.commit()
-    return {**jsonify_recipe(recipe, plan.id), "links_changed": links_changed}
+    return {
+        **jsonify_recipe(recipe, plan.id), "links_changed": links_changed,
+        "shopping_servings": week_shopping_servings(plan.id, target_date),
+    }
 
 
 @plan_bp.route('/day/<day_date>/toggle-exclude', methods=['POST'])
@@ -96,7 +97,7 @@ def toggle_day_exclusion(day_date):
     links_changed = False
     if plan_day.excluded:
         db.session.flush()
-        links_changed = replace_main_dish(plan.id, plan_day, None, _refill)
+        links_changed = replace_main_dish(plan.id, plan_day, None)
     db.session.commit()
     return {"excluded": plan_day.excluded, "links_changed": links_changed}
 
@@ -122,14 +123,16 @@ def set_day_servings(day_date):
         db.session.add(plan_day)
     plan_day.servings = servings
     db.session.commit()
-    return {"ok": True, "servings": servings}
+    return {"ok": True, "servings": servings, "shopping_servings": week_shopping_servings(plan.id, target_date)}
 
 
 @plan_bp.route('/day/<date_a>/swap/<date_b>', methods=['POST'])
 def swap_days(date_a, date_b):
     """Swaps main dish, all side dishes, excluded and cooked between two
     days. Servings stay: they belong to the weekday, not the dish. Follow-up
-    links travel with the dishes."""
+    links travel with the dishes; one that ends up outside its window or
+    before its source is released and searched anew (services/follow_ups.py:
+    recouple_moved)."""
     parsed_a = parse_iso_date(date_a)
     parsed_b = parse_iso_date(date_b)
     if parsed_a is None or parsed_b is None:
@@ -149,7 +152,7 @@ def swap_days(date_a, date_b):
     plan_day_a.main_recipe_id, plan_day_b.main_recipe_id = plan_day_b.main_recipe_id, plan_day_a.main_recipe_id
     plan_day_a.excluded, plan_day_b.excluded = plan_day_b.excluded, plan_day_a.excluded
     plan_day_a.cooked, plan_day_b.cooked = plan_day_b.cooked, plan_day_a.cooked
-    links_changed = move_links_on_swap(plan.id, plan_day_a, plan_day_b)
+    links_changed = move_couplings_on_swap(plan_day_a, plan_day_b)
 
     sides_a = PlanDaySide.query.filter_by(plan_day_id=plan_day_a.id).all()
     sides_b = PlanDaySide.query.filter_by(plan_day_id=plan_day_b.id).all()
@@ -157,9 +160,11 @@ def swap_days(date_a, date_b):
         side.plan_day_id = plan_day_b.id
     for side in sides_b:
         side.plan_day_id = plan_day_a.id
+    if recouple_moved(plan.id, [plan_day_a, plan_day_b, *sides_a, *sides_b]):
+        links_changed = True
 
     db.session.commit()
-    return {"ok": True, "links_changed": links_changed}
+    return {"ok": True, "links_changed": links_changed, "shopping_servings": week_shopping_servings(plan.id, parsed_a)}
 
 
 @plan_bp.route('/day/<day_date>/cooked', methods=['POST'])

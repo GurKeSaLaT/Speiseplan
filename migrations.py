@@ -12,7 +12,7 @@ from flask import current_app
 from sqlalchemy import text
 
 from models import (
-    db, ExtraShoppingItem, Plan, PlanMembership, Recipe, RecipeSeason, PlanDaySide, User,
+    db, ExtraShoppingItem, PendingFollowUp, Plan, PlanMembership, Recipe, RecipeSeason, PlanDaySide, User,
 )
 from services.follow_ups import remove_tree_rule_breaks
 from services.plans import seed_default_categories
@@ -451,14 +451,87 @@ def _migrate_ensure_starred_membership():
 
 
 def _migrate_follow_up_columns():
-    """plan_day.follow_up_of_date and ingredient.from_previous (linked
-    recipes); the new tables come from create_all."""
-    plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
-    if 'follow_up_of_date' not in plan_day_columns:
-        db.session.execute(text("ALTER TABLE plan_day ADD COLUMN follow_up_of_date DATE"))
+    """ingredient.from_previous (linked recipes); the new tables come from
+    create_all, the couplings from _migrate_couplings_to_dishes."""
     ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
     if 'from_previous' not in ingredient_columns:
         db.session.execute(text("ALTER TABLE ingredient ADD COLUMN from_previous BOOLEAN NOT NULL DEFAULT 0"))
+    db.session.commit()
+
+
+def _migrate_couplings_to_dishes():
+    """A coupling used to be stored on the follow-up dish's day as the date of
+    its source day (plan_day.follow_up_of_date, pending_follow_up.source_date).
+    Now every dish (main dish, side, pending follow-up) references its source
+    dish (models.calendar.CoupledDish). Old couplings all point at a main
+    dish; one whose source day has no main dish any more is dropped, a pending
+    follow-up without source dish too. Expand-contract in one step: add the
+    new columns, copy, drop the old ones."""
+    for table in ('plan_day', 'plan_day_side', 'pending_follow_up'):
+        columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+        if 'source_day_id' not in columns:
+            db.session.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN source_day_id INTEGER"))
+        if 'source_side_id' not in columns:
+            db.session.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN source_side_id INTEGER"))
+        if table == 'pending_follow_up' and 'is_side' not in columns:
+            db.session.execute(text(
+                "ALTER TABLE pending_follow_up ADD COLUMN is_side BOOLEAN NOT NULL DEFAULT 0"))
+
+    source_main_dish = (
+        "(SELECT source.id FROM plan_day AS source WHERE source.plan_id = {table}.plan_id"
+        " AND source.date = {table}.{date_column} AND source.main_recipe_id IS NOT NULL)"
+    )
+    plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
+    if 'follow_up_of_date' in plan_day_columns:
+        db.session.execute(text(
+            "UPDATE plan_day SET source_day_id = "
+            + source_main_dish.format(table='plan_day', date_column='follow_up_of_date')
+            + " WHERE follow_up_of_date IS NOT NULL AND main_recipe_id IS NOT NULL"
+        ))
+        db.session.execute(text("ALTER TABLE plan_day DROP COLUMN follow_up_of_date"))
+    pending_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(pending_follow_up)"))}
+    if 'source_date' in pending_columns:
+        db.session.execute(text(
+            "UPDATE pending_follow_up SET source_day_id = "
+            + source_main_dish.format(table='pending_follow_up', date_column='source_date')
+        ))
+        db.session.execute(text("DELETE FROM pending_follow_up WHERE source_day_id IS NULL"))
+        db.session.execute(text("ALTER TABLE pending_follow_up DROP COLUMN source_date"))
+    db.session.commit()
+
+
+def _migrate_pending_source_column():
+    """A pending follow-up can be the source dish of a follow-up further
+    down a chain (models.calendar.CoupledDish.source_pending_id)."""
+    for table in ('plan_day', 'plan_day_side', 'pending_follow_up'):
+        columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+        if 'source_pending_id' not in columns:
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN source_pending_id INTEGER"))
+    db.session.commit()
+
+
+def _migrate_pending_follow_up_unique_date():
+    """pending_follow_up used to be UNIQUE (plan_id, date); now a main dish
+    and sides can wait for the same day. SQLite can't drop a table
+    constraint, so the table is rebuilt from the model (ids kept)."""
+    unique_constraints = [
+        row for row in db.session.execute(text("PRAGMA index_list(pending_follow_up)")) if row[3] == 'u'
+    ]
+    if not unique_constraints:
+        return
+    # Columns added by later migrations aren't there yet.
+    old_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(pending_follow_up)"))}
+    columns = _identifier_list(", ".join(
+        column.name for column in PendingFollowUp.__table__.columns if column.name in old_columns))
+    db.session.execute(text("ALTER TABLE pending_follow_up RENAME TO pending_follow_up_old"))
+    for index in PendingFollowUp.__table__.indexes:
+        db.session.execute(text(f"DROP INDEX IF EXISTS {_identifier(index.name)}"))
+    PendingFollowUp.__table__.create(db.session.connection())
+    db.session.execute(text(
+        f"INSERT INTO pending_follow_up ({columns}) SELECT {columns} FROM pending_follow_up_old"))
+    db.session.execute(text("DROP TABLE pending_follow_up_old"))
     db.session.commit()
 
 
@@ -501,6 +574,9 @@ def init_db():
     _migrate_plan_day_cooked_columns()
     _migrate_shopping_list_check_amount_columns()
     _migrate_follow_up_columns()
+    _migrate_couplings_to_dishes()
+    _migrate_pending_follow_up_unique_date()
+    _migrate_pending_source_column()
 
     seeded_plans_by_username = {}
 

@@ -215,32 +215,49 @@ def _week_data(**overrides):
     return data
 
 
+def _shopping_lines(recipe, shopping):
+    return _run_js("plan-shopping.js", f"dishShoppingLines({json.dumps(recipe)}, {json.dumps(shopping)})")
+
+
+_PRECOOKED_RECIPE = {"servings": 2, "ingredients": [
+    {"name": "Nudeln", "amount": 200, "unit": "g", "from_previous": False},
+    {"name": "Ofengemüse", "amount": 300, "unit": "g", "from_previous": True},
+]}
+
+
 @needs_node
-def test_extra_servings_count_in_week_and_outside_follow_ups():
-    data = _week_data(
-        followUpOf=[None, None, {"date": "2026-06-12", "index": 0, "name": "A", "label": "D0"}, None, None, None, None],
-        followUpsOut=[
-            [{"date": "2026-06-14", "index": 2, "name": "B", "label": "D2", "servings": 9, "pending": False},
-             {"date": "2026-06-20", "index": None, "name": "C", "label": "Sa", "servings": 4, "pending": True}],
-            [], [], [], [], [], [],
-        ],
-    )
-    # In-week follow-up: its live servings (3); outside: the stored 4.
-    assert _plan_js("extraServingsFor(0)", data) == 7
-    assert _plan_js("extraServingsFor(1)", data) == 0
+def test_dish_shopping_lines_multiply_by_the_given_servings():
+    lines = _shopping_lines(_PRECOOKED_RECIPE, {"servings": 5, "followUpServings": 3, "skipPrecooked": False})
+    assert [(line["name"], line["amount"]) for line in lines] == [("Nudeln", 500), ("Ofengemüse", 750)]
+
+
+@needs_node
+def test_dish_shopping_lines_skip_precooked_ingredients_when_flagged():
+    lines = _shopping_lines(_PRECOOKED_RECIPE, {"servings": 2, "followUpServings": 0, "skipPrecooked": True})
+    assert [(line["name"], line["amount"]) for line in lines] == [("Nudeln", 200)]
 
 
 @needs_node
 def test_follow_up_notes_text():
     data = _week_data(
         followUpOf=[None, None, {"date": "2026-06-12", "index": 0, "name": "Ofengemüse", "label": "Fr"}, None, None, None, None],
-        followUpsOut=[[{"date": "2026-06-14", "index": 2, "name": "Nudeln", "label": "So", "servings": 2, "pending": False}],
+        followUpsOut=[[{"date": "2026-06-14", "index": 2, "name": "Nudeln", "label": "So", "pending": False}],
                       [], [], [], [], [], []],
     )
     stubs_i18n = "window.I18N = {follow_up_of: 'aus {name} ({day})', follow_up_on: '{name} am {day}', follow_up_pending: '{name} am {day} (später)'};"
     html = _run_js("plan.js", "renderFollowUpNotes(0) + '|' + renderFollowUpNotes(2)",
                    _PLAN_PAGE_STUBS + f"window.PLAN_DATA = {json.dumps(data)};" + _ESCAPE_HTML_JS + stubs_i18n)
     assert html == '<div class="follow-up-note">↪ Nudeln am So</div>|<div class="follow-up-note">↪ aus Ofengemüse (Fr)</div>'
+
+
+@needs_node
+def test_follow_up_notes_of_a_source_side():
+    data = _week_data(sideFollowUpsOut={"7": [
+        {"date": "2026-06-19", "index": None, "name": "Gebratener <Reis>", "label": "Fr", "pending": True}]})
+    stubs_i18n = "window.I18N = {follow_up_on: '{name} am {day}', follow_up_pending: '{name} am {day} (später)'};"
+    html = _run_js("plan.js", "renderFollowUpsOutNotes(sideFollowUpsOut[7]) + '|' + renderFollowUpsOutNotes(sideFollowUpsOut[8])",
+                   _PLAN_PAGE_STUBS + f"window.PLAN_DATA = {json.dumps(data)};" + _ESCAPE_HTML_JS + stubs_i18n)
+    assert html == '<div class="follow-up-note">↪ Gebratener &lt;Reis&gt; am Fr (später)</div>|'
 
 
 # --- recipe_form.js: plans a merging follow-up link adds (services/recipe_trees.py) ---
