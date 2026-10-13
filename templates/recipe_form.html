@@ -46,6 +46,10 @@
                 <div class="d-flex flex-wrap gap-2 mb-2">
                     <span class="badge bg-success px-3 py-2 rounded-pill">{{ recipe.owner_plan.name }} ({{ _('Owner') }})</span>
                     {% for link in recipe.plan_links %}
+                    {% if link.plan_id in tree_owner_plan_ids %}
+                    {# Owns another recipe of the tree, and a tree only leaves a plan as a whole. #}
+                    <span class="badge bg-light text-dark border px-3 py-2 rounded-pill" title="{{ _('Owns another recipe of this recipe tree') }}">{{ link.plan.name }}</span>
+                    {% else %}
                     <form method="POST" action="{{ url_for('recipes.unlink_recipe_from_plan', id=recipe.id, target_plan_id=link.plan_id) }}" class="d-inline">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="plan_id" value="{{ plan_id }}">
@@ -53,8 +57,12 @@
                             {{ link.plan.name }} ✕
                         </button>
                     </form>
+                    {% endif %}
                     {% endfor %}
                 </div>
+                {% if tree_size > 1 %}
+                <div class="form-text mb-2">{{ _('This recipe belongs to a recipe tree with %(count)s recipes. Adding or removing a plan applies to all of them.', count=tree_size) }}</div>
+                {% endif %}
                 {% if linkable_plans %}
                 <form method="POST" id="linkPlanForm" action="" class="d-flex gap-2">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -229,11 +237,13 @@
                             </select>
                             <input type="number" name="fu_min[]" class="rform-field" min="1" max="14" value="{{ link.min_days }}">
                             <input type="number" name="fu_max[]" class="rform-field" min="1" max="14" value="{{ link.max_days }}">
-                            <button type="button" class="rform-ing-del" title="{{ _('Remove') }}" onclick="this.closest('.rform-follow-up-row').remove(); rformScheduleAutosave();">✕</button>
+                            <button type="button" class="rform-ing-del" title="{{ _('Remove') }}" onclick="this.closest('.rform-follow-up-row').remove(); rformCheckFollowUpMerge(); rformScheduleAutosave();">✕</button>
                         </div>
                         {% endfor %}
                     </div>
                     <div class="rform-placeholder-warning" id="followUpError" hidden></div>
+                    <div class="rform-placeholder-warning" id="followUpMergeWarning" hidden
+                         data-text="{{ _('Saving links the merged recipe tree into these plans as well: %(plans)s', plans='{plans}') }}"></div>
                     <button type="button" class="rform-add-ing" onclick="rformAddFollowUpRow()">+ {{ _('Add follow-up dish') }}</button>
                     <p class="text-muted small mt-2 mb-0">{{ _('Mark the follow-up recipe\'s ingredients that come from this dish with ↪ there - they are then left off the shopping list.') }}</p>
                 </div>
@@ -381,6 +391,7 @@
 <script>
 window.FOLLOW_UP_CHOICES = {{ follow_up_choices | map(attribute='id') | list | tojson }};
 window.FOLLOW_UP_CHOICE_NAMES = {{ follow_up_choices | map(attribute='name') | list | tojson }};
+window.FOLLOW_UP_MERGE_PLANS = {{ follow_up_merge_plans | tojson }};
 window.INGREDIENT_ALIASES = {{ ingredient_aliases | tojson }};
 window.INGREDIENT_NUTRITION = {{ ingredient_nutrition | tojson }};
 {% if recipe %}

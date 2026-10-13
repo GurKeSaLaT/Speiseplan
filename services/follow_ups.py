@@ -25,6 +25,7 @@ from models import db, PendingFollowUp, PlanDay, Recipe
 from services.planning import (  # noqa: F401 - follow_up_target_ids re-exported
     follow_up_target_ids, friday_of, recent_usage_counts, weighted_recipe_choice,
 )
+from services.recipe_trees import complete_tree
 from services.recipe_visibility import visible_recipes_query
 
 MAX_WINDOW_DAYS = 14
@@ -362,8 +363,9 @@ def save_follow_up_links(recipe, form, plan_id):
     fu_recipe[] / fu_min[] / fu_max[] lists. Unknown, side-dish or duplicate
     references are skipped; days are clamped to 1..MAX_WINDOW_DAYS with
     max >= min. A link that breaks the recipe tree rules (self-link, cycle,
-    second source) raises FollowUpRuleError before anything changes.
-    No commit."""
+    second source) raises FollowUpRuleError before anything changes. A new
+    link that merges two recipe trees links the merged tree into every plan
+    either was in (services/recipe_trees.py). No commit."""
     from models import RecipeFollowUp
 
     def as_int(raw, default):
@@ -392,8 +394,9 @@ def save_follow_up_links(recipe, form, plan_id):
         valid.add(recipe.id)  # reported as a cycle rather than skipped
 
     existing = {link.follow_up_recipe_id: link for link in recipe.follow_ups}
+    new_ids = [i for i in wanted if i in valid and i not in existing]
     with db.session.no_autoflush:
-        _check_tree_rules(recipe, [i for i in wanted if i in valid and i not in existing], plan_id)
+        _check_tree_rules(recipe, new_ids, plan_id)
 
     links = []
     for follow_up_id, (low, high) in wanted.items():
@@ -405,6 +408,8 @@ def save_follow_up_links(recipe, form, plan_id):
         link.min_days, link.max_days = low, high
         links.append(link)
     recipe.follow_ups = links
+    if new_ids:
+        complete_tree(recipe.id)
 
 
 def forget_recipe(recipe_id):

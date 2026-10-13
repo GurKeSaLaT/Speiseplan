@@ -241,3 +241,21 @@ def test_follow_up_notes_text():
     html = _run_js("plan.js", "renderFollowUpNotes(0) + '|' + renderFollowUpNotes(2)",
                    _PLAN_PAGE_STUBS + f"window.PLAN_DATA = {json.dumps(data)};" + _ESCAPE_HTML_JS + stubs_i18n)
     assert html == '<div class="follow-up-note">↪ Nudeln am So</div>|<div class="follow-up-note">↪ aus Ofengemüse (Fr)</div>'
+
+
+# --- recipe_form.js: plans a merging follow-up link adds (services/recipe_trees.py) ---
+
+def _merge_affected(selected, initial, merge_plans):
+    return _run_js(
+        "recipe_form.js",
+        f"rformMergeAffectedPlans({json.dumps(selected)}, {json.dumps(initial)}, {json.dumps(merge_plans)})",
+        "var document = { addEventListener() {} };",
+    )
+
+
+@needs_node
+def test_merge_warning_lists_plans_of_new_follow_ups_only():
+    merge_plans = {"3": ["Familie", "WG"], "4": ["Familie", "Oma"], "5": ["Arbeit"]}
+    # 5 was already a follow-up when the form opened: nothing new there.
+    assert _merge_affected(["3", "4", "5"], ["5"], merge_plans) == ["Familie", "Oma", "WG"]
+    assert _merge_affected(["5", "7"], ["5"], merge_plans) == []

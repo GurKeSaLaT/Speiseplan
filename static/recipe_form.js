@@ -125,10 +125,65 @@ function rformAddFollowUpRow() {
     remove.type = 'button';
     remove.className = 'rform-ing-del';
     remove.textContent = '✕';
-    remove.onclick = () => { row.remove(); rformScheduleAutosave(); };
+    remove.onclick = () => { row.remove(); rformCheckFollowUpMerge(); rformScheduleAutosave(); };
     row.appendChild(remove);
     container.appendChild(row);
+    select.dataset.prev = select.value;
+    if (!rformCheckFollowUpMerge()) {
+        row.remove();
+        rformCheckFollowUpMerge();
+        return;
+    }
     rformScheduleAutosave();
+}
+
+/** Plan names that get recipes they don't have yet when the form is saved:
+ * the union of mergePlans (services/recipe_trees.py: merge_plan_names) over
+ * the selected follow-ups that weren't there when the form was loaded. */
+function rformMergeAffectedPlans(selectedIds, initialIds, mergePlans) {
+    const plans = new Set();
+    selectedIds.filter(id => !initialIds.includes(id))
+        .forEach(id => (mergePlans[id] || []).forEach(name => plans.add(name)));
+    return [...plans].sort();
+}
+
+// Follow-ups already saved, and plans the user agreed to link the merged
+// recipe tree into (asked once per plan).
+let rformSavedFollowUps = [];
+const rformConfirmedMergePlans = new Set();
+
+function rformSelectedFollowUps() {
+    return [...document.querySelectorAll('#followUpContainer select[name="fu_recipe[]"]')].map(s => s.value);
+}
+
+/** Shows which plans a follow-up link that merges recipe trees adds the
+ * merged tree to. With autosave the change is saved right away, so it asks
+ * first; false = declined (the caller undoes the change). */
+function rformCheckFollowUpMerge() {
+    const box = document.getElementById('followUpMergeWarning');
+    if (!box) return true;
+    const plans = rformMergeAffectedPlans(
+        rformSelectedFollowUps(), rformSavedFollowUps, window.FOLLOW_UP_MERGE_PLANS || {}
+    );
+    const message = plans.length ? box.dataset.text.replace('{plans}', plans.join(', ')) : '';
+    const unconfirmed = plans.filter(name => !rformConfirmedMergePlans.has(name));
+    if (window.RECIPE_ID && unconfirmed.length && !confirm(message)) return false;
+    plans.forEach(name => rformConfirmedMergePlans.add(name));
+    box.hidden = !message;
+    box.textContent = message ? `⚠️ ${message}` : '';
+    return true;
+}
+
+/** A follow-up select changed: undo a declined merge (before the form's
+ * own change listener schedules the autosave). */
+function rformOnFollowUpChange(e) {
+    const select = e.target;
+    if (!select.matches('select[name="fu_recipe[]"]')) return;
+    if (!rformCheckFollowUpMerge()) {
+        select.value = select.dataset.prev;
+        rformCheckFollowUpMerge();
+    }
+    select.dataset.prev = select.value;
 }
 
 function rformUpdateIngredientCount() {
@@ -322,6 +377,9 @@ function rformAutosave() {
         if (ok) {
             rformUpdateNutritionBadge(data.calories, data.protein, data.carbs, data.fat);
             rformShowPlaceholderWarning(data.unresolved_placeholders);
+            // The merged tree is linked now; removing a link keeps its plans.
+            rformSavedFollowUps = rformSelectedFollowUps();
+            rformCheckFollowUpMerge();
         }
         rformShowFollowUpError(ok ? null : data.error);
         if (indicator) {
@@ -355,6 +413,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = window.RECIPE_NUTRITION;
         rformUpdateNutritionBadge(n.calories, n.protein, n.carbs, n.fat);
     }
+
+    rformSavedFollowUps = rformSelectedFollowUps();
+    document.querySelectorAll('#followUpContainer select[name="fu_recipe[]"]').forEach(s => { s.dataset.prev = s.value; });
+    document.getElementById('followUpContainer')?.addEventListener('change', rformOnFollowUpChange);
 
     const form = document.getElementById('recipe-form');
     if (form && window.RECIPE_ID) {
