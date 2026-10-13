@@ -12,6 +12,10 @@ class CoupledDish:
     source_day_id = db.Column(db.Integer, nullable=True)
     source_side_id = db.Column(db.Integer, nullable=True)
 
+    @property
+    def is_coupled(self):
+        return self.source_day_id is not None or self.source_side_id is not None
+
 
 class PlanDay(CoupledDish, db.Model):
     """One calendar day of a plan. A week without any PlanDay rows was never

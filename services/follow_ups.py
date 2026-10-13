@@ -12,9 +12,9 @@ Rules (decided with the household):
   already pending there; B then waits as a PendingFollowUp and is offered
   as a fixed dish when that week is created.
 - Replacing or removing A frees B's day (a new B may take it, otherwise it
-  is rolled normally); replacing B only drops the link, so A is no longer
-  bought for B's servings.
-- Links follow the dishes on swaps.
+  is rolled normally); replacing B only drops the coupling, so A is no
+  longer bought for B's servings.
+- Couplings follow the dishes on swaps.
 
 A coupling (Kopplung) is stored on the follow-up dish and references its
 source dish (models.calendar.CoupledDish), not a day: the main dish of a
@@ -87,7 +87,7 @@ def source_dish(dish):
 def couple(dish, source):
     """Couples dish to source (a PlanDay for its main dish, a PlanDaySide, or
     None to uncouple). Returns True if dish was coupled before."""
-    was_coupled = dish.source_day_id is not None or dish.source_side_id is not None
+    was_coupled = dish.is_coupled
     dish.source_day_id = source.id if isinstance(source, PlanDay) else None
     dish.source_side_id = source.id if isinstance(source, PlanDaySide) else None
     return was_coupled
@@ -172,7 +172,7 @@ def replace_main_dish(plan_id, plan_day, new_recipe, refill):
     plan_day stops being a follow-up; if it was a source, its follow-ups
     are released; a new source gets a follow-up (possibly on a released
     day); released days still empty are filled via refill(plan_day).
-    Returns True if any link changed (the client then reloads)."""
+    Returns True if any coupling changed (the client then reloads)."""
     changed = couple(plan_day, None)
     db.session.flush()  # a new plan_day gets its id
     had_pending = PendingFollowUp.query.filter_by(source_day_id=plan_day.id).count() > 0
@@ -212,16 +212,16 @@ def _week_main_ids(plan_id, day):
     return {pd.main_recipe_id for pd in rows if pd.main_recipe_id}
 
 
-def move_links_on_swap(day_a, day_b):
+def move_couplings_on_swap(day_a, day_b):
     """Call after swapping the main dishes of day_a and day_b: their own
     couplings travel with them, and dishes coupled to one of the two main
     dishes now point at the other day. Couplings to sides need nothing,
     sides keep their id when they move. Returns True if any coupling was
     involved."""
-    coupling_a = (day_a.source_day_id, day_a.source_side_id)
-    coupling_b = (day_b.source_day_id, day_b.source_side_id)
-    involved = coupling_a != (None, None) or coupling_b != (None, None)
-    (day_a.source_day_id, day_a.source_side_id), (day_b.source_day_id, day_b.source_side_id) = coupling_b, coupling_a
+    involved = day_a.is_coupled or day_b.is_coupled
+    source_a, source_b = source_dish(day_a), source_dish(day_b)
+    couple(day_a, source_b)
+    couple(day_b, source_a)
 
     followers = {
         day.id: [
@@ -268,7 +268,7 @@ def incoming_follow_ups(plan_id, dates):
     return result
 
 
-def _week_days(plan_id, dates):
+def week_days(plan_id, dates):
     return PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.date.in_(dates)).all()
 
 
@@ -290,7 +290,7 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
         source = source_dish(plan_day) if plan_day and plan_day.main_recipe_id else None
         follow_up_of.append(None if source is None else {**place(_dish_date(source)), "name": _dish_name(source)})
 
-    index_of_day = {pd.id: dates.index(pd.date) for pd in _week_days(plan_id, dates)}
+    index_of_day = {pd.id: dates.index(pd.date) for pd in week_days(plan_id, dates)}
     follow_ups_out = [[] for _ in dates]
     coupled_days = PlanDay.query.filter(
         PlanDay.source_day_id.in_(index_of_day), PlanDay.main_recipe_id.isnot(None)
@@ -318,7 +318,7 @@ def week_shopping_servings(plan_id, day):
     (plan.js: applyShoppingServings); removing a dish needs none, since a
     coupling change makes the page reload."""
     dates = week_dates_for(friday_of(day))
-    days = {pd.date: pd for pd in _week_days(plan_id, dates)}
+    days = {pd.date: pd for pd in week_days(plan_id, dates)}
     day_ids = [pd.id for pd in days.values()]
 
     servings_of_follow_ups = dict.fromkeys(day_ids, 0)

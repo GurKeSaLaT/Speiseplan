@@ -20,7 +20,7 @@ from services.settings import get_display_units
 from services.units import convert_for_display
 from services.follow_ups import (
     assign_follow_up, couple, incoming_follow_ups, refill_released, release_follow_ups, week_follow_up_data,
-    week_shopping_servings,
+    week_days, week_shopping_servings,
 )
 from services.planning import reroll_choice
 from services.week_generation import generate_week
@@ -271,8 +271,7 @@ def week_generate(start_date):
         synchronize_session=False)
     # Recreating replaces this week's dishes, so their follow-ups elsewhere
     # are released (and re-rolled below unless a new follow-up takes them).
-    week_days = PlanDay.query.filter(PlanDay.plan_id == plan.id, PlanDay.date.in_(dates)).all()
-    freed_days = [pd for day in week_days for pd in release_follow_ups(day) if pd.date not in dates]
+    freed_days = [pd for day in week_days(plan.id, dates) for pd in release_follow_ups(day) if pd.date not in dates]
     db.session.flush()
 
     generated = generate_week(
@@ -298,8 +297,8 @@ def week_generate(start_date):
             db.session.add(PlanDaySide(plan_day_id=plan_day.id, recipe_id=side_recipe.id))
 
     for i, plan_day in enumerate(plan_days):
-        if i in generated.follow_up_links:
-            source = plan_days[generated.follow_up_links[i]]
+        if i in generated.follow_up_couplings:
+            source = plan_days[generated.follow_up_couplings[i]]
         else:
             source = incoming_sources.get(i) if final_plan[i] is not None else None
         couple(plan_day, source)

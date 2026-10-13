@@ -8,7 +8,7 @@ from flask_babel import gettext as _
 
 from models import db, PlanDay, PlanDaySide
 from services.auth import current_plan
-from services.follow_ups import move_links_on_swap, replace_main_dish, week_shopping_servings
+from services.follow_ups import move_couplings_on_swap, replace_main_dish, week_shopping_servings
 from services.planning import parse_iso_date, jsonify_recipe, reroll_choice
 from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
@@ -155,7 +155,7 @@ def swap_days(date_a, date_b):
     plan_day_a.main_recipe_id, plan_day_b.main_recipe_id = plan_day_b.main_recipe_id, plan_day_a.main_recipe_id
     plan_day_a.excluded, plan_day_b.excluded = plan_day_b.excluded, plan_day_a.excluded
     plan_day_a.cooked, plan_day_b.cooked = plan_day_b.cooked, plan_day_a.cooked
-    links_changed = move_links_on_swap(plan_day_a, plan_day_b)
+    links_changed = move_couplings_on_swap(plan_day_a, plan_day_b)
 
     sides_a = PlanDaySide.query.filter_by(plan_day_id=plan_day_a.id).all()
     sides_b = PlanDaySide.query.filter_by(plan_day_id=plan_day_b.id).all()

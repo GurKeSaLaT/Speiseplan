@@ -268,7 +268,9 @@ def test_day_level_couplings_are_moved_to_the_dishes(app, test_plan_id, make_rec
         for day, recipe_id, source in (
             ("2026-06-12", braten, None),
             ("2026-06-14", ragout, "2026-06-12"),   # coupled to Friday's main dish
-            ("2026-06-15", ragout, "2026-06-13"),   # no dish on the source day: dropped
+            ("2026-06-15", ragout, "2026-06-13"),   # source day doesn't exist: dropped
+            ("2026-06-16", None, None),
+            ("2026-06-18", ragout, "2026-06-16"),   # no main dish on the source day: dropped
             ("2026-06-17", braten, None),
         ):
             db.session.execute(text(
@@ -298,6 +300,7 @@ def test_day_level_couplings_are_moved_to_the_dishes(app, test_plan_id, make_rec
         days = {pd.date.isoformat(): pd for pd in PlanDay.query.filter_by(plan_id=test_plan_id)}
         assert days["2026-06-14"].source_day_id == days["2026-06-12"].id
         assert days["2026-06-15"].source_day_id is None
+        assert days["2026-06-18"].source_day_id is None
         assert all(pd.source_side_id is None for pd in days.values())
         # The pending follow-up whose source day doesn't exist is dropped.
         pending = PendingFollowUp.query.one()

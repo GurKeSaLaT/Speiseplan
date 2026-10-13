@@ -476,7 +476,8 @@ def _migrate_couplings_to_dishes():
             db.session.execute(text(
                 f"ALTER TABLE {table} ADD COLUMN source_side_id INTEGER"))
         if table == 'pending_follow_up' and 'is_side' not in columns:
-            db.session.execute(text("ALTER TABLE pending_follow_up ADD COLUMN is_side BOOLEAN NOT NULL DEFAULT 0"))
+            db.session.execute(text(
+                "ALTER TABLE pending_follow_up ADD COLUMN is_side BOOLEAN NOT NULL DEFAULT 0"))
 
     source_main_dish = (
         "(SELECT source.id FROM plan_day AS source WHERE source.plan_id = {table}.plan_id"
