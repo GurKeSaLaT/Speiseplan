@@ -3,18 +3,22 @@ from models import db
 
 class CoupledDish:
     """A dish that can be coupled to its source dish (a Kopplung, CONTEXT.md):
-    the main dish of a PlanDay or a PlanDaySide. The source dish is the main
-    dish of source_day_id or the side source_side_id, at most one of them
-    set; None/None means not coupled (services/follow_ups.py).
+    the main dish of a PlanDay, a PlanDaySide or, in a chain that reaches
+    into a week not created yet, a PendingFollowUp. The source dish is the
+    main dish of source_day_id, the side source_side_id or the pending
+    follow-up source_pending_id, at most one of them set; none set means
+    not coupled (services/follow_ups.py).
 
-    Plain ids without a foreign key: plan_day and plan_day_side would
-    reference each other, and SQLite doesn't enforce them here anyway."""
+    Plain ids without a foreign key: the tables would reference each
+    other, and SQLite doesn't enforce them here anyway."""
     source_day_id = db.Column(db.Integer, nullable=True)
     source_side_id = db.Column(db.Integer, nullable=True)
+    source_pending_id = db.Column(db.Integer, nullable=True)
 
     @property
     def is_coupled(self):
-        return self.source_day_id is not None or self.source_side_id is not None
+        return (self.source_day_id is not None or self.source_side_id is not None
+                or self.source_pending_id is not None)
 
 
 class PlanDay(CoupledDish, db.Model):

@@ -6,9 +6,10 @@ One line per change, newest first.
 
 - Follow-up chains (e.g. roast -> ragout -> lasagne): a planned follow-up
   dish plans its own follow-up, whether it was placed by generating the
-  week, picked by hand or comes in as a waiting follow-up when its week
-  is created. A source dish is bought for its own servings plus the whole
-  chain below it (lasagne 2, ragout 4, roast 6). Re-rolling, replacing,
+  week or picked by hand, and also while it still waits for its week:
+  creating that week offers the waiting chain as fixed dishes and keeps
+  it. A source dish is bought for its own servings plus the whole chain
+  below it (lasagne 2, ragout 4, roast 6), waiting dishes included. Re-rolling, replacing,
   excluding or removing a dish releases every follow-up below it;
   replacing a dish in the middle also drops its own coupling.
 - A side dish can be a source dish (e.g. boiled potatoes -> fried

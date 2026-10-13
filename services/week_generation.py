@@ -2,6 +2,7 @@
 live in routes/plan/pages.py: week_generate())."""
 
 from collections import Counter, namedtuple
+from collections.abc import Collection
 from datetime import date
 
 from models import Category, Plan, Recipe
@@ -35,12 +36,14 @@ GeneratedWeek = namedtuple('GeneratedWeek', 'final_plan final_side_plan follow_u
 def generate_week(
     plan: Plan, dates: list[date], excluded_days: set[int], day_recipe_ids: dict[int, str],
     day_side_recipe_ids: dict[int, list[str]], leftover_names: set[str] | None = None,
+    planned_days: Collection[int] = (), planned_sides: Collection[tuple[int, int]] = (),
 ) -> GeneratedWeek:
     """Returns a GeneratedWeek.
 
     Pinned main dishes and sides are kept, also those that are follow-ups
     of an earlier week's dish (they place their own follow-up like any
-    other). Follow-ups of planned dishes take precedence over normal
+    other, unless planned_days (day indexes) / planned_sides ((day index,
+    recipe id)) say theirs is planned already). Follow-ups of planned dishes take precedence over normal
     filling (services/follow_ups.py): pinned main dishes, then pinned sides
     place theirs first,
     then leftovers are used up on the earliest free days (see
@@ -115,10 +118,11 @@ def generate_week(
 
     pinned_sides = [DishRef(i, k) for i, sides in enumerate(final_side_plan) for k in range(len(sides))]
     for i in sorted(day_recipe_ids):
-        if final_plan[i] is not None and DishRef(i) not in couplings:
+        if final_plan[i] is not None and DishRef(i) not in couplings and i not in planned_days:
             place_follow_up(DishRef(i))
     for ref in pinned_sides:
-        place_follow_up(ref)
+        if (ref.day, ref.resolve(final_plan, final_side_plan).id) not in planned_sides:
+            place_follow_up(ref)
 
     days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
 

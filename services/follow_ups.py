@@ -14,16 +14,21 @@ Rules (decided with the household):
 - A day in a week that doesn't exist yet is free unless something is
   already pending there; B then waits as a PendingFollowUp and is offered
   as a fixed dish when that week is created.
+- B places its own follow-up C in turn (Folgekette), also while B is
+  pending, so A is bought for the whole chain right away. Creating B's
+  week takes the chain over: kept dishes stay coupled and place nothing
+  new, the rest of the pending chain is dropped.
 - A is a main dish or a side: a side placed by hand, by reroll or pinned
   in the create form places its follow-up just like a main dish.
 - Replacing or removing A frees B's day (a new B may take it, otherwise it
-  is rolled normally) or removes B if it is a side; replacing or removing
-  B only drops the coupling, so A is no longer bought for B's servings.
+  is rolled normally) or removes B if it is a side, and so on down the
+  chain; replacing or removing B drops its coupling, so A is no longer
+  bought for B's servings, and releases B's own follow-ups.
 - Couplings follow the dishes on swaps and when a side is moved.
 
 A coupling (Kopplung) is stored on the follow-up dish and references its
 source dish (models.calendar.CoupledDish), not a day: the main dish of a
-PlanDay or a PlanDaySide.
+PlanDay, a PlanDaySide or a PendingFollowUp.
 """
 
 from collections import defaultdict, namedtuple
@@ -81,10 +86,16 @@ def pick_follow_up(recipe, plan_id, source_date, is_free, exclude_ids=()):
     return chosen, candidates[chosen]
 
 
-def source_dish(dish):
-    """The dish (a PlanDay for its main dish, or a PlanDaySide) that dish -
-    a PlanDay's main dish, PlanDaySide or PendingFollowUp - is coupled to,
-    or None."""
+# A dish that can be a source dish: a PlanDay's main dish, a side, or - in a
+# chain reaching into a week not created yet - a pending follow-up.
+Dish = PlanDay | PlanDaySide | PendingFollowUp
+
+
+def source_dish(dish: CoupledDish) -> Dish | None:
+    """The dish (a PlanDay for its main dish, a PlanDaySide or a
+    PendingFollowUp) that dish is coupled to, or None."""
+    if dish.source_pending_id is not None:
+        return db.session.get(PendingFollowUp, dish.source_pending_id)
     if dish.source_side_id is not None:
         return db.session.get(PlanDaySide, dish.source_side_id)
     if dish.source_day_id is not None:
@@ -92,20 +103,22 @@ def source_dish(dish):
     return None
 
 
-def couple(dish, source):
-    """Couples dish to source (a PlanDay for its main dish, a PlanDaySide, or
-    None to uncouple). Returns True if dish was coupled before."""
+def couple(dish: CoupledDish, source: Dish | None) -> bool:
+    """Couples dish to source (a PlanDay for its main dish, a PlanDaySide, a
+    PendingFollowUp, or None to uncouple). Returns True if dish was coupled
+    before."""
     was_coupled = dish.is_coupled
     dish.source_day_id = source.id if isinstance(source, PlanDay) else None
     dish.source_side_id = source.id if isinstance(source, PlanDaySide) else None
+    dish.source_pending_id = source.id if isinstance(source, PendingFollowUp) else None
     return was_coupled
 
 
-def _dish_date(dish):
-    return dish.date if isinstance(dish, PlanDay) else dish.day.date
+def _dish_date(dish: Dish) -> date:
+    return dish.day.date if isinstance(dish, PlanDaySide) else dish.date
 
 
-def _dish_recipe(dish: PlanDay | PlanDaySide) -> Recipe | None:
+def _dish_recipe(dish: Dish) -> Recipe | None:
     return dish.main_recipe if isinstance(dish, PlanDay) else dish.recipe
 
 
@@ -114,12 +127,20 @@ def _dish_name(dish):
     return recipe.name if recipe else ''
 
 
-def _coupled_to(model: type, source: PlanDay | PlanDaySide) -> ColumnElement[bool]:
+def _coupled_to(model: type, source: Dish) -> ColumnElement[bool]:
     """Filter for the rows of model (PlanDay, PlanDaySide or
     PendingFollowUp) coupled to source."""
     if isinstance(source, PlanDay):
         return model.source_day_id == source.id
-    return model.source_side_id == source.id
+    if isinstance(source, PlanDaySide):
+        return model.source_side_id == source.id
+    return model.source_pending_id == source.id
+
+
+def _followers(source: Dish) -> list[CoupledDish]:
+    """All main dishes, sides and pending follow-ups coupled to source."""
+    return [dish for model in (PlanDay, PlanDaySide, PendingFollowUp)
+            for dish in model.query.filter(_coupled_to(model, source)).all()]
 
 
 def has_follow_ups(source: PlanDay | PlanDaySide) -> bool:
@@ -151,18 +172,17 @@ def live_slot_free(plan_id, day, is_side=False):
 
 
 def assign_follow_up(plan_id, follow_up_recipe, day, source):
-    """Puts the follow-up on day, coupled to source (the PlanDay whose main
-    dish it is made from, or a PlanDaySide): as the main dish, or for a side
-    recipe as an extra side, if that week exists, else as pending. Returns
-    the stored dish (PlanDay or PlanDaySide; None if pending), for
-    place_follow_up to continue the chain. No commit."""
+    """Puts the follow-up on day, coupled to source (the dish it is made
+    from): as the main dish, or for a side recipe as an extra side, if that
+    week exists, else as pending. Returns the new dish (PlanDay,
+    PlanDaySide or PendingFollowUp), for continue_chain. No commit."""
     is_side = follow_up_recipe.is_side_dish
     plan_day = PlanDay.query.filter_by(plan_id=plan_id, date=day).first()
     if plan_day is None:
         pending = PendingFollowUp(plan_id=plan_id, date=day, recipe_id=follow_up_recipe.id, is_side=is_side)
         couple(pending, source)
         db.session.add(pending)
-        return None
+        return pending
     if is_side:
         return add_side(plan_day, follow_up_recipe.id, source)
     plan_day.main_recipe_id = follow_up_recipe.id
@@ -179,12 +199,12 @@ def add_side(plan_day, recipe_id, source=None):
     return side
 
 
-def place_follow_up(plan_id: int, source: PlanDay | PlanDaySide) -> date | None:
-    """Plans a follow-up for source (a PlanDay's main dish or a
-    PlanDaySide) if one fits, never one already in source's week, and lets
-    it place its own follow-up in turn (Folgekette; a pending one does so
-    once its week is created). Returns the first follow-up's date or None.
-    No commit."""
+def place_follow_up(plan_id: int, source: Dish) -> date | None:
+    """Plans a follow-up for source (a PlanDay's main dish, a PlanDaySide or
+    a PendingFollowUp) if one fits, never one already in source's week, and
+    lets it place its own follow-up in turn (Folgekette, also into weeks not
+    created yet, so the whole chain is bought for). Returns the first
+    follow-up's date or None. No commit."""
     db.session.flush()
     picked = pick_follow_up(
         _dish_recipe(source), plan_id, _dish_date(source),
@@ -197,12 +217,10 @@ def place_follow_up(plan_id: int, source: PlanDay | PlanDaySide) -> date | None:
     return day
 
 
-def continue_chain(plan_id: int, dish: PlanDay | PlanDaySide | None) -> date | None:
-    """Lets a just stored dish (None: a pending follow-up, nothing to do)
-    place its follow-up (place_follow_up) once its changes are flushed.
-    Returns the follow-up's date or None. No commit."""
-    if dish is None:
-        return None
+def continue_chain(plan_id: int, dish: Dish) -> date | None:
+    """Lets a just stored dish place its follow-up (place_follow_up) once
+    its changes are flushed. Returns the follow-up's date or None. No
+    commit."""
     db.session.flush()
     db.session.refresh(dish)
     return place_follow_up(plan_id, dish)
@@ -213,11 +231,11 @@ def continue_chain(plan_id: int, dish: PlanDay | PlanDaySide | None) -> date | N
 Release = namedtuple('Release', 'freed_days released')
 
 
-def release_follow_ups(source: PlanDay | PlanDaySide) -> Release:
-    """source (a PlanDay's main dish or a PlanDaySide) goes away: the days
-    of its follow-up main dishes lose their dish (returned, for
-    re-planning), its follow-up sides and pending follow-ups are dropped,
-    and so on down the chain (Kopplung lösen). No commit."""
+def release_follow_ups(source: Dish) -> Release:
+    """source (a PlanDay's main dish, a PlanDaySide or a PendingFollowUp)
+    goes away: the days of its follow-up main dishes lose their dish
+    (returned, for re-planning), its follow-up sides and pending follow-ups
+    are dropped, and so on down the chain (Kopplung lösen). No commit."""
     freed = []
     for plan_day in PlanDay.query.filter(_coupled_to(PlanDay, source)).all():
         freed += [plan_day, *release_follow_ups(plan_day).freed_days]
@@ -228,8 +246,11 @@ def release_follow_ups(source: PlanDay | PlanDaySide) -> Release:
     for side in sides:
         freed += release_follow_ups(side).freed_days
         db.session.delete(side)
-    dropped = PendingFollowUp.query.filter(_coupled_to(PendingFollowUp, source)).delete()
-    return Release(freed, bool(freed or sides) or dropped > 0)
+    pending = PendingFollowUp.query.filter(_coupled_to(PendingFollowUp, source)).all()
+    for row in pending:
+        freed += release_follow_ups(row).freed_days
+        db.session.delete(row)
+    return Release(freed, bool(freed or sides or pending))
 
 
 def replace_main_dish(plan_id: int, plan_day: PlanDay, new_recipe: Recipe | None) -> bool:
@@ -308,9 +329,12 @@ def refill_released(plan_id: int, freed_days: list[PlanDay]) -> None:
 
 
 def _week_recipe_ids(plan_id, day):
-    """Main dishes and sides of the week containing day."""
-    rows = week_days(plan_id, week_dates_for(friday_of(day)))
-    return {pd.main_recipe_id for pd in rows if pd.main_recipe_id} | {side.recipe_id for pd in rows for side in pd.sides}
+    """Main dishes, sides and pending follow-ups of the week containing day."""
+    dates = week_dates_for(friday_of(day))
+    rows = week_days(plan_id, dates)
+    pending = PendingFollowUp.query.filter(PendingFollowUp.plan_id == plan_id, PendingFollowUp.date.in_(dates))
+    return ({pd.main_recipe_id for pd in rows if pd.main_recipe_id}
+            | {side.recipe_id for pd in rows for side in pd.sides} | {row.recipe_id for row in pending})
 
 
 def move_couplings_on_swap(day_a, day_b):
@@ -345,16 +369,18 @@ def _day_label(day):
     return f"{DAY_NAMES[(day.weekday() - 4) % 7]}, {day.strftime('%d.%m.')}"
 
 
-IncomingFollowUp = namedtuple('IncomingFollowUp', 'day_index recipe is_side source source_name')
+# dish: the pending follow-up or stored dish itself; source: its source dish.
+IncomingFollowUp = namedtuple('IncomingFollowUp', 'day_index recipe is_side source source_name dish')
 
 
 def incoming_follow_ups(plan_id, dates):
     """[IncomingFollowUp] for the week `dates`, ordered by day: pending
     follow-ups plus stored main dishes and sides coupled to a dish from
-    before this week. The create form offers them as fixed dishes (a main
+    before this week, and the pending follow-ups further down their chains
+    within the week. The create form offers them as fixed dishes (a main
     dish per day at most, any number of sides)."""
     def coupled(model):
-        return model.source_day_id.isnot(None) | model.source_side_id.isnot(None)
+        return model.source_day_id.isnot(None) | model.source_side_id.isnot(None) | model.source_pending_id.isnot(None)
 
     found = [
         (row.date, row.recipe, row.is_side, row)
@@ -373,9 +399,53 @@ def incoming_follow_ups(plan_id, dates):
     result = []
     for day, recipe, is_side, dish in found:
         source = source_dish(dish)
-        if source is not None and _dish_date(source) < dates[0]:
-            result.append(IncomingFollowUp(dates.index(day), recipe, is_side, source, _dish_name(source)))
+        if source is not None and (_dish_date(source) < dates[0] or isinstance(source, PendingFollowUp)):
+            result.append(IncomingFollowUp(dates.index(day), recipe, is_side, source, _dish_name(source), dish))
     return sorted(result, key=lambda entry: (entry.day_index, entry.is_side))
+
+
+def keeping_follow_ups(kept: list[IncomingFollowUp], dates: list[date]) -> list[IncomingFollowUp]:
+    """Of the incoming dishes kept when the week `dates` is created, the
+    pending ones whose chain goes on: a follow-up of theirs is kept too or
+    waits beyond the week. They place no new follow-up."""
+    kept_dishes = [entry.dish for entry in kept]
+    return [
+        entry for entry in kept if isinstance(entry.dish, PendingFollowUp) and any(
+            follower in kept_dishes or _dish_date(follower) not in dates for follower in _followers(entry.dish))
+    ]
+
+
+def take_over_incoming(plan_id: int, dates: list[date], stored: list[tuple[IncomingFollowUp, Dish]]) -> list[PlanDay]:
+    """After the week `dates` is saved: each kept incoming dish (stored:
+    (entry, its dish in the saved week)) is coupled to its source dish - to
+    the saved dish if the source was pending in this week too, uncoupled if
+    that wasn't kept. Follow-ups beyond the week of a kept pending dish now
+    follow its saved dish. All other pending follow-ups of the week are
+    dropped with their chains (release_follow_ups). Returns the freed days,
+    for refill_released. No commit."""
+    saved = {id(entry.dish): dish for entry, dish in stored}
+
+    def resolve(source: Dish) -> Dish | None:
+        if isinstance(source, PendingFollowUp) and source.date in dates:
+            return saved.get(id(source))
+        return source
+
+    for entry, dish in stored:
+        couple(dish, resolve(entry.source))
+    pending = PendingFollowUp.query.filter(PendingFollowUp.plan_id == plan_id, PendingFollowUp.date.in_(dates)).all()
+    for row in pending:
+        if id(row) in saved:
+            for follower in _followers(row):
+                if _dish_date(follower) not in dates:
+                    couple(follower, saved[id(row)])
+    freed = []
+    for row in pending:
+        if id(row) not in saved:
+            freed += release_follow_ups(row).freed_days
+    db.session.flush()
+    PendingFollowUp.query.filter(PendingFollowUp.plan_id == plan_id, PendingFollowUp.date.in_(dates)).delete(
+        synchronize_session=False)
+    return freed
 
 
 def week_days(plan_id, dates):
@@ -383,22 +453,22 @@ def week_days(plan_id, dates):
 
 
 # A dish or pending follow-up coupled to a source dish, for notes and amounts.
-# dish: the PlanDay or PlanDaySide (None if pending); servings: what it is
+# dish: the PlanDay, PlanDaySide or PendingFollowUp; servings: what it is
 # bought for (_follow_ups_by_source).
 FollowUpDish = namedtuple('FollowUpDish', 'dish date name servings pending')
 
 
-def _follow_ups_by_source(days: list[PlanDay]) -> dict[PlanDay | PlanDaySide, list[FollowUpDish]]:
+def _follow_ups_by_source(days: list[PlanDay]) -> dict[Dish, list[FollowUpDish]]:
     """The follow-ups of the main dishes and sides of days, in any week or
-    still pending, and down the chain the follow-ups of those:
-    {PlanDay or PlanDaySide: [FollowUpDish]}, by date. A follow-up's
+    still pending, and down the chain the follow-ups of those (pending
+    ones too): {source dish: [FollowUpDish]}, by date. A follow-up's
     servings are its own plus those of all follow-ups below it, so a
     source dish is bought for the whole chain (Lasagne 2, Ragout 2+2=4,
     Braten 2+4=6)."""
     children = defaultdict(list)  # source -> [FollowUpDish with its own servings]
 
-    def dish_key(dish: PlanDay | PlanDaySide) -> tuple[str, int]:
-        return ('day' if isinstance(dish, PlanDay) else 'side', dish.id)
+    def dish_key(dish: Dish) -> tuple[type, int]:
+        return type(dish), dish.id
 
     # Breadth-first down the chains; a follow-up that is in days already was
     # asked for its follow-ups as one of them (seen).
@@ -411,13 +481,12 @@ def _follow_ups_by_source(days: list[PlanDay]) -> dict[PlanDay | PlanDaySide, li
             break
 
         def coupled(model: type) -> ColumnElement[bool]:
-            return (model.source_day_id.in_([i for kind, i in sources if kind == 'day'])
-                    | model.source_side_id.in_([i for kind, i in sources if kind == 'side']))
+            return (model.source_day_id.in_([i for kind, i in sources if kind is PlanDay])
+                    | model.source_side_id.in_([i for kind, i in sources if kind is PlanDaySide])
+                    | model.source_pending_id.in_([i for kind, i in sources if kind is PendingFollowUp]))
 
-        def source_of(dish: CoupledDish) -> PlanDay | PlanDaySide:
-            if dish.source_side_id is not None:
-                return sources[('side', dish.source_side_id)]
-            return sources[('day', dish.source_day_id)]
+        def source_of(dish: CoupledDish) -> Dish:
+            return sources[dish_key(source_dish(dish))]
 
         frontier = []
         for plan_day in PlanDay.query.filter(coupled(PlanDay), PlanDay.main_recipe_id.isnot(None)):
@@ -429,7 +498,8 @@ def _follow_ups_by_source(days: list[PlanDay]) -> dict[PlanDay | PlanDaySide, li
                 FollowUpDish(side, side.day.date, side.recipe.name, side.day.servings, False))
             frontier.append(side)
         for row in PendingFollowUp.query.filter(coupled(PendingFollowUp)):
-            children[source_of(row)].append(FollowUpDish(None, row.date, row.recipe.name, row.servings, True))
+            children[source_of(row)].append(FollowUpDish(row, row.date, row.recipe.name, row.servings, True))
+            frontier.append(row)
 
     def purchase_servings(follow_up: FollowUpDish) -> int:
         return follow_up.servings + sum(purchase_servings(child) for child in children.get(follow_up.dish, ()))
@@ -673,18 +743,26 @@ def save_follow_up_links(recipe, form, plan_id):
 
 def forget_recipe(recipe_id: int) -> None:
     """Before deleting a recipe: drop links that would dangle - follow-up
-    definitions pointing at it, couplings to main dishes and sides where it
-    is the dish (those follow-ups stay as normal dishes), its own couplings
+    definitions pointing at it, couplings to main dishes, sides and pending
+    follow-ups where it is the dish (stored follow-ups stay as normal
+    dishes, pending ones are dropped with their chains), its own couplings
     and pending entries. No commit."""
     from models import RecipeFollowUp
 
     RecipeFollowUp.query.filter_by(follow_up_recipe_id=recipe_id).delete()
     sources = PlanDay.query.filter_by(main_recipe_id=recipe_id).all()
     sources += PlanDaySide.query.filter_by(recipe_id=recipe_id).all()
-    for source in sources:
-        for model in (PlanDay, PlanDaySide):
-            for dish in model.query.filter(_coupled_to(model, source)).all():
+    sources += PendingFollowUp.query.filter_by(recipe_id=recipe_id).all()
+    def forget_follow_ups(source: Dish) -> None:
+        for dish in _followers(source):
+            if isinstance(dish, PendingFollowUp):
+                forget_follow_ups(dish)
+                db.session.delete(dish)
+            else:
                 couple(dish, None)
-        PendingFollowUp.query.filter(_coupled_to(PendingFollowUp, source)).delete()
+
+    for source in sources:
+        forget_follow_ups(source)
         couple(source, None)
+    db.session.flush()
     PendingFollowUp.query.filter_by(recipe_id=recipe_id).delete()

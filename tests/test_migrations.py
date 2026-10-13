@@ -344,3 +344,21 @@ def test_pending_follow_ups_may_share_a_day(app, test_plan_id, make_recipe):
         assert PendingFollowUp.query.count() == 2
         indexes = {row[1] for row in db.session.execute(text("PRAGMA index_list(pending_follow_up)"))}
         assert {"ix_pending_follow_up_plan_id", "ix_pending_follow_up_date"} <= indexes
+
+
+def test_pending_source_column_is_added(app):
+    from sqlalchemy import text
+
+    from migrations import _migrate_pending_source_column
+    from models import db
+    tables = ("plan_day", "plan_day_side", "pending_follow_up")
+    with app.app_context():
+        for table in tables:
+            db.session.execute(text(f"ALTER TABLE {table} DROP COLUMN source_pending_id"))
+        db.session.commit()
+
+        _migrate_pending_source_column()
+        _migrate_pending_source_column()  # idempotent
+
+        for table in tables:
+            assert "source_pending_id" in {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}

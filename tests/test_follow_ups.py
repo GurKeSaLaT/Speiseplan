@@ -21,8 +21,10 @@ def _link(app, source_id, follow_up_id, min_days=2, max_days=3):
 
 def _source_date(dish):
     """Date of the source dish a main dish (PlanDay) or side (PlanDaySide)
-    or pending follow-up is coupled to, or None."""
-    from models import PlanDay, PlanDaySide, db
+    or pending follow-up is coupled to (a stored or a pending dish), or None."""
+    from models import PendingFollowUp, PlanDay, PlanDaySide, db
+    if dish.source_pending_id is not None:
+        return db.session.get(PendingFollowUp, dish.source_pending_id).date
     if dish.source_side_id is not None:
         return db.session.get(PlanDaySide, dish.source_side_id).day.date
     if dish.source_day_id is not None:
@@ -917,20 +919,106 @@ def test_generate_places_a_chain_through_a_follow_up_side(app, client, make_reci
     _assert_consistent(app, client.plan_id)
 
 
-def test_chain_continues_when_the_pending_week_is_created(app, client, make_recipe, make_category):
+def _pending(app):
+    """[(date, recipe_id, source dish date)] of all pending follow-ups, by date."""
     from models import PendingFollowUp
+    with app.app_context():
+        return sorted((p.date, p.recipe_id, _source_date(p)) for p in PendingFollowUp.query)
+
+
+def _incoming(client, start):
+    html = client.get(f"/plan/{start}/create").data.decode("utf-8")
+    incoming = json.loads(re.search(r"window\.INCOMING_FOLLOW_UPS = (.*?);\n", html).group(1))
+    return [(e["dayIndex"], e["recipeId"], e["sourceName"]) for e in incoming]
+
+
+def _pending_chain(app, client, make_recipe, make_category):
+    """Braten on Wednesday; Ragout (next Friday) and Lasagne (next Sunday)
+    wait for next week."""
     cat = make_category("Alles")
     braten, ragout, lasagne = _chain(app, make_recipe, cat)
-    _fillers(make_recipe, cat, count=14)
+    fillers = _fillers(make_recipe, cat, count=14)
     client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(braten)})
-    with app.app_context():
-        assert [(p.date, p.recipe_id) for p in PendingFollowUp.query] == [(NEXT_FRIDAY, ragout)]
+    assert _pending(app) == [(NEXT_FRIDAY, ragout, FRIDAY + timedelta(days=5)),
+                             (NEXT_FRIDAY + timedelta(days=2), lasagne, NEXT_FRIDAY)]
+    return braten, ragout, lasagne, fillers
 
+
+def test_pending_chain_is_bought_for_completely(app, client, make_recipe, make_category):
+    _pending_chain(app, client, make_recipe, make_category)
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    assert _shopping(data, 5)["main"] == {"servings": 6, "followUpServings": 4, "skipPrecooked": False}
+    # The notes on Braten only name its own follow-up.
+    assert [(e["name"], e["pending"]) for e in data["followUpsOut"][5]] == [("Ragout", True)]
+
+
+def test_pending_chain_is_taken_over_when_its_week_is_created(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _pending_chain(app, client, make_recipe, make_category)
+    assert _incoming(client, "2026-06-19") == [(0, ragout, "Braten"), (2, lasagne, "Ragout")]
+
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(ragout), "day_recipe_2": str(lasagne)})
+    days = _days(app, client.plan_id, NEXT_FRIDAY)
+    assert days[0] == (ragout, FRIDAY + timedelta(days=5), False)
+    assert days[2] == (lasagne, NEXT_FRIDAY, False)
+    assert lasagne not in [d[0] for i, d in enumerate(days) if i != 2]
+    assert _pending(app) == []
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 6
+    _assert_consistent(app, client.plan_id)
+
+
+def test_pending_chain_without_its_middle_dish_is_dropped(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _pending_chain(app, client, make_recipe, make_category)
+    # Lasagne kept by hand without Ragout: a normal dish.
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_2": str(lasagne)})
+    days = _days(app, client.plan_id, NEXT_FRIDAY)
+    assert days[2] == (lasagne, None, False)
+    # Nothing is coupled to Wednesday's Braten any more (a Braten drawn next
+    # week may start a chain of its own).
+    assert all(d[1] != FRIDAY + timedelta(days=5) for d in days)
+    assert all(day >= NEXT_FRIDAY + timedelta(days=7) for day, _, _ in _pending(app))
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 2
+    _assert_consistent(app, client.plan_id)
+
+
+def test_pending_middle_dish_kept_alone_places_its_follow_up_anew(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _pending_chain(app, client, make_recipe, make_category)
     client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(ragout)})
     days = _days(app, client.plan_id, NEXT_FRIDAY)
     assert days[0] == (ragout, FRIDAY + timedelta(days=5), False)
     assert days[2] == (lasagne, NEXT_FRIDAY, False)
     _assert_consistent(app, client.plan_id)
+
+
+def test_deleting_a_pending_middle_recipe_drops_the_chain_below(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _pending_chain(app, client, make_recipe, make_category)
+    client.post(f"/delete-recipe/{ragout}")
+    assert _pending(app) == []
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 2
+
+
+def test_pending_chain_reaching_two_weeks_ahead(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    braten = make_recipe("Braten", category_id=cat)
+    ragout = make_recipe("Ragout", category_id=cat)
+    lasagne = make_recipe("Lasagne", category_id=cat)
+    _link(app, braten, ragout)
+    _link(app, ragout, lasagne, min_days=7, max_days=7)
+    _fillers(make_recipe, cat, count=14)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(braten)})
+    after_next = NEXT_FRIDAY + timedelta(days=7)
+    assert _pending(app) == [(NEXT_FRIDAY, ragout, FRIDAY + timedelta(days=5)), (after_next, lasagne, NEXT_FRIDAY)]
+
+    # Next week takes Ragout over; Lasagne keeps waiting, now for the stored Ragout.
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(ragout)})
+    assert _pending(app) == [(after_next, lasagne, NEXT_FRIDAY)]
+    assert lasagne not in [d[0] for d in _days(app, client.plan_id, NEXT_FRIDAY)]
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 6
+    _assert_consistent(app, client.plan_id)
+
+    # Recreating this week without Braten (nothing drawn) releases the whole chain.
+    client.post(f"/plan/{WEEK}/generate", data=MultiDict(_exclude(*range(7))))
+    assert _pending(app) == []
+    assert _days(app, client.plan_id, NEXT_FRIDAY)[0][1] is None
 
 
 def test_chain_continues_into_an_existing_week(app, client, make_recipe, make_category):

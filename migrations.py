@@ -502,6 +502,16 @@ def _migrate_couplings_to_dishes():
     db.session.commit()
 
 
+def _migrate_pending_source_column():
+    """A pending follow-up can be the source dish of a follow-up further
+    down a chain (models.calendar.CoupledDish.source_pending_id)."""
+    for table in ('plan_day', 'plan_day_side', 'pending_follow_up'):
+        columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+        if 'source_pending_id' not in columns:
+            db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN source_pending_id INTEGER"))
+    db.session.commit()
+
+
 def _migrate_pending_follow_up_unique_date():
     """pending_follow_up used to be UNIQUE (plan_id, date); now a main dish
     and sides can wait for the same day. SQLite can't drop a table
@@ -511,7 +521,10 @@ def _migrate_pending_follow_up_unique_date():
     ]
     if not unique_constraints:
         return
-    columns = _identifier_list(", ".join(column.name for column in PendingFollowUp.__table__.columns))
+    # Columns added by later migrations aren't there yet.
+    old_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(pending_follow_up)"))}
+    columns = _identifier_list(", ".join(
+        column.name for column in PendingFollowUp.__table__.columns if column.name in old_columns))
     db.session.execute(text("ALTER TABLE pending_follow_up RENAME TO pending_follow_up_old"))
     for index in PendingFollowUp.__table__.indexes:
         db.session.execute(text(f"DROP INDEX IF EXISTS {_identifier(index.name)}"))
@@ -563,6 +576,7 @@ def init_db():
     _migrate_follow_up_columns()
     _migrate_couplings_to_dishes()
     _migrate_pending_follow_up_unique_date()
+    _migrate_pending_source_column()
 
     seeded_plans_by_username = {}
 
