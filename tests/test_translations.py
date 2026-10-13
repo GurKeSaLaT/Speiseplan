@@ -84,11 +84,12 @@ def test_nutrition_labels_are_passed_to_js_in_german(app, client):
 
 def test_german_strings_avoid_terms_the_glossary_rules_out():
     # CONTEXT.md: "Vorgericht" sounds like a starter (it is the Ausgangsgericht
-    # / a vorgekochte Zutat), and recipes shared into other plans are
-    # "verlinkt", not "verknüpft" (Verknüpfung is the follow-up rule).
+    # / a vorgekochte Zutat), recipes shared into other plans are "verlinkt",
+    # not "verknüpft" (Verknüpfung is the follow-up rule), and "Rest" only
+    # means last week's leftovers, not what a follow-up dish is made from.
     catalog = _catalog()
     offending = [m.string for m in catalog if m.id and m.string and not m.fuzzy
-                 and re.search(r'Vorgericht|verknüpfte[nr]? Pl[aä]n', str(m.string), re.I)]
+                 and re.search(r'Vorgericht|verknüpfte[nr]? Pl[aä]n|aus dem Rest', str(m.string), re.I)]
     assert offending == []
 
 
