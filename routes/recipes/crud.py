@@ -296,6 +296,8 @@ def edit_recipe(id):
             "ok": True, "calories": recipe.calories, "protein": recipe.protein,
             "carbs": recipe.carbs, "fat": recipe.fat,
             "unresolved_placeholders": _unresolved_placeholders(recipe, plan_id),
+            # A saved merge changes the tree's plans, so the form's warning data too.
+            "follow_up_merge_plans": _follow_up_context(plan_id, recipe)["follow_up_merge_plans"],
         }
     return redirect(url_for('recipes.recipe_edit_list_view', plan_id=plan_id))
 

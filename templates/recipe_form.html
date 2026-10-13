@@ -237,13 +237,12 @@
                             </select>
                             <input type="number" name="fu_min[]" class="rform-field" min="1" max="14" value="{{ link.min_days }}">
                             <input type="number" name="fu_max[]" class="rform-field" min="1" max="14" value="{{ link.max_days }}">
-                            <button type="button" class="rform-ing-del" title="{{ _('Remove') }}" onclick="this.closest('.rform-follow-up-row').remove(); rformCheckFollowUpMerge(); rformScheduleAutosave();">✕</button>
+                            <button type="button" class="rform-ing-del" title="{{ _('Remove') }}" onclick="this.closest('.rform-follow-up-row').remove(); rformShowFollowUpMerge(); rformScheduleAutosave();">✕</button>
                         </div>
                         {% endfor %}
                     </div>
                     <div class="rform-placeholder-warning" id="followUpError" hidden></div>
-                    <div class="rform-placeholder-warning" id="followUpMergeWarning" hidden
-                         data-text="{{ _('Saving links the merged recipe tree into these plans as well: %(plans)s', plans='{plans}') }}"></div>
+                    <div class="rform-placeholder-warning" id="followUpMergeWarning" hidden></div>
                     <button type="button" class="rform-add-ing" onclick="rformAddFollowUpRow()">+ {{ _('Add follow-up dish') }}</button>
                     <p class="text-muted small mt-2 mb-0">{{ _('Mark the follow-up recipe\'s ingredients that come from this dish with ↪ there - they are then left off the shopping list.') }}</p>
                 </div>

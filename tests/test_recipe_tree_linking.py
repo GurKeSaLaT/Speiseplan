@@ -198,6 +198,23 @@ def test_form_shows_the_plans_a_merging_link_adds(app, client, make_user, make_r
     assert ragout not in merge_plans
 
 
+def test_autosave_answers_with_merge_plans_of_the_merged_tree(app, client, make_user, make_recipe, make_category):
+    familie = _member_plan(app, make_user, client.user_id, "Familie")
+    cat = make_category("Alles")
+    braten = make_recipe("Braten", category_id=cat)
+    suppe = make_recipe("Suppe", category_id=cat)
+    eintopf = make_recipe("Eintopf", category_id=cat)
+    _share(app, suppe, familie)
+    assert eintopf not in _merge_plans(client, braten)
+
+    resp = _save(client, braten, "Braten", cat, [suppe])
+
+    # The tree is in "Familie" now, so Eintopf (only here) would be added there.
+    merge_plans = {int(k): v for k, v in resp.get_json()["follow_up_merge_plans"].items()}
+    assert merge_plans[eintopf] == ["Families Plan"]
+    assert suppe not in merge_plans
+
+
 # --- splitting a tree ---
 
 def test_removing_a_follow_up_link_keeps_both_parts_in_all_plans(app, client, make_user, make_recipe, make_category):
