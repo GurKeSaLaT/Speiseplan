@@ -37,9 +37,11 @@ let weeklyExtraItems = window.PLAN_DATA.extraItems || [];
 // Linked dishes (services/follow_ups.py). followUpOf[i]: the dish day i's
 // dish is made from ({date, index|null, name, label}) or null.
 // followUpsOut[i]: dishes made from day i's dish ({date, index|null, name,
-// label, pending}); index set = in this week.
+// label, pending}); index set = in this week. sideFollowUpsOut[side_id]:
+// the same for a source side.
 let followUpOf = window.PLAN_DATA.followUpOf || [null, null, null, null, null, null, null];
 let followUpsOut = window.PLAN_DATA.followUpsOut || [[], [], [], [], [], [], []];
+let sideFollowUpsOut = window.PLAN_DATA.sideFollowUpsOut || {};
 
 // What each dish is bought for, computed on the server
 // (services/follow_ups.py: week_shopping_servings): shoppingServings[i] =
@@ -65,10 +67,18 @@ function renderFollowUpNotes(dayIndex) {
     if (source) {
         notes.push(window.I18N.follow_up_of.replace('{name}', source.name).replace('{day}', source.label));
     }
-    (followUpsOut[dayIndex] || []).forEach(entry => {
+    return renderNotes(notes) + renderFollowUpsOutNotes(followUpsOut[dayIndex]);
+}
+
+/** The "goes into" lines for a list of follow-ups (followUpsOut entries). */
+function renderFollowUpsOutNotes(entries) {
+    return renderNotes((entries || []).map(entry => {
         const template = entry.pending ? window.I18N.follow_up_pending : window.I18N.follow_up_on;
-        notes.push(template.replace('{name}', entry.name).replace('{day}', entry.label));
-    });
+        return template.replace('{name}', entry.name).replace('{day}', entry.label);
+    }));
+}
+
+function renderNotes(notes) {
     return notes.map(note => `<div class="follow-up-note">↪ ${escapeHtml(note)}</div>`).join('');
 }
 

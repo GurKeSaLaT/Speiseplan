@@ -4,6 +4,14 @@ One line per change, newest first.
 
 ## 2026-10-13
 
+- A side dish can be a source dish (e.g. boiled potatoes -> fried
+  potatoes, rice -> fried rice): adding, rolling or replacing a side, or
+  setting it as a fixed side when creating a week, plans one of its
+  follow-ups (a main dish on a free day or an extra side), and the side is
+  bought for the follow-up's servings too. Re-rolling, replacing or
+  removing the side releases its follow-ups (a released main dish day gets
+  a new dish), moving it keeps them. Side cards show where their
+  follow-ups are planned.
 - A follow-up dish can be a side dish (e.g. rice -> fried rice): the
   recipe form offers side dishes as follow-ups. When the source dish is
   planned, the side is added as an extra side on the earliest day of its

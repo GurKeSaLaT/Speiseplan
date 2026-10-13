@@ -32,7 +32,8 @@ in, and get a combined shopping list.
   leftovers a few days later (e.g. roast vegetables -> pasta with vegetable
   sauce). Planning the dish puts one follow-up on a free day in its window
   and buys the dish for both days; follow-ups are never rolled on their own.
-  A follow-up can also be a side dish, added on top of that day's sides.
+  A follow-up can also be a side dish, added on top of that day's sides,
+  and a side dish can have follow-ups of its own.
 - **Scaling amounts in instructions**: placeholders like `{Flour}` or
   `{Butter*1/2}` in the instructions show the ingredient's amount, scaled
   to the day's servings.

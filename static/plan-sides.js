@@ -19,6 +19,7 @@ function renderSidesSection(dayIndex) {
                     <span class="fw-bold text-dark side-dish-name">🥗 ${escapeHtml(side.name)}</span>
                     <span class="badge badge-category side-dish-category ms-1">${escapeHtml(side.category_name)}</span>
                     <span class="text-muted small side-dish-kcal">(${side.calories} kcal)</span>
+                    ${renderFollowUpsOutNotes(sideFollowUpsOut[side.side_id])}
                 </div>
                 <div class="d-flex align-items-center gap-1">
                     <button type="button" class="btn btn-sm btn-outline-secondary border-0 p-1" title="${escapeHtml(window.I18N.reroll_side_title)}" onclick="rerollOneSide(${dayIndex}, ${side.side_id})">🎲</button>
@@ -65,7 +66,8 @@ function openSideManualSelect(dayIndex, sideId) {
     );
 }
 
-/** Adds a side; without recipeId the server picks one at random. */
+/** Adds a side; without recipeId the server picks one at random. A side
+ * that places a follow-up reloads the page. */
 function addSide(dayIndex, recipeId) {
     postWithCsrf(`/day/${dayDates[dayIndex]}/side/add`, {
         headers: { 'Content-Type': 'application/json' },
@@ -76,6 +78,7 @@ function addSide(dayIndex, recipeId) {
         return response.json();
     })
     .then(newSide => {
+        if (reloadIfLinksChanged(newSide)) return;
         applyShoppingServings(newSide);
         weeklySideRecipes[dayIndex].push(newSide);
         refreshSidesSection(dayIndex);

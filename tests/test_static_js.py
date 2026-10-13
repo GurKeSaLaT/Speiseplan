@@ -250,6 +250,16 @@ def test_follow_up_notes_text():
     assert html == '<div class="follow-up-note">↪ Nudeln am So</div>|<div class="follow-up-note">↪ aus Ofengemüse (Fr)</div>'
 
 
+@needs_node
+def test_follow_up_notes_of_a_source_side():
+    data = _week_data(sideFollowUpsOut={"7": [
+        {"date": "2026-06-19", "index": None, "name": "Gebratener <Reis>", "label": "Fr", "pending": True}]})
+    stubs_i18n = "window.I18N = {follow_up_on: '{name} am {day}', follow_up_pending: '{name} am {day} (später)'};"
+    html = _run_js("plan.js", "renderFollowUpsOutNotes(sideFollowUpsOut[7]) + '|' + renderFollowUpsOutNotes(sideFollowUpsOut[8])",
+                   _PLAN_PAGE_STUBS + f"window.PLAN_DATA = {json.dumps(data)};" + _ESCAPE_HTML_JS + stubs_i18n)
+    assert html == '<div class="follow-up-note">↪ Gebratener &lt;Reis&gt; am Fr (später)</div>|'
+
+
 # --- recipe_form.js: plans a merging follow-up link adds (services/recipe_trees.py) ---
 
 def _merge_affected(selected, initial, merge_plans):

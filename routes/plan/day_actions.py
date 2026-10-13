@@ -14,13 +14,6 @@ from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
 
 
-def _refill(plan_day):
-    """Rolls a normal dish for a day whose follow-up dish was released."""
-    chosen = reroll_choice(plan_day.plan_id, plan_day.date)
-    plan_day.main_recipe_id = chosen.id if chosen else None
-    plan_day.cooked = False
-
-
 @plan_bp.route('/day/<day_date>/reroll-main', methods=['POST'])
 def reroll_day(day_date):
     """Rolls a different main dish for one planned, non-excluded day
@@ -41,7 +34,7 @@ def reroll_day(day_date):
     if not chosen:
         return {"error": _("No more recipes available in the database!")}, 400
 
-    links_changed = replace_main_dish(plan.id, plan_day, chosen, _refill)
+    links_changed = replace_main_dish(plan.id, plan_day, chosen)
     db.session.commit()
     return {
         **jsonify_recipe(chosen, plan.id), "links_changed": links_changed,
@@ -75,7 +68,7 @@ def set_main_day(day_date):
         db.session.add(plan_day)
 
     plan_day.excluded = False
-    links_changed = replace_main_dish(plan.id, plan_day, recipe, _refill)
+    links_changed = replace_main_dish(plan.id, plan_day, recipe)
     db.session.commit()
     return {
         **jsonify_recipe(recipe, plan.id), "links_changed": links_changed,
@@ -102,7 +95,7 @@ def toggle_day_exclusion(day_date):
     links_changed = False
     if plan_day.excluded:
         db.session.flush()
-        links_changed = replace_main_dish(plan.id, plan_day, None, _refill)
+        links_changed = replace_main_dish(plan.id, plan_day, None)
     db.session.commit()
     return {"excluded": plan_day.excluded, "links_changed": links_changed}
 

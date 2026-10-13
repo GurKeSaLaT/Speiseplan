@@ -3,14 +3,20 @@ number of sides, so most endpoints address one PlanDaySide by id.
 
 A follow-up side (coupled to its source dish, services/follow_ups.py) loses
 its coupling when it is rerolled, replaced or removed, and keeps it when it
-is moved; links_changed tells the page to reload then."""
+is moved. A side with follow-up links is a source dish: adding it (or
+rerolling/replacing a side into it) places a follow-up, rerolling,
+replacing or removing it releases its follow-ups, moving it keeps them
+coupled. links_changed tells the page to reload then."""
 
 from flask import request
 from flask_babel import gettext as _
 
 from models import db, PlanDay, PlanDaySide
 from services.auth import current_plan
-from services.follow_ups import couple, week_shopping_servings
+from services.follow_ups import (
+    add_side as add_side_dish, has_follow_ups, place_follow_up, remove_side_dish, replace_side_dish,
+    week_shopping_servings,
+)
 from services.planning import parse_iso_date, week_side_recipe_ids, choose_recipe, jsonify_side
 from services.recipe_visibility import visible_recipes_query
 from routes.plan import plan_bp
@@ -29,7 +35,8 @@ def _get_or_create_plan_day(target_date, plan_id):
 @plan_bp.route('/day/<day_date>/side/add', methods=['POST'])
 def add_side(day_date):
     """Adds a side: the given recipe_id as-is (manual pick), or without one
-    a random side not yet used in the week."""
+    a random side not yet used in the week. Either way a side with
+    follow-up links places one of its follow-ups."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -54,10 +61,13 @@ def add_side(day_date):
         if not chosen:
             return {"error": _("No more side dishes available in the database!")}, 400
 
-    plan_day_side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=chosen.id)
-    db.session.add(plan_day_side)
+    plan_day_side = add_side_dish(plan_day, chosen.id)
+    links_changed = place_follow_up(plan.id, plan_day_side) is not None
     db.session.commit()
-    return {**jsonify_side(plan_day_side, plan.id), "shopping_servings": week_shopping_servings(plan.id, target_date)}
+    return {
+        **jsonify_side(plan_day_side, plan.id), "links_changed": links_changed,
+        "shopping_servings": week_shopping_servings(plan.id, target_date),
+    }
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/reroll', methods=['POST'])
@@ -84,7 +94,8 @@ def reroll_one_side(day_date, side_id):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/set', methods=['POST'])
 def set_one_side(day_date, side_id):
-    """Manual pick, no automatic rules apart from dropping a coupling."""
+    """Manual pick: drops the side's own coupling and handles its
+    follow-ups like a reroll (services/follow_ups.py: replace_side_dish)."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -110,9 +121,7 @@ def set_one_side(day_date, side_id):
 
 
 def _replace_side(plan, plan_day_side, recipe, target_date):
-    plan_day_side.recipe_id = recipe.id
-    plan_day_side.cooked = False
-    links_changed = couple(plan_day_side, None)
+    links_changed = replace_side_dish(plan.id, plan_day_side, recipe)
     db.session.commit()
     return {
         **jsonify_side(plan_day_side, plan.id), "links_changed": links_changed,
@@ -122,7 +131,8 @@ def _replace_side(plan, plan_day_side, recipe, target_date):
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/remove', methods=['POST'])
 def remove_one_side(day_date, side_id):
-    """Idempotent: an already missing side also returns ok."""
+    """Idempotent: an already missing side also returns ok. Removing a
+    source side releases its follow-ups."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -133,16 +143,15 @@ def remove_one_side(day_date, side_id):
     ).first()
     links_changed = False
     if plan_day_side:
-        links_changed = plan_day_side.is_coupled
-        db.session.delete(plan_day_side)
+        links_changed = remove_side_dish(plan.id, plan_day_side)
         db.session.commit()
     return {"ok": True, "links_changed": links_changed}
 
 
 @plan_bp.route('/day/<day_date>/side/<int:side_id>/move/<target_date_str>', methods=['POST'])
 def move_one_side(day_date, side_id, target_date_str):
-    """Moves one side to another day (one-way, nothing else changes; a
-    coupling stays)."""
+    """Moves one side to another day (one-way, nothing else changes; its
+    coupling and those of its follow-ups stay)."""
     source_date = parse_iso_date(day_date)
     target_date = parse_iso_date(target_date_str)
     if source_date is None or target_date is None:
@@ -159,7 +168,8 @@ def move_one_side(day_date, side_id, target_date_str):
     plan_day_side.plan_day_id = target_plan_day.id
     db.session.commit()
     return {
-        **jsonify_side(plan_day_side, plan.id), "links_changed": plan_day_side.is_coupled,
+        **jsonify_side(plan_day_side, plan.id),
+        "links_changed": plan_day_side.is_coupled or has_follow_ups(plan_day_side),
         "shopping_servings": week_shopping_servings(plan.id, source_date),
     }
 
