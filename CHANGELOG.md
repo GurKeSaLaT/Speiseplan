@@ -4,6 +4,12 @@ One line per change, newest first.
 
 ## 2026-10-13
 
+- Recipe trees are linked into other plans only as a whole: adding or
+  removing a plan for any recipe of a tree does it for all of them (a plan
+  that owns one of them can't be removed). A follow-up link that joins two
+  trees links the joined tree into every plan either was in; the recipe
+  form names those plans and, with autosave, asks before saving. Removing
+  a follow-up link keeps both parts in all their plans.
 - Follow-up links form recipe trees: a follow-up recipe has only one
   source recipe and links never form a cycle. The recipe form only offers
   follow-up dishes that have no source yet and aren't above the recipe in

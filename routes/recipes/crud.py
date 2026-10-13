@@ -22,6 +22,7 @@ from services.follow_ups import (
     FollowUpRuleError, forget_recipe, save_follow_up_links, unavailable_follow_up_ids,
 )
 from services.instruction_placeholders import unresolved_placeholders
+from services.recipe_trees import merge_plan_names, tree_owner_plan_ids, tree_recipe_ids
 from services.nutrition import compute_calories, compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
 from services.recipe_visibility import visible_recipes_query
@@ -71,7 +72,7 @@ def recipe_create_view():
         selected_presets=set(), custom_start='', custom_end='',
         linkable_plans=[], linked_plan_ids=set(),
         plan_id=plan_id, user_plans=user_plan_memberships(user),
-        follow_up_choices=_follow_up_choices(plan_id),
+        **_follow_up_context(plan_id),
     )
 
 
@@ -86,6 +87,16 @@ def _follow_up_choices(plan_id, recipe=None):
         Recipe.is_side_dish.is_(False), Recipe.id.notin_(unavailable)
     )
     return query.order_by(Recipe.name).all()
+
+
+def _follow_up_context(plan_id, recipe=None):
+    """Template data for the follow-up rows: the choices, and per choice the
+    plans a merging link would add recipes to (warned about before saving)."""
+    choices = _follow_up_choices(plan_id, recipe)
+    return {
+        "follow_up_choices": choices,
+        "follow_up_merge_plans": merge_plan_names(recipe, plan_id, [c.id for c in choices]),
+    }
 
 
 def _follow_up_rule_error(error):
@@ -131,7 +142,8 @@ def recipe_edit_view(id):
         ingredient_display=ingredient_display,
         linkable_plans=linkable_plans, linked_plan_ids=linked_plan_ids,
         plan_id=plan_id, unresolved_placeholders=_unresolved_placeholders(recipe, plan_id),
-        follow_up_choices=_follow_up_choices(plan_id, recipe),
+        tree_size=len(tree_recipe_ids(recipe.id)), tree_owner_plan_ids=tree_owner_plan_ids(recipe.id),
+        **_follow_up_context(plan_id, recipe),
     )
 
 
@@ -284,6 +296,8 @@ def edit_recipe(id):
             "ok": True, "calories": recipe.calories, "protein": recipe.protein,
             "carbs": recipe.carbs, "fat": recipe.fat,
             "unresolved_placeholders": _unresolved_placeholders(recipe, plan_id),
+            # A saved merge changes the tree's plans, so the form's warning data too.
+            "follow_up_merge_plans": _follow_up_context(plan_id, recipe)["follow_up_merge_plans"],
         }
     return redirect(url_for('recipes.recipe_edit_list_view', plan_id=plan_id))
 

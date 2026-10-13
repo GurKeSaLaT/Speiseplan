@@ -204,7 +204,7 @@ def test_edit_recipe_returns_json_for_autosave_requests(client, app, make_recipe
 
     assert resp.status_code == 200
     assert resp.get_json() == {"ok": True, "calories": 290, "protein": 20.0, "carbs": 30.0, "fat": 10.0,
-                               "unresolved_placeholders": []}
+                               "unresolved_placeholders": [], "follow_up_merge_plans": {}}
 
     with app.app_context():
         assert db.session.get(Recipe, recipe_id).name == "Geändertes Gericht"
