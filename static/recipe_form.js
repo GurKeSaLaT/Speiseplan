@@ -284,6 +284,15 @@ function rformShowPlaceholderWarning(unresolved) {
     box.textContent = box.hidden ? '' : `⚠️ ${window.I18N.unresolved_placeholders} ${unresolved.join(', ')}`;
 }
 
+/** A follow-up dish the server refused (recipe tree rules, see
+ * services/follow_ups.py: save_follow_up_links); null clears it. */
+function rformShowFollowUpError(message) {
+    const box = document.getElementById('followUpError');
+    if (!box) return;
+    box.hidden = !message;
+    box.textContent = message ? `⚠️ ${message}` : '';
+}
+
 // --- Autosave (existing recipes only) ---
 // A new recipe is created with one explicit submit; after that, every change
 // resubmits the whole form (debounced). X-Requested-With makes the server
@@ -314,6 +323,7 @@ function rformAutosave() {
             rformUpdateNutritionBadge(data.calories, data.protein, data.carbs, data.fat);
             rformShowPlaceholderWarning(data.unresolved_placeholders);
         }
+        rformShowFollowUpError(ok ? null : data.error);
         if (indicator) {
             indicator.textContent = ok ? '✓' : '⚠️';
             indicator.className = 'rform-autosave-indicator ' + (ok ? 'autosave-ok' : 'autosave-error');

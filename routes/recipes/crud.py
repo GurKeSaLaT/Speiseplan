@@ -18,7 +18,9 @@ from services.seasons import (
     SEASONS, save_recipe_seasons, describe_recipe_seasons, format_recipe_seasons
 )
 from services.ingredient_aliases import get_all_aliases, normalize_ingredient_name
-from services.follow_ups import forget_recipe, save_follow_up_links
+from services.follow_ups import (
+    FollowUpRuleError, forget_recipe, save_follow_up_links, unavailable_follow_up_ids,
+)
 from services.instruction_placeholders import unresolved_placeholders
 from services.nutrition import compute_calories, compute_recipe_nutrition
 from services.recipe_import import fetch_recipe_from_url, RecipeImportError
@@ -74,11 +76,25 @@ def recipe_create_view():
 
 
 def _follow_up_choices(plan_id, recipe=None):
-    """Main dishes plan_id can see, for the follow-up dish selects."""
-    query = visible_recipes_query(plan_id).filter(Recipe.is_side_dish.is_(False))
+    """Main dishes plan_id can see that recipe may take as follow-up (recipe
+    tree rules, services/follow_ups.py), plus the ones it already has so
+    their rows keep showing them."""
+    unavailable = unavailable_follow_up_ids(recipe.id if recipe else None)
     if recipe is not None:
-        query = query.filter(Recipe.id != recipe.id)
+        unavailable -= {link.follow_up_recipe_id for link in recipe.follow_ups}
+    query = visible_recipes_query(plan_id).filter(
+        Recipe.is_side_dish.is_(False), Recipe.id.notin_(unavailable)
+    )
     return query.order_by(Recipe.name).all()
+
+
+def _follow_up_rule_error(error):
+    """Rejects a save that breaks the recipe tree rules; nothing of it is
+    kept. Autosave gets JSON for the message under the follow-up rows."""
+    db.session.rollback()
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return {"ok": False, "error": str(error)}, 400
+    abort(400, description=str(error))
 
 
 @recipes_bp.route('/manage/recipe/edit/<int:id>')
@@ -215,9 +231,12 @@ def add_recipe():
     db.session.add(new_recipe)
     db.session.flush()
 
+    try:
+        save_follow_up_links(new_recipe, request.form, plan_id)
+    except FollowUpRuleError as error:
+        return _follow_up_rule_error(error)
     save_recipe_seasons(new_recipe.id, request.form)
     _add_ingredients(new_recipe.id, ingredients)
-    save_follow_up_links(new_recipe, request.form, plan_id)
 
     db.session.commit()
     return redirect(url_for('recipes.recipe_edit_view', id=new_recipe.id, plan_id=plan_id))
@@ -245,8 +264,11 @@ def edit_recipe(id):
     # Set explicitly: onupdate only fires when a column value changes.
     recipe.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    try:
+        save_follow_up_links(recipe, request.form, plan_id)
+    except FollowUpRuleError as error:
+        return _follow_up_rule_error(error)
     save_recipe_seasons(recipe.id, request.form)
-    save_follow_up_links(recipe, request.form, plan_id)
 
     Ingredient.query.filter_by(recipe_id=recipe.id).delete()
     ingredients = _parse_ingredient_rows(request.form)

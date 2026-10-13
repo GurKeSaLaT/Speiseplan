@@ -19,6 +19,8 @@ Rules (decided with the household):
 
 from datetime import timedelta
 
+from flask_babel import gettext as _
+
 from models import db, PendingFollowUp, PlanDay, Recipe
 from services.planning import (  # noqa: F401 - follow_up_target_ids re-exported
     follow_up_target_ids, friday_of, recent_usage_counts, weighted_recipe_choice,
@@ -284,11 +286,84 @@ def week_follow_up_data(plan_id, dates, ordered_days, day_labels):
     return {"followUpOf": follow_up_of, "followUpsOut": follow_ups_out}
 
 
+class FollowUpRuleError(ValueError):
+    """A follow-up link that breaks the recipe tree rules (ADR 0001); the
+    message names the recipes involved and is shown in the recipe form."""
+
+
+def _sources_by_follow_up():
+    """follow-up recipe id -> its source recipe ids, over all links in the
+    database (not only those visible to one plan). More than one source
+    only in data from before the tree rules."""
+    from models import RecipeFollowUp
+
+    sources = {}
+    for source_id, follow_up_id in db.session.query(RecipeFollowUp.recipe_id, RecipeFollowUp.follow_up_recipe_id):
+        sources.setdefault(follow_up_id, []).append(source_id)
+    return sources
+
+
+def _ancestor_paths(recipe_id, sources):
+    """ancestor id -> the recipe ids from that ancestor down to recipe_id."""
+    paths = {recipe_id: [recipe_id]}
+    queue = [recipe_id]
+    while queue:
+        current = queue.pop(0)
+        for source_id in sources.get(current, ()):
+            if source_id not in paths:
+                paths[source_id] = [source_id] + paths[current]
+                queue.append(source_id)
+    del paths[recipe_id]
+    return paths
+
+
+def unavailable_follow_up_ids(recipe_id):
+    """Recipes that recipe_id (None = a new recipe) may not newly take as
+    follow-up: itself, its ancestors (cycle) and recipes that already have
+    another source recipe."""
+    sources = _sources_by_follow_up()
+    taken = {follow_up_id for follow_up_id, source_ids in sources.items() if set(source_ids) - {recipe_id}}
+    if recipe_id is None:
+        return taken
+    return taken | {recipe_id} | set(_ancestor_paths(recipe_id, sources))
+
+
+def _check_tree_rules(recipe, new_ids, plan_id):
+    """Raises FollowUpRuleError for the first of new_ids (follow-ups recipe
+    doesn't have yet) that would close a cycle or give a follow-up recipe a
+    second source. Links recipe already has are left alone - rule breaks
+    from before the rules are the migration's business. Recipes plan_id
+    can't see aren't named."""
+    sources = _sources_by_follow_up()
+    ancestors = _ancestor_paths(recipe.id, sources) if recipe.id is not None else {}
+    names = {recipe.id: recipe.name}
+
+    def name(recipe_id):
+        if recipe_id not in names:
+            visible = visible_recipes_query(plan_id).filter(Recipe.id == recipe_id).first()
+            names[recipe_id] = visible.name if visible else _("a recipe in another plan")
+        return names[recipe_id]
+
+    for follow_up_id in new_ids:
+        if follow_up_id == recipe.id or follow_up_id in ancestors:
+            cycle = [recipe.id] + ancestors.get(follow_up_id, [recipe.id])
+            raise FollowUpRuleError(_("This follow-up link would close a cycle: %(cycle)s.",
+                                      cycle=" → ".join(name(i) for i in cycle)))
+        other_sources = [i for i in sources.get(follow_up_id, ()) if i != recipe.id]
+        if other_sources:
+            raise FollowUpRuleError(_(
+                "%(follow_up)s is already the follow-up dish of %(source)s, "
+                "and a follow-up recipe can only have one source recipe.",
+                follow_up=name(follow_up_id), source=name(other_sources[0])))
+
+
 def save_follow_up_links(recipe, form, plan_id):
     """Replaces recipe's follow-ups from the recipe form's parallel
-    fu_recipe[] / fu_min[] / fu_max[] lists. Unknown, side-dish, duplicate
-    or self references are skipped; days are clamped to 1..MAX_WINDOW_DAYS
-    with max >= min. No commit."""
+    fu_recipe[] / fu_min[] / fu_max[] lists. Unknown, side-dish or duplicate
+    references are skipped; days are clamped to 1..MAX_WINDOW_DAYS with
+    max >= min. A link that breaks the recipe tree rules (self-link, cycle,
+    second source) raises FollowUpRuleError before anything changes.
+    No commit."""
     from models import RecipeFollowUp
 
     def as_int(raw, default):
@@ -303,7 +378,7 @@ def save_follow_up_links(recipe, form, plan_id):
     wanted = {}
     for i, raw_id in enumerate(recipe_ids):
         follow_up_id = as_int(raw_id, None)
-        if follow_up_id is None or follow_up_id == recipe.id or follow_up_id in wanted:
+        if follow_up_id is None or follow_up_id in wanted:
             continue
         low = min(MAX_WINDOW_DAYS, max(1, as_int(mins[i] if i < len(mins) else None, 2)))
         high = min(MAX_WINDOW_DAYS, max(low, as_int(maxs[i] if i < len(maxs) else None, 3)))
@@ -313,11 +388,23 @@ def save_follow_up_links(recipe, form, plan_id):
             Recipe.id.in_(list(wanted)), Recipe.is_side_dish.is_(False)
         )
     } if wanted else set()
+    if recipe.id in wanted:
+        valid.add(recipe.id)  # reported as a cycle rather than skipped
 
-    recipe.follow_ups = [
-        RecipeFollowUp(follow_up_recipe_id=follow_up_id, min_days=low, max_days=high)
-        for follow_up_id, (low, high) in wanted.items() if follow_up_id in valid
-    ]
+    existing = {link.follow_up_recipe_id: link for link in recipe.follow_ups}
+    with db.session.no_autoflush:
+        _check_tree_rules(recipe, [i for i in wanted if i in valid and i not in existing], plan_id)
+
+    links = []
+    for follow_up_id, (low, high) in wanted.items():
+        if follow_up_id not in valid:
+            continue
+        # Kept links are updated in place: a new row for the same pair
+        # would be inserted before the old one is deleted (unique constraint).
+        link = existing.get(follow_up_id) or RecipeFollowUp(follow_up_recipe_id=follow_up_id)
+        link.min_days, link.max_days = low, high
+        links.append(link)
+    recipe.follow_ups = links
 
 
 def forget_recipe(recipe_id):

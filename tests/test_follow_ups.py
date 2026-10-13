@@ -301,9 +301,9 @@ def test_recipe_form_saves_follow_ups_and_from_previous(app, client, make_recipe
     b = make_recipe("Nudeln", category_id=cat)
     side = make_recipe("Salat", category_id=cat, is_side_dish=True)
     form = _recipe_form(cat, **{
-        "fu_recipe[]": [str(b), str(b), str(a), str(side), "999999", "x"],
-        "fu_min[]": ["0", "1", "2", "2", "2", "2"],
-        "fu_max[]": ["99", "1", "3", "3", "3", "3"],
+        "fu_recipe[]": [str(b), str(b), str(side), "999999", "x"],
+        "fu_min[]": ["0", "1", "2", "2", "2"],
+        "fu_max[]": ["99", "1", "3", "3", "3"],
     })
     resp = client.post(f"/edit-recipe/{a}", data=form, headers={"X-Requested-With": "XMLHttpRequest"})
     assert resp.status_code == 200

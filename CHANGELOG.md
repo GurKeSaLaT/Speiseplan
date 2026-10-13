@@ -2,6 +2,16 @@
 
 One line per change, newest first.
 
+## 2026-10-13
+
+- Follow-up links form recipe trees: a follow-up recipe has only one
+  source recipe and links never form a cycle. The recipe form only offers
+  follow-up dishes that have no source yet and aren't above the recipe in
+  its tree; a save that breaks this (also via links in plans you can't
+  see, or a link to the recipe itself) is refused with a message naming
+  the recipes. Re-saving a recipe that keeps a follow-up dish no longer
+  fails.
+
 ## 2026-10-12
 
 - Linked recipes: a recipe can list follow-up dishes with a day window
