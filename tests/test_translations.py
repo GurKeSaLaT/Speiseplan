@@ -12,6 +12,14 @@ from babel.messages.pofile import read_po
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYWORDS = {'_': None, 'gettext': None, 'ngettext': (1, 2), 'lazy_gettext': None, '_l': None}
+# mutants/ is mutmut's work copy of the source, with mutated strings.
+NOT_SOURCE_DIRS = {'tests', 'mutants'}
+
+
+def _is_source_dir(path: str) -> bool:
+    # Same dirs as babel's default filter (no '.*', '_*'), plus NOT_SOURCE_DIRS.
+    rel = os.path.relpath(path, ROOT)
+    return not os.path.basename(path).startswith(('.', '_')) and rel.split(os.sep)[0] not in NOT_SOURCE_DIRS
 
 
 def _extracted_msgids():
@@ -19,8 +27,7 @@ def _extracted_msgids():
         method_map, options_map = parse_mapping_cfg(f)
     ids = set()
     for _filename, _lineno, message, _comments, _context in extract_from_dir(
-        ROOT, method_map, options_map, keywords=KEYWORDS,
-        directory_filter=lambda path: not os.path.basename(path).startswith('.') and 'tests' not in path,
+        ROOT, method_map, options_map, keywords=KEYWORDS, directory_filter=_is_source_dir,
     ):
         ids.add(message[0] if isinstance(message, tuple) else message)
     return ids
