@@ -511,7 +511,7 @@ def _migrate_pending_follow_up_unique_date():
     ]
     if not unique_constraints:
         return
-    columns = "id, plan_id, date, recipe_id, is_side, servings, source_day_id, source_side_id"
+    columns = _identifier_list(", ".join(column.name for column in PendingFollowUp.__table__.columns))
     db.session.execute(text("ALTER TABLE pending_follow_up RENAME TO pending_follow_up_old"))
     for index in PendingFollowUp.__table__.indexes:
         db.session.execute(text(f"DROP INDEX IF EXISTS {_identifier(index.name)}"))

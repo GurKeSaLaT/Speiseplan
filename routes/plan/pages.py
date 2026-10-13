@@ -19,7 +19,7 @@ from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
 from services.follow_ups import (
-    assign_follow_up, couple, incoming_follow_ups, refill_released, release_follow_ups, week_follow_up_data,
+    add_side, assign_follow_up, couple, incoming_follow_ups, refill_released, release_follow_ups, week_follow_up_data,
     week_days, week_shopping_servings,
 )
 from services.planning import reroll_choice
@@ -275,7 +275,7 @@ def week_generate(start_date):
         synchronize_session=False)
     # Recreating replaces this week's dishes, so their follow-ups elsewhere
     # are released (and re-rolled below unless a new follow-up takes them).
-    freed_days = [pd for day in week_days(plan.id, dates) for pd in release_follow_ups(day)[0] if pd.date not in dates]
+    freed_days = [pd for day in week_days(plan.id, dates) for pd in release_follow_ups(day).freed_days if pd.date not in dates]
     db.session.flush()
 
     generated = generate_week(
@@ -298,9 +298,7 @@ def week_generate(start_date):
 
         PlanDaySide.query.filter_by(plan_day_id=plan_day.id).delete()
         for side_recipe in final_side_plan[i]:
-            side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=side_recipe.id)
-            couple(side, incoming_side_sources.get((i, side_recipe.id)))
-            db.session.add(side)
+            add_side(plan_day, side_recipe.id, incoming_side_sources.get((i, side_recipe.id)))
 
     for i, plan_day in enumerate(plan_days):
         if i in generated.follow_up_couplings:
@@ -309,9 +307,7 @@ def week_generate(start_date):
             source = incoming_sources.get(i) if final_plan[i] is not None else None
         couple(plan_day, source)
     for i, recipe, source_index in generated.side_follow_ups:
-        side = PlanDaySide(plan_day_id=plan_days[i].id, recipe_id=recipe.id)
-        couple(side, plan_days[source_index])
-        db.session.add(side)
+        add_side(plan_days[i], recipe.id, plan_days[source_index])
     for day, recipe, source_index in generated.outside_follow_ups:
         assign_follow_up(plan.id, recipe, day, plan_days[source_index])
     db.session.flush()

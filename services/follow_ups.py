@@ -8,7 +8,8 @@ Rules (decided with the household):
   (min_days..max_days later), preferred over normal filling. No free day
   -> A without B. B is a main dish or a side as its recipe says: a main
   dish needs a day without one, a side is added as an extra side on any
-  day that isn't excluded (no check whether it fits that day's main dish). Several follow-ups -> one of those with a free day is
+  day that isn't excluded (no check whether it fits that day's main dish).
+  Several follow-ups -> one of those with a free day is
   drawn (favorites/recent use weighted like choose_recipe).
 - A day in a week that doesn't exist yet is free unless something is
   already pending there; B then waits as a PendingFollowUp and is offered
@@ -134,13 +135,21 @@ def assign_follow_up(plan_id, follow_up_recipe, day, source):
         dish = PendingFollowUp(plan_id=plan_id, date=day, recipe_id=follow_up_recipe.id, is_side=is_side)
         db.session.add(dish)
     elif is_side:
-        dish = PlanDaySide(plan_day_id=plan_day.id, recipe_id=follow_up_recipe.id)
-        db.session.add(dish)
+        add_side(plan_day, follow_up_recipe.id, source)
+        return
     else:
         dish = plan_day
         plan_day.main_recipe_id = follow_up_recipe.id
         plan_day.cooked = False
     couple(dish, source)
+
+
+def add_side(plan_day, recipe_id, source=None):
+    """Adds a side to plan_day, coupled to source if given. No commit."""
+    side = PlanDaySide(plan_day_id=plan_day.id, recipe_id=recipe_id)
+    couple(side, source)
+    db.session.add(side)
+    return side
 
 
 def place_follow_up(plan_id, source_day, exclude_ids=()):
@@ -158,11 +167,15 @@ def place_follow_up(plan_id, source_day, exclude_ids=()):
     return day
 
 
+# freed_days: PlanDays whose follow-up main dish was cleared, for re-planning;
+# released: whether anything at all was released.
+Release = namedtuple('Release', 'freed_days released')
+
+
 def release_follow_ups(source_day):
     """source_day's main dish goes away: the days of its follow-up main
     dishes lose their dish (returned, for re-planning), its follow-up sides
-    and pending follow-ups are dropped. Returns (freed days, whether
-    anything was released). No commit."""
+    and pending follow-ups are dropped. No commit."""
     freed = PlanDay.query.filter_by(source_day_id=source_day.id).all()
     for plan_day in freed:
         couple(plan_day, None)
@@ -170,7 +183,7 @@ def release_follow_ups(source_day):
         plan_day.cooked = False
     dropped = PlanDaySide.query.filter_by(source_day_id=source_day.id).delete()
     dropped += PendingFollowUp.query.filter_by(source_day_id=source_day.id).delete()
-    return freed, bool(freed) or dropped > 0
+    return Release(freed, bool(freed) or dropped > 0)
 
 
 def replace_main_dish(plan_id, plan_day, new_recipe, refill):
