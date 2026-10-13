@@ -25,6 +25,12 @@ Rules (decided with the household):
   chain; replacing or removing B drops its coupling, so A is no longer
   bought for B's servings, and releases B's own follow-ups.
 - Couplings follow the dishes on swaps and when a side is moved.
+- Nachträgliche Kopplung: a follow-up recipe that lands on a day without a
+  coupling (picked by hand, set as a side, pinned in the create form)
+  couples to the latest dish of its source recipe in the link's window
+  that isn't cooked and isn't before today, even if that dish has
+  follow-ups already (couple_retroactively). No such dish -> it stays a
+  normal dish and all its ingredients are bought.
 
 A coupling (Kopplung) is stored on the follow-up dish and references its
 source dish (models.calendar.CoupledDish), not a day: the main dish of a
@@ -38,7 +44,7 @@ from flask_babel import gettext as _
 
 from sqlalchemy import ColumnElement
 
-from models import db, PendingFollowUp, PlanDay, PlanDaySide, Recipe
+from models import db, PendingFollowUp, PlanDay, PlanDaySide, Recipe, RecipeFollowUp
 from models.calendar import CoupledDish
 from services.planning import (  # noqa: F401 - follow_up_target_ids re-exported
     follow_up_target_ids, friday_of, recent_usage_counts, reroll_choice, weighted_recipe_choice, week_dates_for,
@@ -47,6 +53,17 @@ from services.recipe_trees import complete_tree
 from services.recipe_visibility import visible_recipes_query
 
 MAX_WINDOW_DAYS = 14
+
+
+def today() -> date:
+    """The current date, for "not before today" (tests replace it)."""
+    return date.today()
+
+
+def _window(link: RecipeFollowUp) -> tuple[int, int]:
+    """(first, last) day offset of link's window, clamped to 1..MAX_WINDOW_DAYS."""
+    low = max(1, link.min_days)
+    return low, min(MAX_WINDOW_DAYS, max(low, link.max_days))
 
 
 def follow_up_options(recipe, plan_id, exclude_ids=()):
@@ -71,8 +88,7 @@ def pick_follow_up(recipe, plan_id, source_date, is_free, exclude_ids=()):
     False) or a side; each option uses the earliest free day of its window."""
     candidates = {}
     for link in follow_up_options(recipe, plan_id, exclude_ids):
-        low = max(1, link.min_days)
-        high = min(MAX_WINDOW_DAYS, max(low, link.max_days))
+        low, high = _window(link)
         for offset in range(low, high + 1):
             day = source_date + timedelta(days=offset)
             if is_free(day, link.follow_up_recipe.is_side_dish):
@@ -226,6 +242,35 @@ def continue_chain(plan_id: int, dish: Dish) -> date | None:
     return place_follow_up(plan_id, dish)
 
 
+def couple_retroactively(plan_id: int, dish: PlanDay | PlanDaySide) -> bool:
+    """Nachträgliche Kopplung: dish (a PlanDay's main dish or a side) landed
+    without a coupling - picked by hand, set as a side or pinned in the
+    create form. If its recipe is a follow-up recipe, dish is coupled to
+    the latest dish (main dish before side on the same day) of its source
+    recipe in the link's window before it that isn't cooked and isn't
+    before today, even if that source has follow-ups already. Returns True
+    if dish was coupled. No commit."""
+    db.session.flush()
+    db.session.refresh(dish)  # its recipe may just have been set by id
+    recipe = _dish_recipe(dish)
+    if recipe is None or dish.is_coupled:
+        return False
+    day = _dish_date(dish)
+    candidates = []
+    for link in RecipeFollowUp.query.filter_by(follow_up_recipe_id=recipe.id):
+        low, high = _window(link)
+        in_window = (PlanDay.plan_id == plan_id, PlanDay.date >= max(today(), day - timedelta(days=high)),
+                     PlanDay.date <= day - timedelta(days=low))
+        candidates += PlanDay.query.filter(
+            *in_window, PlanDay.main_recipe_id == link.recipe_id, PlanDay.cooked.is_(False)).all()
+        candidates += PlanDaySide.query.join(PlanDay, PlanDaySide.plan_day_id == PlanDay.id).filter(
+            *in_window, PlanDaySide.recipe_id == link.recipe_id, PlanDaySide.cooked.is_(False)).all()
+    if not candidates:
+        return False
+    couple(dish, max(candidates, key=lambda source: (_dish_date(source), isinstance(source, PlanDay))))
+    return True
+
+
 # freed_days: PlanDays whose follow-up main dish was cleared, for re-planning;
 # released: whether anything at all was released.
 Release = namedtuple('Release', 'freed_days released')
@@ -256,9 +301,11 @@ def release_follow_ups(source: Dish) -> Release:
 def replace_main_dish(plan_id: int, plan_day: PlanDay, new_recipe: Recipe | None) -> bool:
     """Sets plan_day's main dish (None clears it) and keeps links right:
     plan_day stops being a follow-up; if it was a source, its follow-ups
-    are released; a new source gets a follow-up (possibly on a released
-    day); released days still empty are rolled anew (refill_released).
-    Returns True if any coupling changed (the client then reloads)."""
+    are released; a new follow-up recipe couples to an earlier source dish
+    (couple_retroactively); a new source gets a follow-up (possibly on a
+    released day); released days still empty are rolled anew
+    (refill_released). Returns True if any coupling changed (the client
+    then reloads)."""
     changed = couple(plan_day, None)
     db.session.flush()  # a new plan_day gets its id
     freed, released = release_follow_ups(plan_day)
@@ -266,6 +313,8 @@ def replace_main_dish(plan_id: int, plan_day: PlanDay, new_recipe: Recipe | None
 
     plan_day.main_recipe_id = new_recipe.id if new_recipe else None
     plan_day.cooked = False
+    if couple_retroactively(plan_id, plan_day):
+        changed = True
     if new_recipe is not None and continue_chain(plan_id, plan_day) is not None:
         changed = True
     refill_released(plan_id, freed)
@@ -274,13 +323,16 @@ def replace_main_dish(plan_id: int, plan_day: PlanDay, new_recipe: Recipe | None
 
 def replace_side_dish(plan_id: int, side: PlanDaySide, new_recipe: Recipe) -> bool:
     """The side counterpart of replace_main_dish: side stops being a
-    follow-up, its own follow-ups are released, the new recipe places a
-    follow-up if it has one, released days are rolled anew. Returns True if
-    any coupling changed. No commit."""
+    follow-up, its own follow-ups are released, a follow-up recipe couples
+    to an earlier source dish, the new recipe places a follow-up if it has
+    one, released days are rolled anew. Returns True if any coupling
+    changed. No commit."""
     changed = couple(side, None)
     freed, released = release_follow_ups(side)
     side.recipe_id = new_recipe.id
     side.cooked = False
+    if couple_retroactively(plan_id, side):
+        changed = True
     if continue_chain(plan_id, side) is not None:
         changed = True
     refill_released(plan_id, freed)
@@ -599,8 +651,6 @@ def _sources_by_follow_up():
     """follow-up recipe id -> its source recipe ids, over all links in the
     database (not only those visible to one plan). More than one source
     only in data from before the tree rules."""
-    from models import RecipeFollowUp
-
     sources = {}
     for source_id, follow_up_id in db.session.query(RecipeFollowUp.recipe_id, RecipeFollowUp.follow_up_recipe_id):
         sources.setdefault(follow_up_id, []).append(source_id)
@@ -666,8 +716,6 @@ def remove_tree_rule_breaks():
     removed if its follow-up recipe already has a source recipe or it would
     close a cycle, so the older link always wins. Returns the removed links
     as (link id, source id, follow-up id, reason). No commit."""
-    from models import RecipeFollowUp
-
     source_of = {}
     removed = []
     for link in RecipeFollowUp.query.order_by(RecipeFollowUp.id).all():
@@ -697,8 +745,6 @@ def save_follow_up_links(recipe, form, plan_id):
     second source) raises FollowUpRuleError before anything changes. A new
     link that merges two recipe trees links the merged tree into every plan
     either was in (services/recipe_trees.py). No commit."""
-    from models import RecipeFollowUp
-
     def as_int(raw, default):
         try:
             return int(raw)
@@ -747,8 +793,6 @@ def forget_recipe(recipe_id: int) -> None:
     follow-ups where it is the dish (stored follow-ups stay as normal
     dishes, pending ones are dropped with their chains), its own couplings
     and pending entries. No commit."""
-    from models import RecipeFollowUp
-
     RecipeFollowUp.query.filter_by(follow_up_recipe_id=recipe_id).delete()
     sources = PlanDay.query.filter_by(main_recipe_id=recipe_id).all()
     sources += PlanDaySide.query.filter_by(recipe_id=recipe_id).all()

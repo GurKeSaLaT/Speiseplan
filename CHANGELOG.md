@@ -4,6 +4,14 @@ One line per change, newest first.
 
 ## 2026-10-13
 
+- A follow-up dish you pick yourself (as main dish or side, or as a fixed
+  dish when creating a week) now finds the dish it is made from: the most
+  recent one a few days before it (as set in the recipe) that isn't cooked
+  yet and isn't in the past, even if that dish already feeds another
+  follow-up. That dish is then bought for more servings: lines already
+  ticked off stay ticked and only the extra amount shows up as a new
+  open line. If there is no such dish, the follow-up stays a normal dish
+  and all its ingredients are bought.
 - Follow-up chains (e.g. roast -> ragout -> lasagne): a planned follow-up
   dish plans its own follow-up, whether it was placed by generating the
   week or picked by hand, and also while it still waits for its week:

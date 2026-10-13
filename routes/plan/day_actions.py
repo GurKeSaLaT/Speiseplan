@@ -44,9 +44,11 @@ def reroll_day(day_date):
 
 @plan_bp.route('/day/<day_date>/set-main', methods=['POST'])
 def set_main_day(day_date):
-    """Sets a manually chosen main dish - none of the automatic rules apply
-    (a follow-up dish picked by hand is just a normal dish). Also
-    un-excludes the day; links are kept right like on reroll."""
+    """Sets a manually chosen main dish - no category or neighbor rules
+    apply. A follow-up recipe couples to the latest fitting source dish
+    before it, if there is one (services/follow_ups.py:
+    couple_retroactively), otherwise it is a normal dish. Also un-excludes
+    the day; links are kept right like on reroll."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400

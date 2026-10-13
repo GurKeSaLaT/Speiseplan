@@ -1206,3 +1206,159 @@ def test_removing_sides_releases_the_chain_below(app, client, make_recipe, make_
     assert _sides(app, client.plan_id) == [[]] * 7
     assert _days(app, client.plan_id)[4][0] not in (None, s)
     _assert_consistent(app, client.plan_id)
+
+
+# --- retroactive coupling ---
+
+def _today(monkeypatch, day):
+    """Lets the follow-up rules see day as today ("not before today")."""
+    monkeypatch.setattr("services.follow_ups.today", lambda: day)
+
+
+def _sources_week(app, client, make_recipe, make_category, monkeypatch):
+    """Ofengemüse on Friday and Saturday, linked to its follow-up Nudeln (2-3
+    days) only afterwards, so nothing was placed automatically; today is
+    Friday."""
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
+    fillers = _fillers(make_recipe, cat, count=10)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(a), "day_recipe_1": str(a)})
+    _link(app, a, b)
+    _today(monkeypatch, FRIDAY)
+    return a, b, fillers
+
+
+def test_manual_pick_couples_to_the_latest_source_in_its_window(
+        app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    # Monday: Friday (3 days before) and Saturday (2 days before) fit, Saturday wins.
+    body = client.post("/day/2026-06-15/set-main", json={"recipe_id": b}).get_json()
+    assert body["links_changed"] is True
+    assert _days(app, client.plan_id)[3] == (b, FRIDAY + timedelta(days=1), False)
+    assert body["shopping_servings"][1]["main"] == {"servings": 4, "followUpServings": 2, "skipPrecooked": False}
+    assert body["shopping_servings"][3]["main"]["skipPrecooked"] is True
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+    _assert_consistent(app, client.plan_id)
+
+
+def test_manual_pick_skips_cooked_source_dishes(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    client.post("/day/2026-06-13/cooked", json={"cooked": True})
+    client.post("/day/2026-06-15/set-main", json={"recipe_id": b})
+    assert _days(app, client.plan_id)[3] == (b, FRIDAY, False)
+
+
+def test_manual_pick_skips_source_dishes_before_today(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    _today(monkeypatch, FRIDAY + timedelta(days=1))
+    client.post("/day/2026-06-13/cooked", json={"cooked": True})
+    # Friday is past, Saturday cooked: Nudeln stays a normal dish, all bought.
+    body = client.post("/day/2026-06-15/set-main", json={"recipe_id": b}).get_json()
+    assert body["links_changed"] is False
+    assert _days(app, client.plan_id)[3][:2] == (b, None)
+    assert body["shopping_servings"][3]["main"]["skipPrecooked"] is False
+
+
+def test_manual_pick_outside_the_window_stays_a_normal_dish(app, client, make_recipe, make_category, monkeypatch):
+    a, b, _ = _sources_week(app, client, make_recipe, make_category, monkeypatch)
+    # Thursday is 5 and 6 days after the two source dishes, the window is 2-3.
+    client.post("/day/2026-06-18/set-main", json={"recipe_id": b})
+    assert _days(app, client.plan_id)[6][:2] == (b, None)
+
+
+def test_retroactive_coupling_accepts_a_source_with_follow_ups(app, client, make_recipe, make_category, monkeypatch):
+    from models import Recipe, db
+    a, b, fillers = _week_with_link(app, client, make_recipe, make_category)
+    with app.app_context():
+        cat = db.session.get(Recipe, a).category_id
+    b2 = make_recipe("Gemüsesuppe", category_id=cat)
+    _link(app, a, b2)
+    _today(monkeypatch, FRIDAY)
+
+    client.post("/day/2026-06-15/set-main", json={"recipe_id": b2})
+    days = _days(app, client.plan_id)
+    assert days[2] == (b, FRIDAY, False) and days[3] == (b2, FRIDAY, False)
+    # One big batch for both follow-ups: 2 + 2 + 2.
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 0)["main"]["servings"] == 6
+    _assert_consistent(app, client.plan_id)
+
+
+def test_side_picked_by_hand_couples_retroactively(app, client, make_recipe, make_category, monkeypatch):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    salat = make_recipe("Salat", category_id=cat, is_side_dish=True)
+    _fillers(make_recipe, cat, count=10)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(a), "day_side_recipes_3[]": str(salat)})
+    _link(app, a, s)
+    _today(monkeypatch, FRIDAY)
+
+    added = client.post("/day/2026-06-14/side/add", json={"recipe_id": s}).get_json()
+    assert added["links_changed"] is True
+    assert _sides(app, client.plan_id)[2] == [(s, FRIDAY)]
+    assert added["shopping_servings"][0]["main"]["servings"] == 4
+
+    client.post(f"/day/2026-06-14/side/{added['side_id']}/remove")
+    salat_id = _side_id(app, client.plan_id, salat)
+    body = client.post(f"/day/2026-06-15/side/{salat_id}/set", json={"recipe_id": s}).get_json()
+    assert body["links_changed"] is True
+    assert _sides(app, client.plan_id)[3] == [(s, FRIDAY)]
+    _assert_consistent(app, client.plan_id)
+
+
+def test_fixed_dish_couples_to_a_source_in_the_previous_week(app, client, make_recipe, make_category, monkeypatch):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
+    s = make_recipe("Gemüsereis", category_id=cat, is_side_dish=True)
+    _fillers(make_recipe, cat, count=14)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(a)})
+    _link(app, a, b)
+    _link(app, a, s, min_days=3, max_days=4)
+    _today(monkeypatch, FRIDAY)
+
+    # Wednesday's Ofengemüse: Nudeln next Friday (2 days), Gemüsereis next Saturday (3 days).
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(b), "day_side_recipes_1[]": str(s)})
+    assert _days(app, client.plan_id, NEXT_FRIDAY)[0] == (b, FRIDAY + timedelta(days=5), False)
+    assert _sides(app, client.plan_id, NEXT_FRIDAY)[1] == [(s, FRIDAY + timedelta(days=5))]
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 6
+    _assert_consistent(app, client.plan_id)
+
+
+def test_fixed_dishes_in_the_same_week_couple(app, client, make_recipe, make_category, monkeypatch):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
+    _link(app, a, b)
+    _fillers(make_recipe, cat)
+    _today(monkeypatch, FRIDAY)
+
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(a), "day_recipe_3": str(b)})
+    days = _days(app, client.plan_id)
+    assert days[3] == (b, FRIDAY, False)
+    assert [d[0] for d in days].count(b) == 1
+    _assert_consistent(app, client.plan_id)
+
+
+def test_retroactive_coupling_keeps_ticked_lines(app, client, make_recipe, make_category, monkeypatch):
+    from models import ShoppingListCheck
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat,
+                    ingredients=[{"name": "Kartoffeln", "amount": 500, "unit": "g", "category": "Gemüse"}])
+    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
+    _fillers(make_recipe, cat, count=10)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(a)})
+    _link(app, a, b)
+    _today(monkeypatch, FRIDAY)
+    # 500 g for 2 servings bought and ticked.
+    client.post(f"/plan/{WEEK}/shopping-check", json={"key": "item:Kartoffeln|||g", "checked": True, "amount": 500})
+
+    client.post("/day/2026-06-14/set-main", json={"recipe_id": b})
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    # Now bought for 4: the client shows the ticked 500 g and 500 g more as an
+    # open line (plan-shopping.js, test_static_js: ticks keep bought amounts).
+    assert _shopping(data, 0)["main"]["servings"] == 4
+    assert data["shoppingChecks"] == [{"key": "item:Kartoffeln|||g", "amount": 500.0, "category": None}]
+    with app.app_context():
+        assert ShoppingListCheck.query.one().amount == 500

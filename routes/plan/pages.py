@@ -20,8 +20,9 @@ from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
 from services.follow_ups import (
-    add_side, assign_follow_up, continue_chain, couple, incoming_follow_ups, keeping_follow_ups, refill_released,
-    release_week, take_over_incoming, week_follow_up_data, week_shopping_servings,
+    add_side, assign_follow_up, continue_chain, couple, couple_retroactively, incoming_follow_ups,
+    keeping_follow_ups, refill_released, release_week, take_over_incoming, week_follow_up_data,
+    week_shopping_servings,
 )
 from services.week_generation import generate_week
 from routes.plan import plan_bp
@@ -307,6 +308,10 @@ def week_generate(start_date: str) -> ResponseReturnValue:
     ])
     for follow_up, source in generated.follow_up_couplings.items():
         couple(follow_up.resolve(plan_days, stored_sides), source.resolve(plan_days, stored_sides))
+    # Pinned follow-up recipes without a coupling look back for a source
+    # dish, in this week or an earlier one (drawn dishes are never follow-ups).
+    for dish in [*plan_days, *(side for sides in stored_sides for side in sides)]:
+        couple_retroactively(plan.id, dish)
     # All of them first: generate_week reserved their days, a chain below
     # one of them must not take another one's day.
     outside = [

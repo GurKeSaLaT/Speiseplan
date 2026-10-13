@@ -17,8 +17,8 @@ from flask_babel import gettext as _
 from models import db, Plan, PlanDay, PlanDaySide, Recipe
 from services.auth import current_plan
 from services.follow_ups import (
-    add_side as add_side_to_day, has_follow_ups, place_follow_up, remove_side_dish, replace_side_dish,
-    week_shopping_servings,
+    add_side as add_side_to_day, couple_retroactively, has_follow_ups, place_follow_up, remove_side_dish,
+    replace_side_dish, week_shopping_servings,
 )
 from services.planning import parse_iso_date, week_side_recipe_ids, choose_recipe, jsonify_side
 from services.recipe_visibility import visible_recipes_query
@@ -39,7 +39,9 @@ def _get_or_create_plan_day(target_date, plan_id):
 def add_side(day_date: str) -> ResponseReturnValue:
     """Adds a side: the given recipe_id as-is (manual pick), or without one
     a random side not yet used in the week. Either way a side with
-    follow-up links places one of its follow-ups."""
+    follow-up links places one of its follow-ups, and a follow-up recipe
+    picked by hand couples to an earlier source dish
+    (services/follow_ups.py: couple_retroactively)."""
     target_date = parse_iso_date(day_date)
     if target_date is None:
         return {"error": _("Invalid date")}, 400
@@ -65,7 +67,8 @@ def add_side(day_date: str) -> ResponseReturnValue:
             return {"error": _("No more side dishes available in the database!")}, 400
 
     plan_day_side = add_side_to_day(plan_day, chosen.id)
-    links_changed = place_follow_up(plan.id, plan_day_side) is not None
+    coupled = couple_retroactively(plan.id, plan_day_side)
+    links_changed = place_follow_up(plan.id, plan_day_side) is not None or coupled
     db.session.commit()
     return {
         **jsonify_side(plan_day_side, plan.id), "links_changed": links_changed,
