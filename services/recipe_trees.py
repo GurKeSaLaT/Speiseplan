@@ -57,10 +57,14 @@ def _tree_plan_ids(recipe_ids):
 
 
 def _link_into(recipe_ids, plan_ids):
+    """Returns the (recipe id, plan id) pairs that were newly linked."""
     plans = _plans_by_recipe(recipe_ids)
-    for recipe_id in recipe_ids:
-        for plan_id in plan_ids - plans.get(recipe_id, set()):
+    added = []
+    for recipe_id in sorted(recipe_ids):
+        for plan_id in sorted(plan_ids - plans.get(recipe_id, set())):
             db.session.add(RecipePlanLink(recipe_id=recipe_id, plan_id=plan_id))
+            added.append((recipe_id, plan_id))
+    return added
 
 
 def link_tree(recipe_id, plan_id):
@@ -87,8 +91,27 @@ def complete_tree(recipe_id):
     """Links every recipe of recipe_id's tree into every plan any of them is
     in - after a follow-up link merged two trees. Flushes, no commit."""
     db.session.flush()
-    tree = tree_recipe_ids(recipe_id)
-    _link_into(tree, _tree_plan_ids(tree))
+    _complete(tree_recipe_ids(recipe_id))
+
+
+def _complete(tree):
+    return _link_into(tree, _tree_plan_ids(tree))
+
+
+def complete_all_trees():
+    """complete_tree() for every tree - repairs trees that data from before
+    the tree rules left partially linked. Returns the newly linked (recipe
+    id, plan id) pairs. Flushes, no commit."""
+    db.session.flush()
+    neighbours = _neighbours()
+    done, added = set(), []
+    for recipe_id in sorted(neighbours):
+        if recipe_id in done:
+            continue
+        tree = _component(recipe_id, neighbours)
+        done |= tree
+        added += _complete(tree)
+    return added
 
 
 def tree_owner_plan_ids(recipe_id):

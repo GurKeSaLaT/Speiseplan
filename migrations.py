@@ -8,10 +8,15 @@ constraints via ALTER TABLE, hence the occasional table rebuild.
 
 import re
 
+from flask import current_app
 from sqlalchemy import text
 
-from models import db, ExtraShoppingItem, Plan, PlanMembership, RecipeSeason, PlanDaySide, User
+from models import (
+    db, ExtraShoppingItem, Plan, PlanMembership, Recipe, RecipeSeason, PlanDaySide, User,
+)
+from services.follow_ups import remove_tree_rule_breaks
 from services.plans import seed_default_categories
+from services.recipe_trees import complete_all_trees
 from services.planning import friday_of
 from services.seasons import SEASON_PRESETS
 from services.units import renormalize_existing_ingredients
@@ -457,6 +462,30 @@ def _migrate_follow_up_columns():
     db.session.commit()
 
 
+def _migrate_follow_up_links_to_tree_rules():
+    """Brings follow-up links from before the recipe tree rules (ADR 0001)
+    in line: rule-breaking links are removed, then every tree is linked
+    completely into all plans of any of its recipes. Logs each change; a
+    second run finds nothing to do."""
+    removed = remove_tree_rule_breaks()
+    added = complete_all_trees()
+    if not removed and not added:
+        return
+    names = dict(db.session.query(Recipe.id, Recipe.name))
+    plan_names = dict(db.session.query(Plan.id, Plan.name))
+    for link_id, source_id, follow_up_id, reason in removed:
+        current_app.logger.warning(
+            "Recipe tree rules: removed follow-up link %s: %s (%s) -> %s (%s), %s",
+            link_id, names.get(source_id), source_id, names.get(follow_up_id), follow_up_id, reason,
+        )
+    for recipe_id, plan_id in added:
+        current_app.logger.warning(
+            "Recipe tree rules: linked %s (%s) into plan %s (%s) to complete its recipe tree",
+            names.get(recipe_id), recipe_id, plan_names.get(plan_id), plan_id,
+        )
+    db.session.commit()
+
+
 def init_db():
     db.create_all()
 
@@ -484,5 +513,6 @@ def init_db():
     _seed_default_categories_for_all_plans()
     _migrate_ensure_starred_membership()
     _migrate_extra_shopping_item_week_start_to_friday()
+    _migrate_follow_up_links_to_tree_rules()
 
     renormalize_existing_ingredients()
