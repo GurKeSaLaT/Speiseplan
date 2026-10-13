@@ -343,3 +343,68 @@ def test_week_view_carries_link_data(app, client, make_recipe, make_category):
     out = data["followUpsOut"][0]
     assert [(e["index"], e["name"], e["pending"]) for e in out] == [(2, "Nudeln mit Gemüsesoße", False)]
     assert data["followUpOf"][0] is None and data["followUpsOut"][2] == []
+
+
+# --- shopping servings (PLAN_DATA.shoppingServings, ADR 0001) ---
+
+def _shopping(data, index):
+    return data["shoppingServings"][index]
+
+
+def test_week_view_carries_shopping_servings_per_dish(app, client, make_recipe, make_category):
+    _week_with_link(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-14/servings", json={"servings": 3})
+    side = make_recipe("Salat", category_id=make_category("Beilagen"), is_side_dish=True)
+    side_id = client.post("/day/2026-06-12/side/add", json={"recipe_id": side}).get_json()["side_id"]
+
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    # Source dish: own 2 + the follow-up's 3; its sides only their own day's 2.
+    assert _shopping(data, 0)["main"] == {"servings": 5, "followUpServings": 3, "skipPrecooked": False}
+    assert _shopping(data, 0)["sides"] == {str(side_id): {"servings": 2, "followUpServings": 0, "skipPrecooked": False}}
+    # Coupled follow-up dish: its own servings, pre-cooked ingredients skipped.
+    assert _shopping(data, 2)["main"] == {"servings": 3, "followUpServings": 0, "skipPrecooked": True}
+    assert _shopping(data, 1)["main"] == {"servings": 2, "followUpServings": 0, "skipPrecooked": False}
+    assert _shopping(data, 1)["sides"] == {}
+
+
+def test_shopping_servings_count_follow_ups_outside_the_week(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    a = make_recipe("Ofengemüse", category_id=cat)
+    b = make_recipe("Nudeln mit Gemüsesoße", category_id=cat)
+    _link(app, a, b)
+    _fillers(make_recipe, cat, count=14)
+    # A on Wednesday: the follow-up waits as pending in next week (2 servings).
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(a)})
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"]["servings"] == 4
+
+    # Next week created with it: a stored day outside this week counts too.
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(b)})
+    client.post("/day/2026-06-19/servings", json={"servings": 4})
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"] == {
+        "servings": 6, "followUpServings": 4, "skipPrecooked": False}
+    assert _shopping(_plan_data(client.get("/plan/2026-06-19")), 0)["main"]["skipPrecooked"] is True
+
+
+def test_week_without_dishes_has_empty_shopping_servings(client):
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    assert data["shoppingServings"] == [{"main": None, "sides": {}}] * 7
+
+
+def test_changing_servings_returns_fresh_shopping_servings(app, client, make_recipe, make_category):
+    _week_with_link(app, client, make_recipe, make_category)
+    body = client.post("/day/2026-06-14/servings", json={"servings": 4}).get_json()
+    assert body["shopping_servings"][0]["main"]["servings"] == 6
+    assert body["shopping_servings"][2]["main"]["servings"] == 4
+
+
+def test_dish_actions_return_fresh_shopping_servings(app, client, make_recipe, make_category):
+    _week_with_link(app, client, make_recipe, make_category)
+    side = make_recipe("Salat", category_id=make_category("Beilagen"), is_side_dish=True)
+    added = client.post("/day/2026-06-13/side/add", json={"recipe_id": side}).get_json()
+    assert added["shopping_servings"][1]["sides"] == {
+        str(added["side_id"]): {"servings": 2, "followUpServings": 0, "skipPrecooked": False}}
+
+    rerolled = client.post("/day/2026-06-13/reroll-main").get_json()
+    assert rerolled["links_changed"] is False
+    assert rerolled["shopping_servings"][1]["main"]["servings"] == 2
+    assert client.post("/day/2026-06-17/swap/2026-06-18").get_json()["shopping_servings"][0]["main"]["servings"] == 4
