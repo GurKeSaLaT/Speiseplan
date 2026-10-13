@@ -80,3 +80,27 @@ def test_nutrition_labels_are_passed_to_js_in_german(app, client):
     assert 'carbs_abbr: "KH"' in page
     assert 'week_total_label: "Woche"' in page
     assert 'per_day_planned_label: "pro Tag ({count} geplant)"' in page
+
+
+def test_german_strings_avoid_terms_the_glossary_rules_out():
+    # CONTEXT.md: "Vorgericht" sounds like a starter (it is the Ausgangsgericht
+    # / a vorgekochte Zutat), recipes shared into other plans are "verlinkt",
+    # not "verknüpft" (Verknüpfung is the follow-up rule), and "Rest" only
+    # means last week's leftovers, not what a follow-up dish is made from.
+    catalog = _catalog()
+    offending = [m.string for m in catalog if m.id and m.string and not m.fuzzy
+                 and re.search(r'Vorgericht|verknüpfte[nr]? Pl[aä]n|aus dem Rest', str(m.string), re.I)]
+    assert offending == []
+
+
+def test_follow_up_labels_use_glossary_terms_in_german(app, client):
+    from models import User, db
+
+    with app.app_context():
+        db.session.get(User, client.user_id).language = 'de'
+        db.session.commit()
+
+    page = client.get("/plan/2026-06-12").get_data(as_text=True)
+    assert 'follow_up_of: "Ausgangsgericht: {name} ({day})"' in page
+    assert 'from_previous_short: "vorgekocht im Ausgangsgericht"' in page
+    assert 'from_previous_title: "Vorgekocht: wird nicht eingekauft' in page

@@ -351,7 +351,7 @@ msgstr "Mengen-Platzhalter einfügen"
 #: templates/base.html:96
 #, python-brace-format
 msgid "made from {name} ({day})"
-msgstr "aus {name} ({day})"
+msgstr "Ausgangsgericht: {name} ({day})"
 
 #: templates/base.html:97
 #, python-brace-format
@@ -372,7 +372,7 @@ msgstr "Mengen inklusive {count} Portionen für das Folgegericht."
 
 #: templates/base.html:100
 msgid "from the previous dish"
-msgstr "vom Vorgericht"
+msgstr "vorgekocht im Ausgangsgericht"
 
 #: templates/base.html:101 templates/recipe_form.html:148
 #: templates/recipe_form.html:178 templates/recipe_form.html:202
@@ -380,7 +380,7 @@ msgid ""
 "From the previous dish: not bought when this recipe is planned as a "
 "follow-up dish"
 msgstr ""
-"Vom Vorgericht: wird nicht eingekauft, wenn dieses Rezept als "
+"Vorgekocht: wird nicht eingekauft, wenn dieses Rezept als "
 "Folgegericht geplant ist"
 
 #: templates/base.html:102
@@ -1205,7 +1205,7 @@ msgstr "Anderen Plan wählen..."
 msgid "The dish stays ONE record - changes apply across all linked plans."
 msgstr ""
 "Das Gericht bleibt EIN Datensatz - Änderungen wirken sich auf alle "
-"verknüpften Pläne aus."
+"verlinkten Pläne aus."
 
 #: templates/recipe_form.html:83
 msgid "Basic info"
@@ -1271,8 +1271,8 @@ msgid ""
 " in its window, and this dish is bought for both days. Follow-up dishes "
 "are never rolled on their own."
 msgstr ""
-"Mehr von diesem Gericht kochen und ein paar Tage später aus dem Rest "
-"eines dieser Gerichte machen. Wird dieses Gericht geplant, kommt eines "
+"Mehr von diesem Gericht kochen und ein paar Tage später aus den "
+"vorgekochten Teilen eines dieser Gerichte machen. Wird dieses Gericht geplant, kommt eines "
 "davon auf den ersten freien Tag im Zeitfenster, und dieses Gericht wird "
 "für beide Tage eingekauft. Folgegerichte werden nie allein gewürfelt."
 
