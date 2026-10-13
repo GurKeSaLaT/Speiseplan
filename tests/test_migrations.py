@@ -2,7 +2,8 @@
 allowlist guard in front of the f-string-built SQL in
 _add_plan_id_column()/_add_plan_id_with_rebuild() (see the module-level
 comment there for why this exists even though every current call site
-only ever passes a hardcoded literal) - plus individual schema steps."""
+only ever passes a hardcoded literal) - plus individual schema steps and
+data repairs (follow-up links brought in line with the recipe tree rules)."""
 import pytest
 
 from migrations import _identifier, _identifier_list
@@ -87,14 +88,14 @@ def _links(app):
         return sorted((l.recipe_id, l.follow_up_recipe_id) for l in RecipeFollowUp.query)
 
 
-def _share(app, recipe_id, plan_id):
+def _link_into_plan(app, recipe_id, plan_id):
     from models import RecipePlanLink, db
     with app.app_context():
         db.session.add(RecipePlanLink(recipe_id=recipe_id, plan_id=plan_id))
         db.session.commit()
 
 
-def _shared_into(app, plan_id):
+def _linked_into(app, plan_id):
     from models import RecipePlanLink
     with app.app_context():
         return sorted(l.recipe_id for l in RecipePlanLink.query.filter_by(plan_id=plan_id))
@@ -169,13 +170,13 @@ def test_partially_linked_tree_is_linked_completely_into_all_plans(app, make_use
     salat = make_recipe("Salat")
     _link(app, braten, ragout)
     _link(app, ragout, lasagne)
-    _share(app, ragout, other_plan)
+    _link_into_plan(app, ragout, other_plan)
 
     _migrate_tree_rules(app)
 
-    assert _shared_into(app, other_plan) == sorted([braten, ragout, lasagne])
-    assert _shared_into(app, third_plan) == sorted([braten, ragout])
-    assert salat not in _shared_into(app, other_plan)
+    assert _linked_into(app, other_plan) == sorted([braten, ragout, lasagne])
+    assert _linked_into(app, third_plan) == sorted([braten, ragout])
+    assert salat not in _linked_into(app, other_plan)
     assert "Familie" in caplog.text
 
 
@@ -191,7 +192,7 @@ def test_tree_completion_uses_the_repaired_links(app, make_user, make_recipe):
 
     _migrate_tree_rules(app)
 
-    assert _shared_into(app, other_plan) == []
+    assert _linked_into(app, other_plan) == []
 
 
 def test_tree_rules_migration_is_idempotent(app, make_user, make_recipe, caplog):
@@ -202,15 +203,15 @@ def test_tree_rules_migration_is_idempotent(app, make_user, make_recipe, caplog)
     _link(app, braten, ragout)
     _link(app, huhn, ragout)
     _link(app, ragout, braten)
-    _share(app, braten, other_plan)
+    _link_into_plan(app, braten, other_plan)
 
     _migrate_tree_rules(app)
-    links, shared = _links(app), _shared_into(app, other_plan)
+    links, shared = _links(app), _linked_into(app, other_plan)
     caplog.clear()
     _migrate_tree_rules(app)
 
     assert _links(app) == links == [(braten, ragout)]
-    assert _shared_into(app, other_plan) == shared == sorted([braten, ragout])
+    assert _linked_into(app, other_plan) == shared == sorted([braten, ragout])
     assert caplog.text == ""
 
 
@@ -221,12 +222,12 @@ def test_tree_rules_migration_leaves_valid_data_alone(app, make_user, make_recip
     sauce = make_recipe("Sauce")
     _link(app, braten, ragout)
     _link(app, braten, sauce)
-    _share(app, braten, other_plan)
-    _share(app, ragout, other_plan)
-    _share(app, sauce, other_plan)
+    _link_into_plan(app, braten, other_plan)
+    _link_into_plan(app, ragout, other_plan)
+    _link_into_plan(app, sauce, other_plan)
 
     _migrate_tree_rules(app)
 
     assert _links(app) == sorted([(braten, ragout), (braten, sauce)])
-    assert _shared_into(app, other_plan) == sorted([braten, ragout, sauce])
+    assert _linked_into(app, other_plan) == sorted([braten, ragout, sauce])
     assert caplog.text == ""

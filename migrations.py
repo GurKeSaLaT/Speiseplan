@@ -12,8 +12,9 @@ from flask import current_app
 from sqlalchemy import text
 
 from models import (
-    db, ExtraShoppingItem, Plan, PlanMembership, Recipe, RecipeFollowUp, RecipeSeason, PlanDaySide, User,
+    db, ExtraShoppingItem, Plan, PlanMembership, Recipe, RecipeSeason, PlanDaySide, User,
 )
+from services.follow_ups import remove_tree_rule_breaks
 from services.plans import seed_default_categories
 from services.recipe_trees import complete_all_trees
 from services.planning import friday_of
@@ -463,44 +464,26 @@ def _migrate_follow_up_columns():
 
 def _migrate_follow_up_links_to_tree_rules():
     """Brings follow-up links from before the recipe tree rules (ADR 0001)
-    in line: read in id order, a link is removed if its follow-up recipe
-    already has a source recipe or it would close a cycle (so the oldest
-    link wins), then every tree is linked completely into all plans of any
-    of its recipes. Logs each change; a second run finds nothing to do."""
-    names = dict(db.session.query(Recipe.id, Recipe.name))
-    source_of = {}
-    removed = False
-    for link in RecipeFollowUp.query.order_by(RecipeFollowUp.id).all():
-        source_id, follow_up_id = link.recipe_id, link.follow_up_recipe_id
-        if follow_up_id in source_of:
-            reason = f"{names.get(follow_up_id)} already follows {names.get(source_of[follow_up_id])}"
-        else:
-            # Kept links give every recipe at most one source, so the
-            # ancestors of source_id form a single chain.
-            ancestor_id = source_id
-            while ancestor_id is not None and ancestor_id != follow_up_id:
-                ancestor_id = source_of.get(ancestor_id)
-            if ancestor_id is None:
-                source_of[follow_up_id] = source_id
-                continue
-            reason = "it would close a cycle"
-        current_app.logger.warning(
-            "Recipe tree rules: removed follow-up link %s -> %s (%s)",
-            names.get(source_id), names.get(follow_up_id), reason,
-        )
-        db.session.delete(link)
-        removed = True
-
+    in line: rule-breaking links are removed, then every tree is linked
+    completely into all plans of any of its recipes. Logs each change; a
+    second run finds nothing to do."""
+    removed = remove_tree_rule_breaks()
     added = complete_all_trees()
-    if added:
-        plan_names = dict(db.session.query(Plan.id, Plan.name))
-        for recipe_id, plan_id in added:
-            current_app.logger.warning(
-                "Recipe tree rules: linked %s into plan %s to complete its recipe tree",
-                names.get(recipe_id), plan_names.get(plan_id),
-            )
-    if removed or added:
-        db.session.commit()
+    if not removed and not added:
+        return
+    names = dict(db.session.query(Recipe.id, Recipe.name))
+    plan_names = dict(db.session.query(Plan.id, Plan.name))
+    for link_id, source_id, follow_up_id, reason in removed:
+        current_app.logger.warning(
+            "Recipe tree rules: removed follow-up link %s: %s (%s) -> %s (%s), %s",
+            link_id, names.get(source_id), source_id, names.get(follow_up_id), follow_up_id, reason,
+        )
+    for recipe_id, plan_id in added:
+        current_app.logger.warning(
+            "Recipe tree rules: linked %s (%s) into plan %s (%s) to complete its recipe tree",
+            names.get(recipe_id), recipe_id, plan_names.get(plan_id), plan_id,
+        )
+    db.session.commit()
 
 
 def init_db():

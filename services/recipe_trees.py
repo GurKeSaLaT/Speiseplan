@@ -91,8 +91,11 @@ def complete_tree(recipe_id):
     """Links every recipe of recipe_id's tree into every plan any of them is
     in - after a follow-up link merged two trees. Flushes, no commit."""
     db.session.flush()
-    tree = tree_recipe_ids(recipe_id)
-    _link_into(tree, _tree_plan_ids(tree))
+    _complete(tree_recipe_ids(recipe_id))
+
+
+def _complete(tree):
+    return _link_into(tree, _tree_plan_ids(tree))
 
 
 def complete_all_trees():
@@ -107,7 +110,7 @@ def complete_all_trees():
             continue
         tree = _component(recipe_id, neighbours)
         done |= tree
-        added += _link_into(tree, _tree_plan_ids(tree))
+        added += _complete(tree)
     return added
 
 

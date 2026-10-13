@@ -358,6 +358,34 @@ def _check_tree_rules(recipe, new_ids, plan_id):
                 follow_up=name(follow_up_id), source=name(other_sources[0])))
 
 
+def remove_tree_rule_breaks():
+    """Repairs links from before the tree rules: read in id order, a link is
+    removed if its follow-up recipe already has a source recipe or it would
+    close a cycle, so the older link always wins. Returns the removed links
+    as (link id, source id, follow-up id, reason). No commit."""
+    from models import RecipeFollowUp
+
+    source_of = {}
+    removed = []
+    for link in RecipeFollowUp.query.order_by(RecipeFollowUp.id).all():
+        source_id, follow_up_id = link.recipe_id, link.follow_up_recipe_id
+        if follow_up_id in source_of:
+            reason = f"second source (keeps {source_of[follow_up_id]})"
+        else:
+            # Kept links give every recipe at most one source, so the
+            # ancestors of source_id form a single chain.
+            ancestor_id = source_id
+            while ancestor_id is not None and ancestor_id != follow_up_id:
+                ancestor_id = source_of.get(ancestor_id)
+            if ancestor_id is None:
+                source_of[follow_up_id] = source_id
+                continue
+            reason = "closes a cycle"
+        removed.append((link.id, source_id, follow_up_id, reason))
+        db.session.delete(link)
+    return removed
+
+
 def save_follow_up_links(recipe, form, plan_id):
     """Replaces recipe's follow-ups from the recipe form's parallel
     fu_recipe[] / fu_min[] / fu_max[] lists. Unknown, side-dish or duplicate
