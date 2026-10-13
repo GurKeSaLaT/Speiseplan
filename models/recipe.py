@@ -122,5 +122,5 @@ class Ingredient(db.Model):
     category = db.Column(db.String(50), nullable=True)
     is_pantry = db.Column(db.Boolean, nullable=False, default=False)
     # Comes from the preceding dish's leftovers: left off the shopping list
-    # when this recipe is planned as a follow-up (PlanDay.follow_up_of_date).
+    # when this recipe is planned as a follow-up (models.calendar.CoupledDish).
     from_previous = db.Column(db.Boolean, nullable=False, default=False)

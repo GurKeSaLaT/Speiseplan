@@ -155,7 +155,7 @@ def swap_days(date_a, date_b):
     plan_day_a.main_recipe_id, plan_day_b.main_recipe_id = plan_day_b.main_recipe_id, plan_day_a.main_recipe_id
     plan_day_a.excluded, plan_day_b.excluded = plan_day_b.excluded, plan_day_a.excluded
     plan_day_a.cooked, plan_day_b.cooked = plan_day_b.cooked, plan_day_a.cooked
-    links_changed = move_links_on_swap(plan.id, plan_day_a, plan_day_b)
+    links_changed = move_links_on_swap(plan_day_a, plan_day_b)
 
     sides_a = PlanDaySide.query.filter_by(plan_day_id=plan_day_a.id).all()
     sides_b = PlanDaySide.query.filter_by(plan_day_id=plan_day_b.id).all()

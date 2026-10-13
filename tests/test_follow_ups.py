@@ -19,13 +19,24 @@ def _link(app, source_id, follow_up_id, min_days=2, max_days=3):
         db.session.commit()
 
 
+def _source_date(dish):
+    """Date of the source dish a main dish (PlanDay) or side (PlanDaySide)
+    or pending follow-up is coupled to, or None."""
+    from models import PlanDay, PlanDaySide, db
+    if dish.source_side_id is not None:
+        return db.session.get(PlanDaySide, dish.source_side_id).day.date
+    if dish.source_day_id is not None:
+        return db.session.get(PlanDay, dish.source_day_id).date
+    return None
+
+
 def _days(app, plan_id, start=FRIDAY):
-    """[(main_recipe_id, follow_up_of_date, excluded)] for the 7 days from start."""
+    """[(main_recipe_id, source dish date, excluded)] for the 7 days from start."""
     from models import PlanDay
     with app.app_context():
         rows = {pd.date: pd for pd in PlanDay.query.filter_by(plan_id=plan_id).all()}
         return [
-            (rows[d].main_recipe_id, rows[d].follow_up_of_date, rows[d].excluded) if d in rows else None
+            (rows[d].main_recipe_id, _source_date(rows[d]), rows[d].excluded) if d in rows else None
             for d in (start + timedelta(days=i) for i in range(7))
         ]
 
@@ -126,7 +137,8 @@ def test_follow_up_across_week_boundary_waits_as_pending(app, client, make_recip
     client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(a)})
     with app.app_context():
         pending = PendingFollowUp.query.one()
-        assert (pending.date, pending.recipe_id, pending.source_date) == (NEXT_FRIDAY, b, FRIDAY + timedelta(days=5))
+        assert (pending.date, pending.recipe_id, _source_date(pending), pending.is_side) == (
+            NEXT_FRIDAY, b, FRIDAY + timedelta(days=5), False)
 
     data = _plan_data(client.get("/plan/2026-06-12"))
     assert data["followUpsOut"][5][0]["pending"] is True
@@ -178,11 +190,12 @@ def test_follow_up_into_existing_week_needs_an_empty_day(app, client, make_recip
 # --- day actions ---
 
 def _assert_consistent(app, plan_id):
-    """Every stored link points at a day whose dish has that follow-up."""
-    from models import PlanDay, RecipeFollowUp
+    """Every stored coupling points at an earlier dish that has that follow-up."""
+    from models import PlanDay, RecipeFollowUp, db
     with app.app_context():
-        for pd in PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.follow_up_of_date.isnot(None)):
-            source = PlanDay.query.filter_by(plan_id=plan_id, date=pd.follow_up_of_date).one()
+        for pd in PlanDay.query.filter(PlanDay.plan_id == plan_id, PlanDay.source_day_id.isnot(None)):
+            source = db.session.get(PlanDay, pd.source_day_id)
+            assert source.plan_id == plan_id and source.date < pd.date
             assert RecipeFollowUp.query.filter_by(
                 recipe_id=source.main_recipe_id, follow_up_recipe_id=pd.main_recipe_id).count() == 1
 

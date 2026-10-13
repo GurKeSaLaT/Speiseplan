@@ -451,14 +451,53 @@ def _migrate_ensure_starred_membership():
 
 
 def _migrate_follow_up_columns():
-    """plan_day.follow_up_of_date and ingredient.from_previous (linked
-    recipes); the new tables come from create_all."""
-    plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
-    if 'follow_up_of_date' not in plan_day_columns:
-        db.session.execute(text("ALTER TABLE plan_day ADD COLUMN follow_up_of_date DATE"))
+    """ingredient.from_previous (linked recipes); the new tables come from
+    create_all, the couplings from _migrate_couplings_to_dishes."""
     ingredient_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(ingredient)"))}
     if 'from_previous' not in ingredient_columns:
         db.session.execute(text("ALTER TABLE ingredient ADD COLUMN from_previous BOOLEAN NOT NULL DEFAULT 0"))
+    db.session.commit()
+
+
+def _migrate_couplings_to_dishes():
+    """A coupling used to be stored on the follow-up dish's day as the date of
+    its source day (plan_day.follow_up_of_date, pending_follow_up.source_date).
+    Now every dish (main dish, side, pending follow-up) references its source
+    dish (models.calendar.CoupledDish). Old couplings all point at a main
+    dish; one whose source day has no main dish any more is dropped, a pending
+    follow-up without source dish too. Expand-contract in one step: add the
+    new columns, copy, drop the old ones."""
+    for table in ('plan_day', 'plan_day_side', 'pending_follow_up'):
+        columns = {row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})"))}
+        if 'source_day_id' not in columns:
+            db.session.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN source_day_id INTEGER"))
+        if 'source_side_id' not in columns:
+            db.session.execute(text(
+                f"ALTER TABLE {table} ADD COLUMN source_side_id INTEGER"))
+        if table == 'pending_follow_up' and 'is_side' not in columns:
+            db.session.execute(text("ALTER TABLE pending_follow_up ADD COLUMN is_side BOOLEAN NOT NULL DEFAULT 0"))
+
+    source_main_dish = (
+        "(SELECT source.id FROM plan_day AS source WHERE source.plan_id = {table}.plan_id"
+        " AND source.date = {table}.{date_column} AND source.main_recipe_id IS NOT NULL)"
+    )
+    plan_day_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(plan_day)"))}
+    if 'follow_up_of_date' in plan_day_columns:
+        db.session.execute(text(
+            "UPDATE plan_day SET source_day_id = "
+            + source_main_dish.format(table='plan_day', date_column='follow_up_of_date')
+            + " WHERE follow_up_of_date IS NOT NULL AND main_recipe_id IS NOT NULL"
+        ))
+        db.session.execute(text("ALTER TABLE plan_day DROP COLUMN follow_up_of_date"))
+    pending_columns = {row[1] for row in db.session.execute(text("PRAGMA table_info(pending_follow_up)"))}
+    if 'source_date' in pending_columns:
+        db.session.execute(text(
+            "UPDATE pending_follow_up SET source_day_id = "
+            + source_main_dish.format(table='pending_follow_up', date_column='source_date')
+        ))
+        db.session.execute(text("DELETE FROM pending_follow_up WHERE source_day_id IS NULL"))
+        db.session.execute(text("ALTER TABLE pending_follow_up DROP COLUMN source_date"))
     db.session.commit()
 
 
@@ -501,6 +540,7 @@ def init_db():
     _migrate_plan_day_cooked_columns()
     _migrate_shopping_list_check_amount_columns()
     _migrate_follow_up_columns()
+    _migrate_couplings_to_dishes()
 
     seeded_plans_by_username = {}
 

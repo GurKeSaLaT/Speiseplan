@@ -14,18 +14,18 @@ from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
 
 # final_plan / final_side_plan: indexed 0=Friday..6=Thursday.
-# follow_up_links: {day index of a follow-up dish: date of its source dish}.
-# outside_follow_ups: [(date, follow-up Recipe, source date)] beyond this week.
+# follow_up_links: {day index of a follow-up dish: day index of its source dish}.
+# outside_follow_ups: [(date, follow-up Recipe, source day index)] beyond this week.
 GeneratedWeek = namedtuple('GeneratedWeek', 'final_plan final_side_plan follow_up_links outside_follow_ups')
 
 
 def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids,
-                  leftover_names=None, incoming_links=None):
+                  leftover_names=None, incoming_days=()):
     """Returns a GeneratedWeek.
 
-    Pinned main dishes and sides are kept; incoming_links ({day index:
-    source date}) marks pinned dishes that are follow-ups of an earlier
-    week's dish. Follow-ups of planned dishes take precedence over normal
+    Pinned main dishes and sides are kept; incoming_days (day indexes)
+    marks pinned dishes that are follow-ups of an earlier week's dish, so
+    they place no follow-up of their own. Follow-ups of planned dishes take precedence over normal
     filling (services/follow_ups.py): pinned dishes place theirs first,
     then leftovers are used up on the earliest free days (see
     fill_leftover_days), then every other non-excluded day gets a balanced
@@ -35,7 +35,6 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
     from the form.
     """
     all_categories = Category.query.filter_by(plan_id=plan.id).all()
-    incoming_links = incoming_links or {}
 
     final_plan = [None] * 7
     used_recipe_ids = set()
@@ -62,7 +61,7 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
                 if recipe:
                     final_side_plan[day_index].append(recipe)
 
-    links = {i: d for i, d in incoming_links.items() if final_plan[i] is not None}
+    links = {}
     outside = []
     outside_taken = set()
 
@@ -82,14 +81,14 @@ def generate_week(plan, dates, excluded_days, day_recipe_ids, day_side_recipe_id
         if dates[0] <= day <= dates[6]:
             j = (day - dates[0]).days
             final_plan[j] = recipe
-            links[j] = dates[i]
+            links[j] = i
             used_recipe_ids.add(recipe.id)
         else:
-            outside.append((day, recipe, dates[i]))
+            outside.append((day, recipe, i))
             outside_taken.add(day)
 
     for i in sorted(day_recipe_ids):
-        if final_plan[i] is not None and i not in links:
+        if final_plan[i] is not None and i not in links and i not in incoming_days:
             place_follow_up(i)
 
     days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
