@@ -157,7 +157,9 @@ def test_rules_see_links_invisible_to_the_plan(app, client, make_user, make_reci
 
     resp = _save(client, eigen, "Eigenes", cat, [geteilt])
     assert resp.status_code == 400
-    assert "Fremde Quelle" in resp.get_json()["error"]
+    error = resp.get_json()["error"]
+    # The plan can't see the other source, so its name isn't given away.
+    assert "Geteilt" in error and "another plan" in error and "Fremde Quelle" not in error
 
     # A cycle through a recipe the plan can't see: Geteilt2 -> Versteckt -> Eigenes2.
     eigen2 = make_recipe("Eigenes2", category_id=cat)
@@ -169,7 +171,7 @@ def test_rules_see_links_invisible_to_the_plan(app, client, make_user, make_reci
 
     resp = _save(client, eigen2, "Eigenes2", cat, [geteilt2])
     assert resp.status_code == 400
-    assert "Eigenes2 → Geteilt2 → Versteckt → Eigenes2" in resp.get_json()["error"]
+    assert "Eigenes2 → Geteilt2 → a recipe in another plan → Eigenes2" in resp.get_json()["error"]
 
 
 def test_create_with_second_source_is_rejected_and_nothing_saved(app, client, make_recipe, make_category, test_plan_id):

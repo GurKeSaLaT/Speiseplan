@@ -328,18 +328,20 @@ def unavailable_follow_up_ids(recipe_id):
     return taken | {recipe_id} | set(_ancestor_paths(recipe_id, sources))
 
 
-def _check_tree_rules(recipe, new_ids):
+def _check_tree_rules(recipe, new_ids, plan_id):
     """Raises FollowUpRuleError for the first of new_ids (follow-ups recipe
     doesn't have yet) that would close a cycle or give a follow-up recipe a
     second source. Links recipe already has are left alone - rule breaks
-    from before the rules are the migration's business."""
+    from before the rules are the migration's business. Recipes plan_id
+    can't see aren't named."""
     sources = _sources_by_follow_up()
     ancestors = _ancestor_paths(recipe.id, sources) if recipe.id is not None else {}
-    names = {}
+    names = {recipe.id: recipe.name}
 
     def name(recipe_id):
         if recipe_id not in names:
-            names[recipe_id] = recipe.name if recipe_id == recipe.id else db.session.get(Recipe, recipe_id).name
+            visible = visible_recipes_query(plan_id).filter(Recipe.id == recipe_id).first()
+            names[recipe_id] = visible.name if visible else _("a recipe in another plan")
         return names[recipe_id]
 
     for follow_up_id in new_ids:
@@ -391,7 +393,7 @@ def save_follow_up_links(recipe, form, plan_id):
 
     existing = {link.follow_up_recipe_id: link for link in recipe.follow_ups}
     with db.session.no_autoflush:
-        _check_tree_rules(recipe, [i for i in wanted if i in valid and i not in existing])
+        _check_tree_rules(recipe, [i for i in wanted if i in valid and i not in existing], plan_id)
 
     links = []
     for follow_up_id, (low, high) in wanted.items():
