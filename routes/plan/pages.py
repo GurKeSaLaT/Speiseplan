@@ -20,8 +20,8 @@ from services.recipe_visibility import visible_recipes_query
 from services.settings import get_display_units
 from services.units import convert_for_display
 from services.follow_ups import (
-    add_side, assign_follow_up, couple, incoming_follow_ups, refill_released, release_week, week_follow_up_data,
-    week_shopping_servings,
+    add_side, assign_follow_up, continue_chain, couple, incoming_follow_ups, refill_released, release_week,
+    week_follow_up_data, week_shopping_servings,
 )
 from services.week_generation import generate_week
 from routes.plan import plan_bp
@@ -280,13 +280,12 @@ def week_generate(start_date: str) -> ResponseReturnValue:
 
     generated = generate_week(
         plan, dates, excluded_days, day_recipe_ids, day_side_recipe_ids,
-        leftover_names={lo["name"] for lo in leftovers}, incoming_days=set(incoming_sources),
-        incoming_sides=set(incoming_side_sources),
+        leftover_names={lo["name"] for lo in leftovers},
     )
     final_plan, final_side_plan = generated.final_plan, generated.final_side_plan
 
     plan_days = []
-    pinned_sides = []  # PlanDaySides of final_side_plan, same order
+    stored_sides = []  # PlanDaySides of final_side_plan, same order
     for i in range(7):
         day_date = dates[i]
         plan_day = PlanDay.query.filter_by(plan_id=plan.id, date=day_date).first()
@@ -296,25 +295,26 @@ def week_generate(start_date: str) -> ResponseReturnValue:
             db.session.flush()  # assigns plan_day.id, for the PlanDaySide rows below
         plan_day.excluded = i in excluded_days
         plan_day.main_recipe_id = final_plan[i].id if final_plan[i] else None
+        couple(plan_day, incoming_sources.get(i) if final_plan[i] is not None else None)
         plan_days.append(plan_day)
 
         PlanDaySide.query.filter_by(plan_day_id=plan_day.id).delete()
-        pinned_sides.append([
+        stored_sides.append([
             add_side(plan_day, side_recipe.id, incoming_side_sources.get((i, side_recipe.id)))
             for side_recipe in final_side_plan[i]
         ])
     db.session.flush()  # assigns the sides' ids, for couplings to them
 
-    for i, plan_day in enumerate(plan_days):
-        if i in generated.follow_up_couplings:
-            source = generated.follow_up_couplings[i].resolve(plan_days, pinned_sides)
-        else:
-            source = incoming_sources.get(i) if final_plan[i] is not None else None
-        couple(plan_day, source)
-    for i, recipe, source in generated.side_follow_ups:
-        add_side(plan_days[i], recipe.id, source.resolve(plan_days, pinned_sides))
-    for day, recipe, source in generated.outside_follow_ups:
-        assign_follow_up(plan.id, recipe, day, source.resolve(plan_days, pinned_sides))
+    for follow_up, source in generated.follow_up_couplings.items():
+        couple(follow_up.resolve(plan_days, stored_sides), source.resolve(plan_days, stored_sides))
+    # All of them first: generate_week reserved their days, a chain below
+    # one of them must not take another one's day.
+    outside = [
+        assign_follow_up(plan.id, recipe, day, source.resolve(plan_days, stored_sides))
+        for day, recipe, source in generated.outside_follow_ups
+    ]
+    for dish in outside:
+        continue_chain(plan.id, dish)
     db.session.flush()
     refill_released(plan.id, freed_days)
 

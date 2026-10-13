@@ -855,3 +855,266 @@ def test_deleting_source_side_recipe_keeps_follow_ups_uncoupled(app, client, mak
     client.post(f"/delete-recipe/{r}")
     assert _days(app, client.plan_id)[2] == (b, None, False)
     assert _sides(app, client.plan_id)[3] == [(g, None)]
+
+
+# --- follow-up chains ---
+
+def _chain(app, make_recipe, cat):
+    """Braten -> Ragout -> Lasagne, each 2-3 days after the one before."""
+    braten = make_recipe("Braten", category_id=cat)
+    ragout = make_recipe("Ragout", category_id=cat)
+    lasagne = make_recipe("Lasagne", category_id=cat)
+    _link(app, braten, ragout)
+    _link(app, ragout, lasagne)
+    return braten, ragout, lasagne
+
+
+def _chain_week(app, client, make_recipe, make_category):
+    """A week of normal main dishes with Sunday and Tuesday left empty, and
+    the chain Braten -> Ragout -> Lasagne not planned yet."""
+    cat = make_category("Alles")
+    fillers = _fillers(make_recipe, cat, count=10)
+    client.post(f"/plan/{WEEK}/generate", data=MultiDict(_exclude(2, 4)))
+    client.post("/day/2026-06-14/toggle-exclude")
+    client.post("/day/2026-06-16/toggle-exclude")
+    return (*_chain(app, make_recipe, cat), fillers)
+
+
+def test_manual_pick_places_a_whole_chain(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _chain_week(app, client, make_recipe, make_category)
+    body = client.post("/day/2026-06-12/set-main", json={"recipe_id": braten}).get_json()
+    assert body["links_changed"] is True
+    days = _days(app, client.plan_id)
+    assert days[2] == (ragout, FRIDAY, False)
+    assert days[4] == (lasagne, FRIDAY + timedelta(days=2), False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_generate_places_a_whole_chain(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    braten, ragout, lasagne = _chain(app, make_recipe, cat)
+    fillers = _fillers(make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_0": str(braten)})
+    days = _days(app, client.plan_id)
+    assert days[2] == (ragout, FRIDAY, False)
+    assert days[4] == (lasagne, FRIDAY + timedelta(days=2), False)
+    assert all(d[0] in fillers for i, d in enumerate(days) if i not in (0, 2, 4))
+    _assert_consistent(app, client.plan_id)
+
+
+def test_generate_places_a_chain_through_a_follow_up_side(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    sides = make_category("Beilagen")
+    k = make_recipe("Salzkartoffeln", category_id=sides, is_side_dish=True)
+    b = make_recipe("Bratkartoffeln", category_id=sides, is_side_dish=True)
+    s = make_recipe("Kartoffelsuppe", category_id=cat)
+    _link(app, k, b)
+    _link(app, b, s)
+    _fillers(make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data={"day_side_recipes_0[]": str(k)})
+    assert _sides(app, client.plan_id) == [[(k, None)], [], [(b, FRIDAY)], [], [], [], []]
+    assert _days(app, client.plan_id)[4] == (s, FRIDAY + timedelta(days=2), False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_chain_continues_when_the_pending_week_is_created(app, client, make_recipe, make_category):
+    from models import PendingFollowUp
+    cat = make_category("Alles")
+    braten, ragout, lasagne = _chain(app, make_recipe, cat)
+    _fillers(make_recipe, cat, count=14)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(braten)})
+    with app.app_context():
+        assert [(p.date, p.recipe_id) for p in PendingFollowUp.query] == [(NEXT_FRIDAY, ragout)]
+
+    client.post("/plan/2026-06-19/generate", data={"day_recipe_0": str(ragout)})
+    days = _days(app, client.plan_id, NEXT_FRIDAY)
+    assert days[0] == (ragout, FRIDAY + timedelta(days=5), False)
+    assert days[2] == (lasagne, NEXT_FRIDAY, False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_chain_continues_into_an_existing_week(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    fillers = _fillers(make_recipe, cat, count=14)
+    # Next week exists with its Friday and Sunday empty.
+    client.post("/plan/2026-06-19/generate", data=MultiDict(_exclude(0, 2)))
+    client.post("/day/2026-06-19/toggle-exclude")
+    client.post("/day/2026-06-21/toggle-exclude")
+    braten, ragout, lasagne = _chain(app, make_recipe, cat)
+
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(braten)})
+    days = _days(app, client.plan_id, NEXT_FRIDAY)
+    assert days[0] == (ragout, FRIDAY + timedelta(days=5), False)
+    assert days[2] == (lasagne, NEXT_FRIDAY, False)
+    _assert_consistent(app, client.plan_id)
+
+    # Shopping counts the whole chain, also beyond the week.
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 5)["main"] == {
+        "servings": 6, "followUpServings": 4, "skipPrecooked": False}
+
+
+def test_chain_beyond_the_week_keeps_off_a_day_taken_by_another_follow_up(
+        app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    fillers = _fillers(make_recipe, cat, count=14)
+    # Next week exists with Friday, Sunday and Monday empty.
+    client.post("/plan/2026-06-19/generate", data=MultiDict(_exclude(0, 2, 3)))
+    for day in ("2026-06-19", "2026-06-21", "2026-06-22"):
+        client.post(f"/day/{day}/toggle-exclude")
+    braten, ragout, lasagne = _chain(app, make_recipe, cat)
+    huhn = make_recipe("Brathähnchen", category_id=cat)
+    salat = make_recipe("Hähnchensalat", category_id=cat)
+    _link(app, huhn, salat, min_days=3, max_days=3)
+
+    # Ragout next Friday, Hähnchensalat next Sunday; Lasagne must take Monday.
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(braten), "day_recipe_6": str(huhn)})
+    days = _days(app, client.plan_id, NEXT_FRIDAY)
+    assert days[0] == (ragout, FRIDAY + timedelta(days=5), False)
+    assert days[2] == (salat, FRIDAY + timedelta(days=6), False)
+    assert days[3] == (lasagne, NEXT_FRIDAY, False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_shopping_servings_count_the_whole_chain(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _chain_week(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-12/set-main", json={"recipe_id": braten})
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    assert _shopping(data, 4)["main"] == {"servings": 2, "followUpServings": 0, "skipPrecooked": True}
+    assert _shopping(data, 2)["main"] == {"servings": 4, "followUpServings": 2, "skipPrecooked": True}
+    assert _shopping(data, 0)["main"] == {"servings": 6, "followUpServings": 4, "skipPrecooked": False}
+
+    body = client.post("/day/2026-06-16/servings", json={"servings": 3}).get_json()
+    assert [body["shopping_servings"][i]["main"]["servings"] for i in (0, 2, 4)] == [7, 5, 3]
+
+
+def _planned_chain(app, client, make_recipe, make_category):
+    """Braten on Friday, Ragout on Sunday, Lasagne on Tuesday; normal dishes elsewhere."""
+    braten, ragout, lasagne, fillers = _chain_week(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-12/set-main", json={"recipe_id": braten})
+    assert [d[0] for d in _days(app, client.plan_id)][0:5:2] == [braten, ragout, lasagne]
+    return braten, ragout, lasagne, fillers
+
+
+def _chain_released(days, ragout, lasagne):
+    """Friday's chain is gone: Sunday and Tuesday were rolled anew (a drawn
+    Braten may start a new chain there) and nothing is coupled to Friday."""
+    return (days[2][0] is not None and days[2] != (ragout, FRIDAY, False)
+            and days[4][0] is not None and days[4] != (lasagne, FRIDAY + timedelta(days=2), False)
+            and all(d[1] != FRIDAY for d in days))
+
+
+def test_rerolling_the_first_dish_releases_the_whole_chain(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _planned_chain(app, client, make_recipe, make_category)
+    body = client.post("/day/2026-06-12/reroll-main").get_json()
+    assert body["links_changed"] is True
+    days = _days(app, client.plan_id)
+    assert _chain_released(days, ragout, lasagne)
+    assert body["shopping_servings"][0]["main"]["servings"] == 2
+    _assert_consistent(app, client.plan_id)
+
+
+def test_excluding_the_first_dish_releases_the_whole_chain(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _planned_chain(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-12/toggle-exclude")
+    days = _days(app, client.plan_id)
+    assert days[0] == (None, None, True)
+    assert _chain_released(days, ragout, lasagne)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_replacing_the_first_dish_releases_the_whole_chain(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, fillers = _planned_chain(app, client, make_recipe, make_category)
+    unused = next(f for f in fillers if f not in [d[0] for d in _days(app, client.plan_id)])
+    body = client.post("/day/2026-06-12/set-main", json={"recipe_id": unused}).get_json()
+    assert body["links_changed"] is True
+    days = _days(app, client.plan_id)
+    assert days[0] == (unused, None, False)
+    assert _chain_released(days, ragout, lasagne)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_excluding_the_middle_dish_releases_below_and_uncouples_it(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _planned_chain(app, client, make_recipe, make_category)
+    client.post("/day/2026-06-14/toggle-exclude")
+    days = _days(app, client.plan_id)
+    assert days[0][0] == braten and days[2] == (None, None, True)
+    assert days[4][0] not in (None, lasagne) and days[4][1] is None
+    assert _shopping(_plan_data(client.get("/plan/2026-06-12")), 0)["main"]["servings"] == 2
+    _assert_consistent(app, client.plan_id)
+
+
+def test_recreating_the_week_releases_a_chain_reaching_into_the_next(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    fillers = _fillers(make_recipe, cat, count=14)
+    client.post("/plan/2026-06-19/generate", data=MultiDict(_exclude(0, 2)))
+    client.post("/day/2026-06-19/toggle-exclude")
+    client.post("/day/2026-06-21/toggle-exclude")
+    braten, ragout, lasagne = _chain(app, make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(braten)})
+    assert [d[0] for d in _days(app, client.plan_id, NEXT_FRIDAY)][0:3:2] == [ragout, lasagne]
+
+    # Both days are rolled anew (a drawn Braten may start a new chain there).
+    client.post(f"/plan/{WEEK}/generate", data={"day_recipe_5": str(fillers[0])})
+    days = _days(app, client.plan_id, NEXT_FRIDAY)
+    assert days[0][0] is not None and days[0] != (ragout, FRIDAY + timedelta(days=5), False)
+    assert days[2][0] is not None and days[2] != (lasagne, NEXT_FRIDAY, False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_rerolling_the_middle_dish_releases_below_and_uncouples_it(app, client, make_recipe, make_category):
+    braten, ragout, lasagne, _ = _planned_chain(app, client, make_recipe, make_category)
+    body = client.post("/day/2026-06-14/reroll-main").get_json()
+    assert body["links_changed"] is True
+    days = _days(app, client.plan_id)
+    assert days[0][0] == braten
+    assert days[2][0] not in (None, ragout) and days[2][1] is None
+    assert days[4][0] not in (None, lasagne) and days[4][1] is None
+    # Braten is bought for its own servings again.
+    assert body["shopping_servings"][0]["main"] == {"servings": 2, "followUpServings": 0, "skipPrecooked": False}
+    _assert_consistent(app, client.plan_id)
+
+
+def test_replacing_the_middle_dish_lets_the_new_dish_place_its_follow_up(app, client, make_recipe, make_category):
+    from models import Recipe, db
+    braten, ragout, lasagne, _ = _planned_chain(app, client, make_recipe, make_category)
+    with app.app_context():
+        cat = db.session.get(Recipe, braten).category_id
+    huhn = make_recipe("Brathähnchen", category_id=cat)
+    salat = make_recipe("Hähnchensalat", category_id=cat)
+    _link(app, huhn, salat)
+
+    client.post("/day/2026-06-14/set-main", json={"recipe_id": huhn})
+    days = _days(app, client.plan_id)
+    assert days[0] == (braten, None, False)
+    assert days[2] == (huhn, None, False)
+    assert days[4] == (salat, FRIDAY + timedelta(days=2), False)
+    _assert_consistent(app, client.plan_id)
+
+
+def test_removing_sides_releases_the_chain_below(app, client, make_recipe, make_category):
+    cat = make_category("Alles")
+    sides = make_category("Beilagen")
+    k = make_recipe("Salzkartoffeln", category_id=sides, is_side_dish=True)
+    b = make_recipe("Bratkartoffeln", category_id=sides, is_side_dish=True)
+    s = make_recipe("Kartoffelsuppe", category_id=cat)
+    _link(app, k, b)
+    _link(app, b, s)
+    fillers = _fillers(make_recipe, cat)
+    client.post(f"/plan/{WEEK}/generate", data={"day_side_recipes_0[]": str(k)})
+    assert _days(app, client.plan_id)[4][0] == s
+
+    # The middle dish goes: the soup is released, Salzkartoffeln bought for 2 again.
+    b_id = _side_id(app, client.plan_id, b)
+    assert client.post(f"/day/2026-06-14/side/{b_id}/remove").get_json()["links_changed"] is True
+    assert _days(app, client.plan_id)[4][0] not in (None, s)
+    data = _plan_data(client.get("/plan/2026-06-12"))
+    assert _shopping(data, 0)["sides"][str(_side_id(app, client.plan_id, k))]["servings"] == 2
+
+    # The first dish goes: everything below it goes too.
+    client.post(f"/plan/{WEEK}/generate", data={"day_side_recipes_0[]": str(k)})
+    assert _days(app, client.plan_id)[4][0] == s
+    k_id = _side_id(app, client.plan_id, k)
+    assert client.post(f"/day/2026-06-12/side/{k_id}/remove").get_json()["links_changed"] is True
+    assert _sides(app, client.plan_id) == [[]] * 7
+    assert _days(app, client.plan_id)[4][0] not in (None, s)
+    _assert_consistent(app, client.plan_id)

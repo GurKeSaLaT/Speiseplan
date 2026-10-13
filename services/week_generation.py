@@ -2,7 +2,6 @@
 live in routes/plan/pages.py: week_generate())."""
 
 from collections import Counter, namedtuple
-from collections.abc import Collection
 from datetime import date
 
 from models import Category, Plan, Recipe
@@ -16,8 +15,9 @@ from services.recipe_visibility import visible_recipes_query
 from services.seasons import recipe_available_now
 
 class DishRef(namedtuple('DishRef', 'day side', defaults=(None,))):
-    """A source dish in the generated week: the main dish of day `day`
-    (side None) or pinned side number `side` of that day."""
+    """A dish in the generated week: the main dish of day `day` (side
+    None) or side number `side` of that day (pinned sides first, then
+    follow-up sides)."""
 
     def resolve(self, mains: list, sides: list[list]):
         """The entry this refers to in per-day mains / per-day side lists
@@ -26,32 +26,29 @@ class DishRef(namedtuple('DishRef', 'day side', defaults=(None,))):
 
 
 # final_plan / final_side_plan: indexed 0=Friday..6=Thursday; final_side_plan
-#   holds the pinned sides only.
-# follow_up_couplings: {day index of a follow-up main dish: DishRef of its source dish}.
-# side_follow_ups: [(day index, follow-up side Recipe, source DishRef)], extra sides.
+#   holds the pinned sides, then the follow-up sides placed on that day.
+# follow_up_couplings: {DishRef of a follow-up dish (main dish or side): DishRef of its source dish}.
 # outside_follow_ups: [(date, follow-up Recipe, source DishRef)] beyond this week.
-GeneratedWeek = namedtuple(
-    'GeneratedWeek', 'final_plan final_side_plan follow_up_couplings side_follow_ups outside_follow_ups')
+GeneratedWeek = namedtuple('GeneratedWeek', 'final_plan final_side_plan follow_up_couplings outside_follow_ups')
 
 
 def generate_week(
     plan: Plan, dates: list[date], excluded_days: set[int], day_recipe_ids: dict[int, str],
     day_side_recipe_ids: dict[int, list[str]], leftover_names: set[str] | None = None,
-    incoming_days: Collection[int] = (), incoming_sides: Collection[tuple[int, int]] = (),
 ) -> GeneratedWeek:
     """Returns a GeneratedWeek.
 
-    Pinned main dishes and sides are kept; incoming_days (day indexes) and
-    incoming_sides ((day index, recipe id)) mark pinned dishes that are
-    follow-ups of an earlier week's dish, so they place no follow-up of
-    their own. Follow-ups of planned dishes take precedence over normal
+    Pinned main dishes and sides are kept, also those that are follow-ups
+    of an earlier week's dish (they place their own follow-up like any
+    other). Follow-ups of planned dishes take precedence over normal
     filling (services/follow_ups.py): pinned main dishes, then pinned sides
     place theirs first,
     then leftovers are used up on the earliest free days (see
     fill_leftover_days), then every other non-excluded day gets a balanced
     category (counting the days already set) and a recipe from it - or
     from any category if that one has nothing left - placing its follow-up
-    as it goes. Sides are never generated, except follow-up sides placed
+    as it goes. A placed follow-up places its own follow-up in turn
+    (Folgekette). Sides are never generated, except follow-up sides placed
     on top of a day's sides. Recipe ids arrive as strings from the form.
     """
     all_categories = Category.query.filter_by(plan_id=plan.id).all()
@@ -83,7 +80,6 @@ def generate_week(
                     used_recipe_ids.add(recipe.id)  # no follow-up side twice in a week
 
     couplings = {}
-    side_follow_ups = []
     outside = []
     outside_taken = set()
 
@@ -108,19 +104,21 @@ def generate_week(
             return
         j = (day - dates[0]).days
         if recipe.is_side_dish:
-            side_follow_ups.append((j, recipe, source))
+            final_side_plan[j].append(recipe)
+            follow_up = DishRef(j, len(final_side_plan[j]) - 1)
         else:
             final_plan[j] = recipe
-            couplings[j] = source
+            follow_up = DishRef(j)
+        couplings[follow_up] = source
         used_recipe_ids.add(recipe.id)
+        place_follow_up(follow_up)  # Folgekette
 
+    pinned_sides = [DishRef(i, k) for i, sides in enumerate(final_side_plan) for k in range(len(sides))]
     for i in sorted(day_recipe_ids):
-        if final_plan[i] is not None and i not in couplings and i not in incoming_days:
+        if final_plan[i] is not None and DishRef(i) not in couplings:
             place_follow_up(DishRef(i))
-    for i, sides in enumerate(final_side_plan):
-        for k, recipe in enumerate(sides):
-            if (i, recipe.id) not in incoming_sides:
-                place_follow_up(DishRef(i, k))
+    for ref in pinned_sides:
+        place_follow_up(ref)
 
     days_to_fill = [i for i in range(7) if i not in excluded_days and final_plan[i] is None]
 
@@ -157,7 +155,7 @@ def generate_week(
             used_recipe_ids.add(chosen.id)
             place_follow_up(DishRef(day_index))
 
-    return GeneratedWeek(final_plan, final_side_plan, couplings, side_follow_ups, outside)
+    return GeneratedWeek(final_plan, final_side_plan, couplings, outside)
 
 
 def fill_leftover_days(plan_id, dates, days_to_fill, final_plan, final_side_plan, used_recipe_ids, leftover_names,

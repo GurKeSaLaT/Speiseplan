@@ -4,6 +4,13 @@ One line per change, newest first.
 
 ## 2026-10-13
 
+- Follow-up chains (e.g. roast -> ragout -> lasagne): a planned follow-up
+  dish plans its own follow-up, whether it was placed by generating the
+  week, picked by hand or comes in as a waiting follow-up when its week
+  is created. A source dish is bought for its own servings plus the whole
+  chain below it (lasagne 2, ragout 4, roast 6). Re-rolling, replacing,
+  excluding or removing a dish releases every follow-up below it;
+  replacing a dish in the middle also drops its own coupling.
 - A side dish can be a source dish (e.g. boiled potatoes -> fried
   potatoes, rice -> fried rice): adding, rolling or replacing a side, or
   setting it as a fixed side when creating a week, plans one of its
