@@ -12,7 +12,7 @@ precision = 1
 [tool.mutmut]
 # On demand only, never part of the normal test run: `mutmut run`
 # (all of services/ and routes/) or `mutmut run "services.shopping.*"`
-# (one module). See README "Tests".
+# (one module).
 # mutmut 3 does not mutate decorated functions, so Flask route handlers
 # (@bp.route) are skipped; only their undecorated helpers get mutants.
 source_paths = ["services/", "routes/"]

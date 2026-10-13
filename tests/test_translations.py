@@ -16,9 +16,10 @@ KEYWORDS = {'_': None, 'gettext': None, 'ngettext': (1, 2), 'lazy_gettext': None
 NOT_SOURCE_DIRS = {'tests', 'mutants'}
 
 
-def _is_source_dir(path):
+def _is_source_dir(path: str) -> bool:
+    # Same dirs as babel's default filter (no '.*', '_*'), plus NOT_SOURCE_DIRS.
     rel = os.path.relpath(path, ROOT)
-    return not os.path.basename(path).startswith('.') and rel.split(os.sep)[0] not in NOT_SOURCE_DIRS
+    return not os.path.basename(path).startswith(('.', '_')) and rel.split(os.sep)[0] not in NOT_SOURCE_DIRS
 
 
 def _extracted_msgids():
